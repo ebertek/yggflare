@@ -42,6 +42,7 @@ def render(messages, test=False):
                 parts = message.removeprefix("NEW DNS-SD ").rsplit("|", 2)
                 if len(parts) == 3:
                     safe = f"**{parts[0]}** - `{parts[1]}` / {parts[2]}"
+            safe = safe.replace("@", "@\u200b").replace("\\r", " ").replace("\\n", " ")
             lines.append("• " + safe[:850])
         batch = []
         size = 0
