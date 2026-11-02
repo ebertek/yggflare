@@ -49,7 +49,7 @@ class NetworkAuditTests(unittest.TestCase):
                 {
                     "hostname": "older-device.ygg.nu",
                     "ipv4": "10.4.20.25",
-                    "open_ports": [80, 443],
+                    "ports": [{"protocol": "tcp", "port": 80}, {"protocol": "tcp", "port": 443}],
                 },
                 {
                     "hostname": "unspecified-port.ygg.nu",
