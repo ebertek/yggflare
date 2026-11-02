@@ -7,11 +7,13 @@ from discord_format import render
 
 class DiscordFormattingTests(unittest.TestCase):
     def test_groups_observations(self):
-        payload = render([
-            "NEW PORT alexa-kitchen.ygg.nu 10.4.20.73: tcp/4070",
-            "NEW DEVICE 10.4.21.207 MAC 7e:92:e2:7a:5f:77",
-            "NEW DNS-SD Cassiopeia.local|_remotepairing._tcp|49152",
-        ])
+        payload = render(
+            [
+                "NEW PORT alexa-kitchen.ygg.nu 10.4.20.73: tcp/4070",
+                "NEW DEVICE 10.4.21.207 MAC 7e:92:e2:7a:5f:77",
+                "NEW DNS-SD Cassiopeia.local|_remotepairing._tcp|49152",
+            ]
+        )
         embed = payload["embeds"][0]
         self.assertEqual(len(embed["fields"]), 3)
         self.assertEqual(embed["fields"][0]["name"], "Devices")
