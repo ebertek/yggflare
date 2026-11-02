@@ -332,7 +332,13 @@ def notify_discord(webhook, messages):
         text += f"\n... and {len(messages) - 35} more"
     body = json.dumps({"content": text[:1900]}).encode("utf-8")
     request = urllib.request.Request(
-        webhook, data=body, headers={"Content-Type": "application/json"}, method="POST"
+        webhook,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Yggflare/0 (https://github.com/ebertek/yggflare)",
+        },
+        method="POST",
     )
     with urllib.request.urlopen(request, timeout=15) as response:
         if response.status not in {200, 204}:
