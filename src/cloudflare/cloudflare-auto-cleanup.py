@@ -45,8 +45,7 @@ def main():
         "external zone ID",
     )
     tunnel = checked_tunnel_id(
-        settings.get("tunnel_id")
-        or client.tunnel_id(account, settings["tunnel_name"])
+        settings.get("tunnel_id") or client.tunnel_id(account, settings["tunnel_name"])
     )
     bound = scope(account, zone, tunnel)
     source = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
@@ -76,16 +75,22 @@ def main():
     if secret.is_file():
         webhook = secret.read_text(encoding="utf-8").strip()
         if webhook:
-            message = json.dumps({
-                "allowed_mentions": {"parse": []},
-                "embeds": [{
-                    "title": "Yggflare - Managed orphan retired",
-                    "description": f"Removed Cloudflare resources for `{hostname}` "
-                    "after the configured absence grace period.",
-                    "color": 3066993,
-                    "footer": {"text": "Automatic cleanup • Verified ownership"},
-                }],
-            }).encode("utf-8")
+            message = json.dumps(
+                {
+                    "allowed_mentions": {"parse": []},
+                    "embeds": [
+                        {
+                            "title": "Yggflare - Managed orphan retired",
+                            "description": f"Removed Cloudflare resources for `{hostname}` "
+                            "after the configured absence grace period.",
+                            "color": 3066993,
+                            "footer": {
+                                "text": "Automatic cleanup • Verified ownership"
+                            },
+                        }
+                    ],
+                }
+            ).encode("utf-8")
             request = urllib.request.Request(
                 webhook,
                 data=message,
@@ -106,6 +111,13 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (CloudflareError, OwnershipError, OSError, ValueError, TypeError, KeyError) as error:
+    except (
+        CloudflareError,
+        OwnershipError,
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+    ) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         sys.exit(2)
