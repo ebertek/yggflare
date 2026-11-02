@@ -1,0 +1,52 @@
+name: Python autofix
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - "**/*.py"
+      - "pyproject.toml"
+      - ".github/workflows/python-autofix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: python-autofix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    # Never run write-capable workflow on pull_request events or forked code.
+    if: github.repository == 'ebertek/yggflare' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.15"
+      - name: Install formatters
+        run: python -m pip install "ruff==0.14.14" "black==25.12.0"
+      - name: Ruff safe fixes
+        run: ruff check --fix .
+      - name: Black formatting
+        run: black .
+      - name: Commit changes if any
+        shell: bash
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No formatting changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '*.py'
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "style: autofix Ruff and Black [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
