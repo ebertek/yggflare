@@ -1,4 +1,4 @@
-"""Read-only reporting of ygg.nu records without an inventory owner.
+"""Read-only reporting of internal domain records without an inventory owner.
 
 Findings are review hints only. Never add them to Cloudflare mutation plans.
 """
