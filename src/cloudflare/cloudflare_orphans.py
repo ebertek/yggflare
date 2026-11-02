@@ -237,6 +237,28 @@ def summarize(registry, desired, applications, dns, config):
     }
 
 
+
+def print_summary(report):
+    """Show managed, orphaned and unmanaged counts without authorizing deletion."""
+    lifecycle = report.get("lifecycle", {})
+    if not lifecycle:
+        return
+    print(
+        "Cloudflare lifecycle (review only): "
+        f"{lifecycle['managed']} managed, "
+        f"{len(lifecycle['orphaned'])} orphaned, "
+        f"{len(lifecycle['unmanaged'])} unmanaged"
+    )
+    for orphan in lifecycle["orphaned"]:
+        print(
+            f"  ! ORPHAN {orphan['hostname']}: "
+            f"Access={orphan['access_apps']} DNS={orphan['external_dns']} "
+            f"Tunnel={orphan['tunnel_routes']}"
+        )
+    for hostname in lifecycle["unmanaged"]:
+        print(f"  ~ UNMANAGED {hostname}")
+
+
 def review_orphan(client, root, data, bound, hostname):
     """Return a fingerprint bound to actual live resources and ownership state."""
     if not HOST.fullmatch(hostname):
