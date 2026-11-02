@@ -63,5 +63,5 @@ printf '%s\n' \
   'Copied JSON configuration and available network inventory state.' \
   'Old cloudflare.env and network-inventory.env were NOT imported.' \
   'Create secrets/cloudflare_api_token and secrets/network_discord_webhook (empty allowed).' \
-  'Supply CF_AUTO_APPLY=false and nonsecret Cloudflare identifiers as Compose environment settings.' \
+  'Supply YGGFLARE_CLOUDFLARE_AUTO_APPLY=false and nonsecret Cloudflare identifiers as Compose environment settings.' \
   'Legacy jobs remain enabled. No Cloudflare API calls or Git changes performed.'
