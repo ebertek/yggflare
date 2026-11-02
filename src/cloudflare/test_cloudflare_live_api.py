@@ -161,8 +161,8 @@ class LiveIntegrationTests(unittest.TestCase):
             )
             settings = {
                 "account_id": ACCOUNT,
-                "ebi_zone": "ebi.nu",
-                "ygg_zone": "ygg.nu",
+                "external_zone": "ebi.nu",
+                "internal_zone": "ygg.nu",
                 "tunnel_name": "pleiades",
             }
             report = live.run_audit(FakeCloudflare(), root, settings, skip_docker=True)
@@ -217,8 +217,8 @@ class LiveIntegrationTests(unittest.TestCase):
             )
             settings = {
                 "account_id": ACCOUNT,
-                "ebi_zone": "ebi.nu",
-                "ygg_zone": "ygg.nu",
+                "external_zone": "ebi.nu",
+                "internal_zone": "ygg.nu",
                 "tunnel_name": "pleiades",
                 "static_dns_required": True,
             }
@@ -305,8 +305,8 @@ class LiveIntegrationTests(unittest.TestCase):
             )
             settings = {
                 "account_id": ACCOUNT,
-                "ebi_zone": "ebi.nu",
-                "ygg_zone": "ygg.nu",
+                "external_zone": "ebi.nu",
+                "internal_zone": "ygg.nu",
                 "tunnel_name": "pleiades",
                 "static_dns_required": True,
                 "static_dns_sync": True,
