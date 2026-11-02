@@ -1,7 +1,8 @@
 """Write-only Cloudflare API extension with a strict set of permitted methods.
 
-No delete, resource replacement, policy creation, or arbitrary HTTP request API
-is exposed. Every write is made through an explicitly scoped method.
+No arbitrary delete, resource replacement, policy creation, or HTTP request
+API is exposed. Exact-ID DNS and Access deletion is used only by the
+manual, fingerprint-approved orphan retirement workflow.
 """
 
 import json
