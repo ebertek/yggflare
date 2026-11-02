@@ -20,6 +20,7 @@ from cloudflare_api import CloudflareClient, CloudflareError, checked_id
 from cloudflare_credentials import api_token
 from cloudflare_desired import compose_inventory, discover
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
+from yggflare_config import domain
 from cloudflare_retained_dns import RETAINED, load_retained_dns
 from cloudflare_static_dns import (
     INVENTORY,
@@ -109,7 +110,7 @@ def run_audit(
             "Compose labels failed Access validation:\n" + "\n".join(errors)
         )
     if not desired:
-        raise ValueError("No managed ebi.nu hostnames found in Compose")
+        raise ValueError("No managed external-domain hostnames found in Compose")
 
     apps = hydrate_apps(client, account, client.list_applications(account))
     public_dns = client.list_dns(ebi)
@@ -121,7 +122,7 @@ def run_audit(
         collisions = sorted(
             hostname
             for hostname in static_hosts
-            if hostname.removesuffix(".ygg.nu") in docker_addresses
+            if hostname.removesuffix("." + domain("YGG_INTERNAL_DOMAIN")) in docker_addresses
         )
         if collisions:
             raise ValueError(
@@ -178,7 +179,7 @@ def run_audit(
         "Unmanaged Cloudflare resources and stopped containers are preserved",
         "Policy changes are suggestions, not automatically applied",
         "Static non-Docker DNS is managed only when static_dns_sync is enabled",
-        "Unaccounted ygg.nu DNS findings are review-only; never deleted automatically",
+        "Unaccounted internal-domain DNS findings are review-only; never deleted automatically",
         "Retained DNS declarations are read-only exact-type expectations",
     ]
     return report
@@ -202,7 +203,7 @@ def main():
     parser.add_argument(
         "--skip-docker",
         action="store_true",
-        help="Skip Docker and ygg.nu DNS inspection",
+        help="Skip Docker and internal-domain DNS inspection",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
