@@ -6,7 +6,7 @@ import re
 from yggflare_config import domain
 
 HOST = re.compile(
-    r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\\."
+    r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\."
     + re.escape(domain("YGG_EXTERNAL_DOMAIN"))
     + r"$"
 )
