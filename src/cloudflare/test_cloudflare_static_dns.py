@@ -104,7 +104,7 @@ class InventoryTests(unittest.TestCase):  # pylint: disable=too-many-public-meth
             "description": "Test appliance",
             "serial_number": "0x00124b003414bac3",
             "purchase_date": "2023-01-26",
-            "open_ports": [5000, 7000, 49152, 62078],
+            "ports": [{"port": p, "protocol": "tcp"} for p in (5000, 7000, 49152, 62078)],
         }
         expected = {HOST: ADDRESS}
         self.assertEqual(self.load(inventory([row])), expected)
@@ -133,25 +133,12 @@ class InventoryTests(unittest.TestCase):  # pylint: disable=too-many-public-meth
                 ):
                     self.load(inventory([row]))
 
-    def test_legacy_open_ports_validation(self):
-        """Old private GitOps files remain valid until explicitly migrated."""
-        for value in ("80", [0], [65536], [-1], [80, 80], [True], [80.0], [{}]):
-            with self.subTest(value=value):
-                row = {"hostname": HOST, "ipv4": ADDRESS, "open_ports": value}
-                with self.assertRaisesRegex(ValueError, "invalid legacy open_ports"):
-                    self.load(inventory([row]))
-        self.assertEqual(
-            self.load(
-                inventory([{"hostname": HOST, "ipv4": ADDRESS, "open_ports": [80]}])
-            ),
-            {HOST: ADDRESS},
-        )
-        self.assertEqual(
-            self.load(
-                inventory([{"hostname": HOST, "ipv4": ADDRESS, "open_ports": []}])
-            ),
-            {HOST: ADDRESS},
-        )
+    def test_legacy_open_ports_is_rejected(self):
+        """Fresh Yggflare inventory must use ports only."""
+        with self.assertRaisesRegex(ValueError, "unknown fields"):
+            self.load(inventory([{
+                "hostname": HOST, "ipv4": ADDRESS, "open_ports": [80],
+            }]))
 
     def test_protocol_aware_ports_and_aliases_are_private_metadata(self):
         """Aliases and port details never influence primary or companion DNS."""
@@ -212,17 +199,6 @@ class InventoryTests(unittest.TestCase):  # pylint: disable=too-many-public-meth
             with self.subTest(ports=ports):
                 row = {"hostname": HOST, "ipv4": ADDRESS, "ports": ports}
                 self.assertEqual(self.load(inventory([row])), {HOST: ADDRESS})
-
-    def test_ports_and_legacy_open_ports_are_mutually_exclusive(self):
-        """Prevent silently inconsistent old/new fields during migration."""
-        row = {
-            "hostname": HOST,
-            "ipv4": ADDRESS,
-            "open_ports": [80],
-            "ports": [{"port": 80, "protocol": "tcp"}],
-        }
-        with self.assertRaisesRegex(ValueError, "cannot combine"):
-            self.load(inventory([row]))
 
     def test_aliases_are_unique_single_label_ygg_nu_names(self):
         """Reject malformed aliases before any guarded DNS operations."""
