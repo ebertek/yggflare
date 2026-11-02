@@ -66,9 +66,7 @@ class FakeCloudflare:
         return copy.deepcopy(self.apps)
 
     def get_application(self, account, identifier):
-        return next(
-            copy.deepcopy(app) for app in self.apps if app["id"] == identifier
-        )
+        return next(copy.deepcopy(app) for app in self.apps if app["id"] == identifier)
 
     def list_dns(self, zone):
         return copy.deepcopy(self.dns)
@@ -102,9 +100,7 @@ class LifecycleTests(unittest.TestCase):
         self.client = FakeCloudflare()
 
     def claim(self):
-        with patch(
-            "cloudflare_orphans.desired_hosts", return_value={HOST: [POLICY]}
-        ):
+        with patch("cloudflare_orphans.desired_hosts", return_value={HOST: [POLICY]}):
             return claim(self.client, self.path, self.path, BOUND, HOST)
 
     def plan(self, desired=None):
@@ -112,17 +108,14 @@ class LifecycleTests(unittest.TestCase):
             "cloudflare_orphans.desired_hosts",
             return_value={} if desired is None else desired,
         ):
-            return review_orphan(
-                self.client, self.path, self.path, BOUND, HOST
-            )
+            return review_orphan(self.client, self.path, self.path, BOUND, HOST)
 
     def retire(self, fingerprint):
-        with patch(
-            "cloudflare_orphans.desired_hosts", return_value={}
-        ), patch.object(Path, "home", return_value=self.path):
-            return retire(
-                self.client, self.path, self.path, BOUND, HOST, fingerprint
-            )
+        with (
+            patch("cloudflare_orphans.desired_hosts", return_value={}),
+            patch.object(Path, "home", return_value=self.path),
+        ):
+            return retire(self.client, self.path, self.path, BOUND, HOST, fingerprint)
 
     def test_missing_registry_never_claims_existing_resources(self):
         registry = load_registry(self.path, BOUND)
@@ -199,15 +192,17 @@ class LifecycleTests(unittest.TestCase):
             self.client.events, ["delete_dns", "remove_ingress", "delete_access"]
         )
         self.assertEqual(self.client.config["warp-routing"], {"enabled": False})
-        self.assertEqual(self.client.config["ingress"][0]["hostname"], "unmanaged.ebi.nu")
-        self.assertEqual(self.client.config["ingress"][-1]["service"], "http_status:404")
+        self.assertEqual(
+            self.client.config["ingress"][0]["hostname"], "unmanaged.ebi.nu"
+        )
+        self.assertEqual(
+            self.client.config["ingress"][-1]["service"], "http_status:404"
+        )
         self.assertEqual(load_registry(self.path, BOUND)["hosts"], {})
 
     def test_refuse_cleanup_if_compose_reintroduces_host(self):
         self.claim()
-        with patch(
-            "cloudflare_orphans.desired_hosts", return_value={HOST: [POLICY]}
-        ):
+        with patch("cloudflare_orphans.desired_hosts", return_value={HOST: [POLICY]}):
             with self.assertRaises(OwnershipError):
                 review_orphan(self.client, self.path, self.path, BOUND, HOST)
 
