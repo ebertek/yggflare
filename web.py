@@ -10,9 +10,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from docker_inventory import address_key, snapshot
+
 CONFIG = Path(os.environ.get("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.environ.get("YGGFLARE_DATA", "/data"))
 NETWORK = ipaddress.ip_network(os.environ.get("YGGFLARE_LAN_CIDR", "10.4.20.0/23"))
+SOURCE = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
 MAX_BYTES = 4 * 1024 * 1024
 
 CSS = """
@@ -35,9 +38,18 @@ SCRIPT = """
 const filter=document.querySelector('#filter');
 const rows=[...document.querySelectorAll('tr[data-search]')];
 function update(){const q=(filter?.value||'').toLowerCase();for(const row of rows){row.hidden=!row.dataset.search.includes(q);}
-for(const group of document.querySelectorAll('tbody[data-group]')){group.hidden=!!q&&!group.querySelector('tr[data-search]:not([hidden])');}}
+for(const group of document.querySelectorAll('section[data-group]')){group.hidden=!!q&&!group.querySelector('tr[data-search]:not([hidden])');}}
 if(filter){filter.addEventListener('input',update);}
-for(const th of document.querySelectorAll('th[data-col]')){th.addEventListener('click',()=>{const index=+th.dataset.col;const table=th.closest('table');const body=table.querySelector('tbody[data-sortable]');if(!body)return;const sorted=[...body.querySelectorAll('tr[data-search]')].sort((a,b)=>a.cells[index].textContent.localeCompare(b.cells[index].textContent,undefined,{numeric:true}));body.replaceChildren(...sorted);});}
+function compareCells(a,b,index){
+const x=a.cells[index],y=b.cells[index];
+if(x.dataset.sort!==undefined&&y.dataset.sort!==undefined){return x.dataset.sort<y.dataset.sort?-1:x.dataset.sort>y.dataset.sort?1:0;}
+return x.textContent.localeCompare(y.textContent,undefined,{numeric:true});}
+for(const th of document.querySelectorAll('th[data-col]')){th.addEventListener('click',()=>{
+const index=+th.dataset.col;const table=th.closest('table');const body=table.querySelector('tbody[data-sortable]');if(!body)return;
+const direction=th.dataset.direction==='asc'?-1:1;
+for(const other of table.querySelectorAll('th')){delete other.dataset.direction;other.removeAttribute('aria-sort');}
+th.dataset.direction=direction===1?'asc':'desc';th.setAttribute('aria-sort',direction===1?'ascending':'descending');
+const sorted=[...body.querySelectorAll('tr[data-search]')].sort((a,b)=>direction*compareCells(a,b,index));body.replaceChildren(...sorted);});}
 """
 
 
@@ -51,7 +63,7 @@ def read_json(path):
 
 
 def model():
-    """Combine declared inventory with last scan; never refresh or mutate anything."""
+    """Combine static inventory, read-only Docker metadata and saved scans."""
     inventory = read_json(CONFIG / "static-hosts.json")
     state = read_json(DATA / "network-inventory" / "state.json")
     ownership = read_json(DATA / "managed-hosts.json")
@@ -89,6 +101,25 @@ def model():
                 "status": "seen" if observed else "not observed",
             }
         )
+    docker_hosts, warnings = snapshot(
+        SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", "")
+    )
+    for item in docker_hosts:
+        ip = item["ipv4"]
+        observed = state.get("hosts", {}).get(ip, {})
+        known.add(ip)
+        hosts.append(
+            {
+                **item,
+                "subnet": (
+                    str(ipaddress.ip_network(f"{ip}/27", strict=False))
+                    if ip
+                    else "Unassigned"
+                ),
+                "observed_ports": observed.get("ports", []),
+                "last_seen": state.get("scanned_at", "") if observed else "",
+            }
+        )
     for ip, observed in state.get("hosts", {}).items():
         if ip in known:
             continue
@@ -112,7 +143,8 @@ def model():
             }
         )
     return {
-        "hosts": hosts,
+        "hosts": sorted(hosts, key=lambda h: (address_key(h["ipv4"]), h["hostname"])),
+        "warnings": warnings,
         "services": state.get("advertisements", []),
         "scanned_at": state.get("scanned_at", ""),
         "managed_hosts": sorted(ownership.get("hosts", {}).keys()),
@@ -143,7 +175,13 @@ def table(headers, rows):
     )
     body = []
     for values in rows:
-        cells = "".join(f"<td>{escape(str(v))}</td>" for v in values)
+        cells = ""
+        for header, value in zip(headers, values):
+            attribute = ""
+            if header in ("IP", "IPv6"):
+                version, number, prefix = address_key(value)
+                attribute = f' data-sort="{version}:{number:039d}:{prefix:03d}"'
+            cells += f"<td{attribute}>{escape(str(value))}</td>"
         search = escape(" ".join(str(v) for v in values).lower(), quote=True)
         body.append(f'<tr data-search="{search}">{cells}</tr>')
     return f'<div class="scroll"><table><thead><tr>{head}</tr></thead><tbody data-sortable="1">{"".join(body)}</tbody></table></div>'
@@ -156,7 +194,7 @@ def render(tab, data):
         for item in data["hosts"]:
             groups.setdefault(item["subnet"], []).append(item)
         blocks = []
-        for group, hosts in sorted(groups.items(), key=lambda x: x[0]):
+        for group, hosts in sorted(groups.items(), key=lambda x: address_key(x[0])):
             rows = [
                 [
                     i["hostname"],
@@ -172,17 +210,19 @@ def render(tab, data):
                     ", ".join(i["ports"]),
                     i["status"],
                 ]
-                for i in sorted(hosts, key=lambda a: ipaddress.ip_address(a["ipv4"]))
+                for i in sorted(
+                    hosts, key=lambda a: (address_key(a["ipv4"]), a["hostname"])
+                )
             ]
             blocks.append(
-                f'<section class="card"><h2>{escape(group)} · {len(rows)} hosts</h2>'
+                f'<section class="card" data-group="1"><h2>{escape(group)} · {len(rows)} hosts</h2>'
                 + table(
                     [
                         "Host",
                         "MAC",
                         "IP",
                         "Comment",
-                        "CNAMEs",
+                        "Aliases / router names",
                         "IPv6",
                         "Ports",
                         "Status",
@@ -203,6 +243,10 @@ def render(tab, data):
                 i["ipv4"],
                 ", ".join(i["ports"]),
                 ", ".join(i["observed_ports"]),
+                "; ".join(
+                    f"{port}: {', '.join(sources)}"
+                    for port, sources in i.get("port_sources", {}).items()
+                ),
                 i["status"],
             ]
             for i in data["hosts"]
@@ -211,7 +255,17 @@ def render(tab, data):
         content = (
             search
             + '<section class="card"><h2>Declared vs observed ports</h2>'
-            + table(["Host", "IP", "Declared", "Observed", "Status"], rows)
+            + table(
+                [
+                    "Host",
+                    "IP",
+                    "Declared / inferred",
+                    "Observed",
+                    "Port evidence",
+                    "Status",
+                ],
+                rows,
+            )
             + "</section>"
         )
         content += (
@@ -227,7 +281,11 @@ def render(tab, data):
             + table(["Hostname", "Ownership"], rows)
             + "</section>"
         )
-    return page(tab, content)
+    notices = "".join(
+        f'<p class="muted">{escape(warning)}</p>'
+        for warning in data.get("warnings", [])
+    )
+    return page(tab, notices + content)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -261,11 +319,24 @@ class Handler(BaseHTTPRequestHandler):
                     "description",
                     "ipv6",
                     "subnet",
+                    "aliases",
+                    "ports",
+                    "observed_ports",
+                    "source",
                     "status",
                 )
                 writer.writerow(columns)
                 for host in data["hosts"]:
-                    writer.writerow([host.get(key, "") for key in columns])
+                    writer.writerow(
+                        [
+                            (
+                                ", ".join(host.get(key, []))
+                                if isinstance(host.get(key), list)
+                                else host.get(key, "")
+                            )
+                            for key in columns
+                        ]
+                    )
                 content = output.getvalue().encode()
                 mime = "text/csv; charset=utf-8"
             else:

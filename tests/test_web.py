@@ -1,6 +1,8 @@
 """Read-only web presentation and inventory integration tests."""
 
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +12,113 @@ import web
 
 
 class WebTests(unittest.TestCase):
+    def setUp(self):
+        mock = patch.object(web, "snapshot", return_value=([], []))
+        self.docker = mock.start()
+        self.addCleanup(mock.stop)
+
+    def test_docker_rows_replace_unmanaged_and_sort_all_surfaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "network-inventory").mkdir()
+            addresses = [
+                "10.4.21.100",
+                "10.4.21.10",
+                "10.4.21.99",
+                "10.4.21.9",
+                "10.4.21.224",
+                "10.4.21.32",
+            ]
+            (root / "network-inventory/state.json").write_text(
+                json.dumps({"hosts": {ip: {"ports": ["tcp/443"]} for ip in addresses}})
+            )
+            self.docker.return_value = (
+                [
+                    {
+                        "hostname": "docker-" + ip,
+                        "ipv4": ip,
+                        "ipv6": "fd00::1",
+                        "mac": "",
+                        "aliases": ["alias"],
+                        "ports": ["tcp/80"],
+                        "status": "docker running",
+                        "description": "Docker service",
+                        "source": "Compose",
+                    }
+                    for ip in addresses
+                ],
+                [],
+            )
+            with patch.object(web, "CONFIG", root), patch.object(web, "DATA", root):
+                data = web.model()
+            expected = [
+                "10.4.21.9",
+                "10.4.21.10",
+                "10.4.21.32",
+                "10.4.21.99",
+                "10.4.21.100",
+                "10.4.21.224",
+            ]
+            self.assertEqual([h["ipv4"] for h in data["hosts"]], expected)
+            self.assertTrue(all(h["status"] == "docker running" for h in data["hosts"]))
+            self.assertTrue(
+                all(h["observed_ports"] == ["tcp/443"] for h in data["hosts"])
+            )
+            html = web.render("inventory", data)
+            self.assertLess(html.index("10.4.21.32/27"), html.index("10.4.21.224/27"))
+            self.assertIn('data-sort="4:', html)
+            self.assertIn('data-sort="6:', html)
+            ports = web.render("ports", data)
+            self.assertLess(
+                ports.index("docker-10.4.21.9<"), ports.index("docker-10.4.21.10<")
+            )
+
+    def test_invalid_address_does_not_break_render(self):
+        data = {
+            "hosts": [
+                {
+                    "hostname": "host",
+                    "ipv4": "",
+                    "ipv6": "",
+                    "mac": "",
+                    "aliases": [],
+                    "ports": [],
+                    "subnet": "Unassigned",
+                    "description": "",
+                    "status": "docker declared",
+                }
+            ],
+            "scanned_at": "",
+        }
+        self.assertIn("Unassigned", web.render("inventory", data))
+
+    @unittest.skipUnless(shutil.which("node"), "Node required for browser-script test")
+    def test_browser_numeric_sort_and_direction_toggle(self):
+        script = (
+            """
+const assert = require('node:assert/strict');
+let current = [];
+const body = {querySelectorAll:()=>current, replaceChildren:(...rows)=>{current=rows;}};
+let click;
+const th = {dataset:{col:'0'},addEventListener:(event,fn)=>{click=fn;},closest:()=>table,removeAttribute:()=>{},setAttribute:()=>{}};
+const table = {querySelector:()=>body,querySelectorAll:()=>[th]};
+global.document = {querySelector:()=>null,querySelectorAll:(selector)=>selector==='th[data-col]'?[th]:[]};
+"""
+            + web.SCRIPT
+            + """
+function row(text,n){return {cells:[{textContent:text,dataset:{sort:'4:'+String(n).padStart(39,'0')+':032'}}]};}
+current=[row('10.4.21.100',100),row('10.4.21.10',10),row('10.4.21.9',9),row('10.4.21.99',99)];
+click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.9','10.4.21.10','10.4.21.99','10.4.21.100']);
+click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.100','10.4.21.99','10.4.21.10','10.4.21.9']);
+"""
+        )
+        subprocess.run([shutil.which("node"), "-e", script], check=True, timeout=10)
+
+    def test_invalid_ip_sort_attribute_cannot_inject_html(self):
+        html = web.table(["IP"], [['" onmouseover="alert(1)']])
+        self.assertNotIn(' onmouseover="', html)
+        self.assertIn("&quot;", html)
+
     def test_inventory_groups_and_escapes_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
