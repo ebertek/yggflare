@@ -1,7 +1,7 @@
 services:
   yggflare:
-    build: .
-    image: yggflare:local
+    image: ghcr.io/ebertek/yggflare:main
+    pull_policy: always
     container_name: yggflare
     restart: unless-stopped
     network_mode: host
