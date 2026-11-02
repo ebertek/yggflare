@@ -18,13 +18,13 @@ def declared_dns_names(static_aliases, compose_services, running):
     for service in compose_services:
         name = service.get("Name", "").rsplit("/", 1)[-1]
         if NAME.fullmatch(name):
-            owned.add(name + "." + domain("YGG_INTERNAL_DOMAIN"))
+            owned.add(name + "." + domain("YGGFLARE_INTERNAL_DOMAIN"))
         custom = service.get("ContainerName")
         if isinstance(custom, str) and NAME.fullmatch(custom):
-            owned.add(custom + "." + domain("YGG_INTERNAL_DOMAIN"))
+            owned.add(custom + "." + domain("YGGFLARE_INTERNAL_DOMAIN"))
     for name in running:
         if NAME.fullmatch(name):
-            owned.add(name + "." + domain("YGG_INTERNAL_DOMAIN"))
+            owned.add(name + "." + domain("YGGFLARE_INTERNAL_DOMAIN"))
     return owned
 
 
@@ -53,8 +53,8 @@ def audit_unaccounted_dns(records, static_hosts, declared_names, retained=None):
             continue
         name = name.lower().rstrip(".")
         if (
-            name == domain("YGG_INTERNAL_DOMAIN")
-            or not name.endswith("." + domain("YGG_INTERNAL_DOMAIN"))
+            name == domain("YGGFLARE_INTERNAL_DOMAIN")
+            or not name.endswith("." + domain("YGGFLARE_INTERNAL_DOMAIN"))
             or name in owned
         ):
             continue
@@ -100,7 +100,7 @@ def print_unaccounted_summary(report):
     declared = summary.get("retained", {})
     if declared.get("declared"):
         print(
-            f"Retained {domain('YGG_INTERNAL_DOMAIN')} DNS: {declared['present']}/"
+            f"Retained {domain('YGGFLARE_INTERNAL_DOMAIN')} DNS: {declared['present']}/"
             f"{declared['declared']} matching (review only; no writes)"
         )
         for expected in declared["missing"]:
@@ -111,7 +111,7 @@ def print_unaccounted_summary(report):
             )
     counts = summary["counts"]
     print(
-        f"Unaccounted {domain('YGG_INTERNAL_DOMAIN')} DNS: {counts['records']} records across "
+        f"Unaccounted {domain('YGGFLARE_INTERNAL_DOMAIN')} DNS: {counts['records']} records across "
         f"{counts['hostnames']} hostnames (review only; no deletions)"
     )
     for finding in summary["findings"]:
