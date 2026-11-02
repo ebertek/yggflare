@@ -7,16 +7,20 @@ import controller
 
 
 class ControllerTests(unittest.TestCase):
-    def test_missing_private_env_fails_closed(self):
-        with tempfile.TemporaryDirectory() as directory:
+    def test_cloudflare_requires_secret_file(self):
+        """Cloudflare cycle must fail closed without the token secret."""
+        with patch.dict("os.environ", {
+            "CF_AUTO_APPLY": "false",
+            "CLOUDFLARE_API_TOKEN_FILE": "/nonexistent/yggflare-token",
+        }):
             with self.assertRaises(FileNotFoundError):
-                controller.read_env(Path(directory) / "missing.env")
+                controller.cloudflare_run()
 
-    def test_explicit_false_auto_apply(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "cloudflare.env"
-            path.write_text("CF_AUTO_APPLY=false\n", encoding="utf-8")
-            self.assertEqual(controller.read_env(path)["CF_AUTO_APPLY"], "false")
+    def test_invalid_auto_apply_fails_closed(self):
+        """Only exact true or false values are accepted."""
+        with patch.dict("os.environ", {"CF_AUTO_APPLY": "yes"}):
+            with self.assertRaises(ValueError):
+                controller.cloudflare_run()
 
     def test_snapshot_does_not_write_source(self):
         with tempfile.TemporaryDirectory() as source, tempfile.TemporaryDirectory() as config:
