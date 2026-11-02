@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 CONFIG = Path(os.environ.get("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.environ.get("YGGFLARE_DATA", "/data"))
-NETWORK = ipaddress.ip_network(os.environ.get("YGG_LAN_CIDR", "10.4.20.0/23"))
+NETWORK = ipaddress.ip_network(os.environ.get("YGGFLARE_LAN_CIDR", "10.4.20.0/23"))
 MAX_BYTES = 4 * 1024 * 1024
 
 CSS = """
