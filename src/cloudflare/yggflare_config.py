@@ -32,6 +32,7 @@ def suffix(name):
 def in_domain(hostname, name):
     return isinstance(hostname, str) and hostname.lower().endswith(suffix(name))
 
+
 def boolean(name, default=False):
     """Require explicit true/false rather than Python truthiness."""
     value = os.environ.get(name, str(default).lower()).lower()
