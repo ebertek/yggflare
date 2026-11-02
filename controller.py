@@ -11,9 +11,12 @@ import time
 import threading
 from zoneinfo import ZoneInfo
 
+from backup import create_snapshot, prune_snapshots
+
 CONFIG = Path(os.getenv("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.getenv("YGGFLARE_DATA", "/data"))
 SOURCE = Path(os.getenv("YGGFLARE_SOURCE", "/compose-source"))
+BACKUP = Path(os.getenv("YGGFLARE_BACKUP", "/backup"))
 TZ = ZoneInfo(os.getenv("TZ", "Europe/Stockholm"))
 CLOUD_INTERVAL = dt.timedelta(hours=6)
 NETWORK_HOUR, NETWORK_MINUTE = 5, 15
@@ -131,6 +134,12 @@ def main():
     DATA.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     next_cloud = dt.datetime.now(dt.timezone.utc)
+    backup_marker = DATA / "backup-last-run.txt"
+    last_backup_day = (
+        backup_marker.read_text(encoding="utf-8").strip()
+        if backup_marker.exists()
+        else None
+    )
     network_marker = DATA / "network-last-run.txt"
     last_network_day = (
         network_marker.read_text(encoding="utf-8").strip()
@@ -146,6 +155,16 @@ def main():
                 print(f"ERROR Cloudflare cycle: {error}", file=sys.stderr, flush=True)
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
         local = dt.datetime.now(TZ)
+        if (local.hour, local.minute) >= (4, 0):
+            if last_backup_day != local.date().isoformat():
+                try:
+                    archive = create_snapshot(CONFIG, DATA, BACKUP)
+                    prune_snapshots(BACKUP)
+                    print(f"Local snapshot created: {archive.name}", flush=True)
+                    last_backup_day = local.date().isoformat()
+                    backup_marker.write_text(last_backup_day + "\n", encoding="utf-8")
+                except Exception as error:
+                    print(f"ERROR backup cycle: {error}", file=sys.stderr, flush=True)
         if (local.hour, local.minute) >= (NETWORK_HOUR, NETWORK_MINUTE):
             if last_network_day != local.date().isoformat():
                 try:
