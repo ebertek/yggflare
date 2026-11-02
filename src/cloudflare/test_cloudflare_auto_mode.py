@@ -22,7 +22,7 @@ class AutoOptInTests(unittest.TestCase):
 
     def test_explicit_true_allows_guarded_auto_path(self):
         """Only literal true authorizes --auto."""
-        with patch.dict(os.environ, {"CF_AUTO_APPLY": "true"}):
+        with patch.dict(os.environ, {"YGGFLARE_CLOUDFLARE_AUTO_APPLY": "true"}):
             MANAGE.require_auto_opt_in()
 
     def test_missing_false_or_malformed_opt_in_is_rejected(self):
@@ -30,7 +30,7 @@ class AutoOptInTests(unittest.TestCase):
         for value in (None, "", "false", "TRUE", "1", "enabled", "yes"):
             with self.subTest(value=value), patch.dict(os.environ, {}, clear=True):
                 if value is not None:
-                    os.environ["CF_AUTO_APPLY"] = value
+                    os.environ["YGGFLARE_CLOUDFLARE_AUTO_APPLY"] = value
                 with self.assertRaises(UnsafePlan):
                     MANAGE.require_auto_opt_in()
 
