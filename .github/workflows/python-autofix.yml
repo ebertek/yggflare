@@ -32,7 +32,7 @@ jobs:
       - name: Install formatters
         run: python -m pip install "ruff==0.14.14" "black==25.12.0"
       - name: Ruff safe fixes
-        run: ruff check --fix .
+        run: ruff check --fix --exit-zero .
       - name: Black formatting
         run: black .
       - name: Commit changes if any
@@ -48,5 +48,5 @@ jobs:
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "style: autofix Ruff and Black [skip ci]"
+          git commit -m "style: autofix Ruff and Black"
           git push origin "HEAD:${GITHUB_REF_NAME}"
