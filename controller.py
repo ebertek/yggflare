@@ -18,9 +18,9 @@ CONFIG = Path(os.getenv("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.getenv("YGGFLARE_DATA", "/data"))
 SOURCE = Path(os.getenv("YGGFLARE_SOURCE", "/compose-source"))
 BACKUP = Path(os.getenv("YGGFLARE_BACKUP", "/backup"))
-LOG_FORMAT = os.getenv("YGG_LOG_FORMAT", "text").lower()
+LOG_FORMAT = os.getenv("YGGFLARE_LOG_FORMAT", "text").lower()
 if LOG_FORMAT not in ("text", "json"):
-    raise ValueError("YGG_LOG_FORMAT must be text or json")
+    raise ValueError("YGGFLARE_LOG_FORMAT must be text or json")
 CLOUD_INTERVAL = dt.timedelta(hours=6)
 NETWORK_HOUR, NETWORK_MINUTE = 5, 15
 
@@ -105,9 +105,9 @@ def run(args, *, env=None):
 
 def cloudflare_run():
     """Run Cloudflare using environment configuration and mounted secrets."""
-    auto = os.environ.get("CF_AUTO_APPLY", "false")
+    auto = os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_APPLY", "false")
     if auto not in ("true", "false"):
-        raise ValueError("CF_AUTO_APPLY must be exactly true or false")
+        raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_APPLY must be exactly true or false")
     env = os.environ.copy()
     secret = Path(
         env.get("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
@@ -132,9 +132,9 @@ def cloudflare_run():
         if auto == "true":
             args.append("--auto")
         run(args, env=env)
-        if env.get("CF_AUTO_CLEANUP", "false") == "true":
+        if env.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true":
             if auto != "true":
-                raise ValueError("CF_AUTO_CLEANUP requires CF_AUTO_APPLY=true")
+                raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP requires YGGFLARE_CLOUDFLARE_AUTO_APPLY=true")
             run(
                 [
                     sys.executable,
@@ -147,7 +147,7 @@ def cloudflare_run():
 def network_run():
     """Read DNS-SD settings from environment and webhook from secret file."""
     env = os.environ.copy()
-    env.pop("YGG_NETWORK_DISCORD_WEBHOOK_URL", None)
+    env.pop("YGGFLARE_NETWORK_DISCORD_WEBHOOK_URL", None)
     run(
         [
             sys.executable,
