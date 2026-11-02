@@ -9,7 +9,7 @@ Standalone, always-running Cloudflare + LAN inventory controller for the Ygg hom
 - A single long-lived process schedules Cloudflare reconciliation every six hours.
 - Network inventory runs daily at 05:15 local time (Europe/Stockholm).
 - `CF_AUTO_APPLY` defaults to `false`; existing `cloudflare-manage.py --auto` guard remains the only automatic write path.
-- `/config` stores *unversioned* private JSON and `.env` files, `/data` stores audit state and locking files, `/backup` is a distinct backup destination.
+- `/config` stores *unversioned* private JSON and `.env` files, `/data` stores audit state and scheduling markers, and `/backup` stores local snapshots.
 - `/compose-source` is a **read-only mount** of the deployed merged GitOps checkout. The controller builds a read-only-to-itself *working snapshot* of Compose YAML with private inventory injected from `/config`.
 - The container needs host network access, host D-Bus for Avahi, and Docker inspection through the Docker socket. Mounting the Docker socket grants effective host-root privileges; review this risk before production.
 - The container initially runs as root to preserve Nmap/ARP behavior; hardening to scoped capabilities or a Docker API proxy is a follow-up.
@@ -34,7 +34,7 @@ Standalone, always-running Cloudflare + LAN inventory controller for the Ygg hom
 
 ## Backups
 
-For an initial manually-triggered snapshot, run `sudo ./scripts/backup.sh /home/docker/yggflare`. Schedule this script with your host backup system (for example, Komodo or the existing off-host backup job), **replicate archives off-host**, and test restoration before cutover. The scaffold does not yet install a schedule or guarantee backups happen automatically.
+The controller creates **daily snapshots at 04:00 Europe/Stockholm**, containing the `/config` and `/data` volumes. Archives have mode 0600 and are kept for 14 local snapshots. Backups are **plaintext**, and `/backup` must reside on protected persistent storage. Schedule off-host replication using an existing backup system, and test restoration before cutover. A manual host-side snapshot is also available with `sudo ./scripts/backup.sh /home/docker/yggflare`.
 
 ## Verification status
 
