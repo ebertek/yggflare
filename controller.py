@@ -84,7 +84,7 @@ def run(args, *, env=None):
     ) as process:
         assert process.stdout is not None
         for line in process.stdout:
-            log("info", component, line.rstrip("\\n"))
+            log("info", component, line.rstrip("\n"))
         try:
             exit_code = process.wait(timeout=3300)
         except subprocess.TimeoutExpired as error:
@@ -99,7 +99,7 @@ def run(args, *, env=None):
     )
     if exit_code:
         raise RuntimeError(f"Command exited {exit_code}: {args[1]}")
-    return completed.returncode
+    return exit_code
 
 
 def cloudflare_run():
