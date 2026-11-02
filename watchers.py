@@ -177,17 +177,17 @@ def watch_docker(changes, log):
 def start(source, config, log):
     """Start optional watchers without blocking the scheduler."""
     changes = Changes()
-    interval = seconds("YGG_WATCH_POLL_SECONDS", 15, 5, 300)
-    debounce = seconds("YGG_WATCH_DEBOUNCE_SECONDS", 20, 5, 300)
-    cooldown = seconds("YGG_WATCH_COOLDOWN_SECONDS", 60, 0, 3600)
-    if enabled("YGG_WATCH_COMPOSE"):
+    interval = seconds("YGGFLARE_WATCH_POLL_SECONDS", 15, 5, 300)
+    debounce = seconds("YGGFLARE_WATCH_DEBOUNCE_SECONDS", 20, 5, 300)
+    cooldown = seconds("YGGFLARE_WATCH_COOLDOWN_SECONDS", 60, 0, 3600)
+    if enabled("YGGFLARE_WATCH_COMPOSE"):
         threading.Thread(
             target=watch_files,
             args=(Path(source), Path(config), changes, interval, log),
             name="compose-watcher",
             daemon=True,
         ).start()
-    if enabled("YGG_WATCH_DOCKER"):
+    if enabled("YGGFLARE_WATCH_DOCKER"):
         threading.Thread(
             target=watch_docker,
             args=(changes, log),
