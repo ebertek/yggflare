@@ -176,10 +176,10 @@ def main():
             if last_network_day != current_utc.date().isoformat():
                 try:
                     network_run()
-                except Exception as error:
-                    log("error", "network", f"Cycle failed: {error}")
                     last_network_day = current_utc.date().isoformat()
                     network_marker.write_text(last_network_day + "\n", encoding="utf-8")
+                except Exception as error:
+                    log("error", "network", f"Cycle failed: {error}")
         time.sleep(20)
 
 
