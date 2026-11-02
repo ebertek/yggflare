@@ -17,18 +17,24 @@ class WebTests(unittest.TestCase):
             state = root / "data"
             (state / "network-inventory").mkdir(parents=True)
             config.mkdir()
-            inventory = {"version": 1, "hosts": [{
-                "hostname": "test.ygg.nu", "ipv4": "10.4.20.34",
-                "mac": "aa:bb:cc:dd:ee:ff",
-                "notes": "<script>alert(1)</script>",
-                "ports": [{"protocol": "tcp", "port": 443}],
-            }]}
+            inventory = {
+                "version": 1,
+                "hosts": [
+                    {
+                        "hostname": "test.ygg.nu",
+                        "ipv4": "10.4.20.34",
+                        "mac": "aa:bb:cc:dd:ee:ff",
+                        "notes": "<script>alert(1)</script>",
+                        "ports": [{"protocol": "tcp", "port": 443}],
+                    }
+                ],
+            }
             (config / "static-hosts.json").write_text(json.dumps(inventory))
             observed = {
                 "scanned_at": "2026-11-02T18:00:00Z",
-                "hosts": {"10.4.20.34": {
-                    "mac": "aa:bb:cc:dd:ee:ff", "ports": ["tcp/443"]
-                }},
+                "hosts": {
+                    "10.4.20.34": {"mac": "aa:bb:cc:dd:ee:ff", "ports": ["tcp/443"]}
+                },
                 "advertisements": ["example.local|_http._tcp|80"],
             }
             (state / "network-inventory/state.json").write_text(json.dumps(observed))
