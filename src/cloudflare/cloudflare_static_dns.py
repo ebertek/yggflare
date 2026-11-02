@@ -49,10 +49,7 @@ def validate_metadata(entry, hostname):
 
 
 def validate_ports(entry, hostname):
-    """Validate protocol-aware port metadata; accept legacy integers only."""
-    if "ports" in entry and "open_ports" in entry:
-        raise ValueError(f"{hostname}: cannot combine ports with legacy open_ports")
-
+    """Validate protocol-aware port metadata; reject legacy fields."""
     if "ports" in entry:
         ports = entry["ports"]
         if not isinstance(ports, list):
@@ -90,19 +87,6 @@ def validate_ports(entry, hostname):
                 raise ValueError(f"{hostname}: duplicate port/protocol pair")
             seen.add(key)
         return
-
-    old = entry.get("open_ports")
-    if old is not None and (
-        not isinstance(old, list)
-        or any(
-            not isinstance(port, int)
-            or isinstance(port, bool)
-            or not 1 <= port <= 65535
-            for port in old
-        )
-        or len(set(old)) != len(old)
-    ):
-        raise ValueError(f"{hostname}: invalid legacy open_ports")
 
 
 def validate_aliases(entry, hostname):
@@ -163,7 +147,6 @@ def validated_entry(entry, index):
         "description",
         "serial_number",
         "purchase_date",
-        "open_ports",  # Deprecated; accepted until the private source migrates.
         "ports",
         "aliases",
         "additional_ipv4",
