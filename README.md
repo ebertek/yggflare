@@ -1,112 +1,107 @@
-# yggflare — staged migration starter
+# Yggflare
 
-Standalone, always-running Cloudflare + LAN inventory controller for the Ygg homelab.
+Yggflare is a containerized Cloudflare and local network inventory controller. It reconciles Cloudflare Access applications, Tunnel routes and DNS against Compose definitions and JSON device inventories, and audits local network devices and exposed services.
 
-**Status:** migration scaffold in `ebertek/yggflare`, not a production-ready cutover. The old Komodo jobs must remain enabled during shadow-mode validation.
+## How it works
 
-## Architecture
+- Audits Cloudflare every six hours; writes are disabled by default (`CF_AUTO_APPLY=false`).
+- Audits LAN devices and services daily at **05:15 UTC**.
+- Creates a local backup daily at **04:00 UTC**, retaining 14 snapshots.
+- Uses **UTC** for scheduling and log timestamps.
+- Provides a Docker health check based on an independently refreshed heartbeat.
+- Reads Compose definitions from `/compose-source` without modifying them. Private device inventories are supplied through `/config`. All mutable state stays in `/data`, and archives in `/backup`.
 
-- A single long-lived process schedules Cloudflare reconciliation every six hours.
-- Network inventory runs daily at 05:15 UTC.
-- `CF_AUTO_APPLY` defaults to `false`; existing `cloudflare-manage.py --auto` guard remains the only automatic write path.
-- `/config` stores *unversioned* private JSON inventory and settings files, `/data` stores audit state and scheduling markers, and `/backup` stores local snapshots.
-- `/compose-source` is a **read-only mount** of the deployed merged GitOps checkout. The controller builds a read-only-to-itself *working snapshot* of Compose YAML with private inventory injected from `/config`.
-- The container needs host network access, host D-Bus for Avahi, and Docker inspection through the Docker socket. Mounting the Docker socket grants effective host-root privileges; review this risk before production.
-- The container initially runs as root to preserve Nmap/ARP behavior; hardening to scoped capabilities or a Docker API proxy is a follow-up.
+Yggflare runs on a host network and accesses Docker through `/var/run/docker.sock` for container inventory. **Docker socket access is effectively host-root access.** Nmap and Avahi access may require elevated privileges. Restrict who can configure or run this container.
 
-## Prepare source
+## Deployment
 
-1. The legacy controller and network-audit modules are now imported under `src/cloudflare` and `src/network-inventory`; the deployment must use this version-controlled source, not copy from the runtime checkout.
-2. Run the Cloudflare and network inventory tests, then build the Docker image. No legacy source import is needed.
-3. Migrate configuration with `sudo ./scripts/migrate-config.sh /home/docker/ygg-compose /home/docker/yggflare` (copy only; DOES NOT modify either Git repository).
-4. Supply Compose interpolation values using exported host environment variables or Komodo's environment configuration; do not create a `.env` file. Configure `CF_AUTO_APPLY=false` as a container environment value while shadow-testing.
-5. Start shadow mode: `docker compose up -d`, inspect `docker compose logs -f`, and compare reports with the existing Komodo actions. Avoid concurrent auto writers.
-6. Only after tests, parity, and backup restore drills, disable the legacy Komodo Cloudflare and inventory schedules, enable unattended writes by setting the Compose environment variable `CF_AUTO_APPLY=true` after disabling the old writer.
+The [Compose file](compose.yaml) pulls the prebuilt image from GHCR. Set Compose interpolation variables in your deployment environment, and create the two secret files under `${YGGFLARE_HOME}/secrets/`.
 
-## Portable network layout
+Example shell setup, using illustrative network addresses and domains:
 
-All managed IP ranges and both DNS zones are set with Compose environment variables. No subnet or DNS zone is the application's default. Startup fails if a required value is missing or invalid. Example configuration for the original deployment (adjust for your own environment):
-
-| Variable | Example | Role |
-|---|---|---|
-| `YGG_LAN_CIDR` | `10.4.20.0/23` | Total network inventory scan scope |
-| `YGG_DEVICES_CIDR` | `10.4.20.0/24` | Eligible static device A records |
-| `YGG_DOCKER_CIDR` | `10.4.21.0/24` | Docker container A records |
-| `YGG_INTERNAL_DOMAIN` | `ygg.nu` | Internal DNS zone |
-| `YGG_EXTERNAL_DOMAIN` | `ebi.nu` | External Cloudflare Access/Tunnel hostnames |
-
-Tests explicitly set these values as fixture data. Cloudflare settings are provided exclusively through environment variables.
-
-## Runtime configuration
-
-There are **no application dotenv files** in Yggflare.
-
-- **Compose environment (nonsecret):** `YGG_LAN_CIDR`, `YGG_DEVICES_CIDR`, `YGG_DOCKER_CIDR`, `YGG_INTERNAL_DOMAIN`, `YGG_EXTERNAL_DOMAIN`, `CF_AUTO_APPLY=false` (default), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ID`, `CLOUDFLARE_EXTERNAL_ZONE_ID`, `CLOUDFLARE_INTERNAL_ZONE_ID`, `YGG_LOG_FORMAT`, `YGGFLARE_HOME`, and `YGG_MERGED_ROOT`. Set them through Komodo or exported environment variables when running Compose. All identifiers and switches are provided through environment variables.
-- **Compose secrets:** `secrets/cloudflare_api_token` and `secrets/network_discord_webhook` on the host, mounted as `/run/secrets/cloudflare_api_token` and `/run/secrets/network_discord_webhook`. The Discord webhook is optional in behavior, but the Compose file expects the secret file to exist; create an empty file if unused. Never store either secret in a Compose environment value.
-- **Persistent JSON:** `config/static-hosts.json`, `config/retained-dns.json`, and optional reserved/retired device records.
-- **Inventory schema:** use only `ports: [{"protocol":"tcp","port":443}]`; legacy `open_ports` is deliberately rejected by both Cloudflare inventory validation and the network auditor. Convert old inventory before starting the container.
-
-For example, provide host configuration through Komodo or exported variables before `docker compose up -d`:
-
-```bash
-export YGGFLARE_HOME=/home/docker/yggflare
-export YGG_MERGED_ROOT=/home/docker/ygg-compose
+```sh
+export YGGFLARE_HOME=/srv/yggflare
+export YGG_MERGED_ROOT=/srv/compose
+export YGG_LAN_CIDR=192.168.40.0/23
+export YGG_DEVICES_CIDR=192.168.40.0/24
+export YGG_DOCKER_CIDR=192.168.41.0/24
+export YGG_INTERNAL_DOMAIN=home.example.net
+export YGG_EXTERNAL_DOMAIN=services.example.net
+export CLOUDFLARE_ACCOUNT_ID=YOUR_ACCOUNT_ID
+export CLOUDFLARE_TUNNEL_NAME=YOUR_TUNNEL_NAME
 export CF_AUTO_APPLY=false
-export YGG_LAN_CIDR=10.4.20.0/23
-export YGG_DEVICES_CIDR=10.4.20.0/24
-export YGG_DOCKER_CIDR=10.4.21.0/24
-export YGG_INTERNAL_DOMAIN=ygg.nu
-export YGG_EXTERNAL_DOMAIN=ebi.nu
+export YGGFLARE_VERSION=main
+
+docker compose config --quiet
+docker compose pull
 docker compose up -d
 ```
 
-The migration helper **copies JSON and state only**, never imports the legacy `cloudflare.env` or `network-inventory.env`. Create secret files separately from secure original values and supply nonsecret identifiers in your deployment configuration.
+The example domains and ranges are not built-in defaults. Yggflare validates the configured domains and network ranges.
 
-## Important cutover safeguards
+### Environment variables
 
-- Back up `/config`, `/data`, and the Compose secrets to **separate durable storage**. The included snapshot script produces **plaintext** archives; store and replicate them securely. Never expose archives through web.
-- Historical Git commits may still contain retired secrets. Review repository history and rotate credentials when appropriate.
-- Do not remove files from `ebertek-compose-secrets` until the new service has been proven stable, ownership/backup is established, and you are ready to remove old readers.
-- Never edit tracked files under `/home/docker/ygg-compose`; source changes go to `ebertek-compose` and private changes to `ebertek-compose-secrets`.
-- Existing controller performs Docker socket inspection, and fails closed if desired Compose data is absent. Do not use `--skip-docker` as a production workaround.
-- Initial scaffold has no externally exposed metrics or HTTP UI. Add health endpoints only when hardened and tested.
+| Variable | Purpose |
+|---|---|
+| `YGGFLARE_VERSION` | GHCR tag to pull; `main` tracks development until a versioned release is available |
+| `YGGFLARE_HOME` | Host directory for config, state, backups and secrets |
+| `YGG_MERGED_ROOT` | Read-only host directory containing Compose source files |
+| `YGG_LAN_CIDR` | Network inventory scan scope |
+| `YGG_DEVICES_CIDR` | IPv4 subnet allowed for static device DNS |
+| `YGG_DOCKER_CIDR` | IPv4 subnet used to identify Docker services |
+| `YGG_INTERNAL_DOMAIN` | Internal DNS zone |
+| `YGG_EXTERNAL_DOMAIN` | External Cloudflare Access/Tunnel DNS zone |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_TUNNEL_NAME` / `CLOUDFLARE_TUNNEL_ID` | Select Tunnel by name or ID |
+| `CLOUDFLARE_INTERNAL_ZONE_ID` / `CLOUDFLARE_EXTERNAL_ZONE_ID` | Optional zone IDs; otherwise resolved by DNS name |
+| `CLOUDFLARE_STATIC_DNS_REQUIRED` | Require the static-host inventory; default `true` |
+| `CLOUDFLARE_STATIC_DNS_SYNC` | Include static DNS actions in reconciliation planning; default `false` |
+| `CF_AUTO_APPLY` | Enable unattended Cloudflare writes; default `false` |
+| `YGG_LOG_FORMAT` | `text` (default) or newline-delimited `json` |
+| `TZ` | UTC in the supplied Compose definition |
 
-## Backups
+Compose also sets in-container paths for `YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP` and `YGGFLARE_SOURCE`.
 
-The controller creates **daily snapshots at 04:00 Europe/Stockholm**, containing `/config`, `/data`, and the mounted Compose secrets. Archives have mode 0600 and are kept for 14 local snapshots. Backups are **plaintext**, and `/backup` must reside on protected persistent storage. Schedule off-host replication using an existing backup system, and test restoration before cutover. A manual host-side snapshot is also available with `sudo ./scripts/backup.sh /home/docker/yggflare`.
+### Secrets and data
 
-## Verification status
+| Path | Purpose |
+|---|---|
+| `secrets/cloudflare_api_token` | Cloudflare API credential, mounted as a Compose secret |
+| `secrets/network_discord_webhook` | Optional Discord webhook; an empty file disables notifications |
+| `config/static-hosts.json` | Private device inventory and DNS declaration |
+| `config/retained-dns.json` | DNS entries intentionally retained outside normal inventory |
+| `data/` | Audit observations, scheduling markers and heartbeat |
+| `backup/` | Daily backup archives |
 
-The imported source and new regression tests are in GitHub; the combined CI and Docker build results are not yet verified. Full Cloudflare API parity, Docker build, Nmap/Avahi behavior, and backup/restore have **not** been verified against the live Pleiades environment. Do not enable unattended writes before those checks.
+Do not publish secret files, `/data`, or backup archives. Backups can contain **plaintext credentials**; protect them, replicate them off-host and periodically test restoration. The `ports` inventory field uses structured entries such as `{"protocol":"tcp","port":443,"description":"HTTPS"}`.
 
-## Python quality automation
+## Logging and observability
 
-- [Lint](.github/workflows/lint.yml) runs Ruff checks, Black formatting checks, and Python compilation on pull requests and pushes to `main`.
-- [Python autofix](.github/workflows/python-autofix.yml) runs on non-`main` branches within this repository, applying Ruff safe fixes followed by Black and committing the result when files change. Forked PRs never receive write credentials.
-- Both workflows pin formatter versions. Run locally with:
-  ```sh
-  python -m pip install "ruff==0.14.14" "black==25.12.0"
-  ruff check --fix .
-  black .
-  ruff check .
-  black --check .
-  ```
-- The imported source may need an initial formatting pass to make the new checks green. Branch autofix does not rewrite `main` automatically.
+Set `YGG_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGG_LOG_FORMAT=json` for JSON lines with UTC `timestamp`, `level`, `component` and `message`. JSON lines can be parsed and indexed in Grafana Loki using an agent such as Grafana Alloy. The container writes to stdout and stderr; it does not require a separate log file.
 
-## Cloudflare configuration (environment-only)
+Use `docker compose logs -f yggflare` to inspect the controller and `docker inspect yggflare --format '{{.State.Health.Status}}'` to check health.
 
-The former JSON settings file is obsolete. Set:
-- `CLOUDFLARE_ACCOUNT_ID` (required).
-- `CLOUDFLARE_TUNNEL_NAME` or `CLOUDFLARE_TUNNEL_ID` (at least one).
-- `YGG_EXTERNAL_DOMAIN`, `YGG_INTERNAL_DOMAIN` (required).
-- `CLOUDFLARE_EXTERNAL_ZONE_ID`, `CLOUDFLARE_INTERNAL_ZONE_ID` (optional explicit IDs; zone names are resolved from the domain variables otherwise).
-- `CLOUDFLARE_STATIC_DNS_REQUIRED=true` and `CLOUDFLARE_STATIC_DNS_SYNC=false` (strict boolean values; auto-write disabled by default).
-- `CF_AUTO_APPLY=false` until after parity validation and legacy writer shutdown.
+## Image versions and releases
 
-Credential tokens and webhooks remain in Compose secrets, never environment variables. Existing private JSON inventories are still stored in `/config`; only the *settings* JSON is removed.
+Published images are available at `ghcr.io/ebertek/yggflare`.
 
-## Logging
+- `:main` tracks the continuously tested development branch. It is **not** a stable release tag.
+- `:sha-<full-commit-sha>` identifies an exact build.
+- `:vMAJOR.MINOR.PATCH` is produced when a matching Git tag is pushed, such as `:v1.0.0`.
+- No `:latest` alias is published by this workflow.
 
-`YGG_LOG_FORMAT=text` (default) emits UTC timestamped, component-labelled readable lines. `YGG_LOG_FORMAT=json` emits one JSON object per line for Loki/Alloy/Promtail with `timestamp` (UTC RFC3339), `level`, `component`, `message`, and optional event fields. All child-process output is re-emitted by the controller in the chosen format. This does not change Docker's logging driver.
+Releases follow [Semantic Versioning](https://semver.org/): use `v1.0.0` for the first verified release, `v1.0.1` for compatible bug fixes and `v1.1.0` for backward-compatible features. The leading `v` denotes the Git/image tag; the semantic version is `1.0.0`. Prefer a pinned release tag (or digest) for deployed services:
 
-Scheduling always uses UTC: backup at 04:00 UTC, LAN audit at 05:15 UTC, Cloudflare every six hours. These are fixed UTC times and no longer follow daylight saving time.
+```sh
+export YGGFLARE_VERSION=v1.0.0
+docker compose pull
+docker compose up -d --no-build
+```
+
+**The first stable release tag has not been created.** The `v1.0.0` examples document the future deployment workflow; the actual release requires complete parity validation first.
+
+## Validation
+
+The repository includes Cloudflare, network-audit and controller unit tests; the CI workflow executes them and builds the image. Ruff and Black enforce Python style. The [publish workflow](.github/workflows/publish.yml) requires tests and lint to pass before uploading images.
+
+Cloudflare auditing can be verified by confirming zero proposed operations and zero unintended static DNS drift with `CF_AUTO_APPLY=false`. Before enabling unattended writes, independently validate write-path safeguards, network inventory alerts, persistence and backup recovery. Avoid running multiple automatic Cloudflare writers at the same time.
