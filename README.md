@@ -82,6 +82,26 @@ Compose also sets in-container paths for `YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YG
 
 Do not publish secret files, `/data`, or backup archives. Backups can contain **plaintext credentials**; protect them, replicate them off-host and periodically test restoration. The `ports` inventory field uses structured entries such as `{"protocol":"tcp","port":443,"description":"HTTPS"}`.
 
+## Read-only inventory web interface
+
+Yggflare includes an optional, **disabled-by-default** inventory interface inspired by a spreadsheet-style LAN /27 worksheet. It reads the existing private JSON inventory and the last saved Nmap/DNS-SD scan; it does **not** initiate scans, call Cloudflare, or offer mutation endpoints.
+
+```yaml
+environment:
+  YGGFLARE_WEB_ENABLED: "true"
+  YGGFLARE_WEB_BIND: "127.0.0.1"
+  YGGFLARE_WEB_PORT: "8787"
+```
+
+When enabled, browse `http://127.0.0.1:8787/inventory` **from the Docker host**. The default bind is loopback and the container uses host networking. The interface provides:
+
+- `/inventory`: searchable, sortable inventory tables grouped by /27, with declared and observed status
+- `/ports`: declared/observed TCP/UDP ports and the latest DNS-SD advertisements
+- `/cloudflare`: **ownership registry snapshot**, not a real-time Cloudflare API audit
+- `/api/inventory.json` and `/api/inventory.csv`: read-only exports
+
+The UI intentionally omits Cloudflare credentials, Discord URLs, and private config files. It does not replace `yggflare cloudflare audit` for live drift/orphan counts. **There is no built-in authentication.** Keep it on loopback, use an authenticated tunnel or reverse proxy for remote access, and never expose the HTTP port directly to the public Internet. To serve on the host network instead, explicitly set `YGGFLARE_WEB_BIND=0.0.0.0` and enforce firewall/authentication upstream.
+
 ## Logging and observability
 
 Set `YGG_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGG_LOG_FORMAT=json` for JSON lines with UTC `timestamp`, `level`, `component` and `message`. JSON lines can be parsed and indexed in Grafana Loki using an agent such as Grafana Alloy. The container writes to stdout and stderr; it does not require a separate log file.
