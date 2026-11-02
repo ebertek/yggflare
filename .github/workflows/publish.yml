@@ -20,7 +20,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: ghcr-publish-${{ github.ref }}
+  group: ghcr-publish
   cancel-in-progress: false
 
 jobs:
