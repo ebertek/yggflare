@@ -34,8 +34,7 @@ class FingerprintTests(unittest.TestCase):
             retained.unlink()
             self.assertEqual(modified, fingerprint(source, config))
             compose.unlink()
-            with self.assertRaises(FileNotFoundError):
-                fingerprint(source, config)
+            self.assertNotEqual(modified, fingerprint(source, config))
 
     def test_private_inventory_update_detected(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -50,8 +49,7 @@ class FingerprintTests(unittest.TestCase):
             inventory.write_text('{"hosts":[]}', encoding="utf-8")
             self.assertNotEqual(original, fingerprint(source, config))
             inventory.unlink()
-            with self.assertRaises(FileNotFoundError):
-                fingerprint(source, config)
+            self.assertNotEqual(original, fingerprint(source, config))
 
 
 class ChangeTests(unittest.TestCase):
