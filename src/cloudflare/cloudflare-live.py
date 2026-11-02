@@ -20,7 +20,6 @@ from cloudflare_api import CloudflareClient, CloudflareError, checked_id
 from cloudflare_credentials import api_token
 from cloudflare_desired import compose_inventory, discover
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
-from yggflare_config import domain
 from cloudflare_retained_dns import RETAINED, load_retained_dns
 from cloudflare_static_dns import (
     INVENTORY,
@@ -34,6 +33,7 @@ from cloudflare_unaccounted_dns import (
     declared_dns_names,
     print_unaccounted_summary,
 )
+from yggflare_config import domain
 
 CONTAINER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -122,7 +122,8 @@ def run_audit(
         collisions = sorted(
             hostname
             for hostname in static_hosts
-            if hostname.removesuffix("." + domain("YGG_INTERNAL_DOMAIN")) in docker_addresses
+            if hostname.removesuffix("." + domain("YGG_INTERNAL_DOMAIN"))
+            in docker_addresses
         )
         if collisions:
             raise ValueError(
