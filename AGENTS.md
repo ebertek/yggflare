@@ -26,21 +26,25 @@ Yggflare is a Python 3.15 containerized controller for Cloudflare Access applica
 | `src/network-inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
 | `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
 | `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
-| `web.py` | Optional read-only local HTTP inventory UI, once its feature PR is merged |
+| `web.py` | Optional read-only HTTP inventory UI; inventory, ports/DNS-SD, ownership, CSV/JSON exports |
 | `tests/`, `src/cloudflare/test_*.py`, `src/network-inventory/test_*.py` | Regression tests |
 
-Some paths above may exist only in an open PR. Check `main` and merged state rather than assuming they have shipped.
+The inventory UI and automatic cleanup modules have landed on `main`. Check actual runtime deployment independently.
 
 ## Non-negotiable safety invariants
 
 1. Never mutate `/compose-source` or the deployed GitOps checkout. Snapshots must be temporary and private; inventory state lives under `/data`.
 2. Never create or delete Cloudflare resources from a mere string match or from an untrusted API field. Validate account, zone, tunnel, hostname, object IDs, policies, duplicate resources, and the latest Compose source.
-3. `CF_AUTO_APPLY` enables only explicitly guarded, bounded reconciliation. The separate orphan cleanup option is **off by default**. Do not treat an unmanaged Cloudflare resource as Yggflare-owned.
+3. `YGGFLARE_CLOUDFLARE_AUTO_APPLY` enables guarded, bounded reconciliation. `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP` is an independent deletion opt-in (default off; **enabled in the current `ebertek-compose` deployment source**) with `YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS=24`. Never treat an unmanaged Cloudflare resource as Yggflare-owned.
 4. Ownership must be proven and persisted before any cleanup. Manual retirement uses a plan fingerprint and deletes **external DNS → Tunnel route → Access app**; leave Access protection until its route and DNS are gone. Preserve unrelated ingress routes. Recover safely after partial errors.
 5. Never enable new external-facing listeners by default. A web UI must remain read-only and loopback-only unless protected by an authenticated reverse proxy/Access policy. Do not expose secret contents or unauthenticated operational actions.
 6. Network scanning is bounded by configured LAN CIDRs. Avoid turning scan results into authoritative DNS changes automatically.
 7. Discord webhook URLs and Cloudflare tokens are secrets. No credential values in exceptions, test output or logs.
 8. Archive restoration tests operate only on private temporary storage; never overwrite production config, state or secrets. Block traversal, symlinks, hardlinks and extraction bombs.
+
+## Environment variable convention
+
+Use `YGGFLARE_*` for all Yggflare configuration (inventory, watch, logging, web, controller paths, Cloudflare apply and orphan cleanup). Reserve `CLOUDFLARE_*` for actual Cloudflare API credentials and identity/resource settings. **Do not reintroduce `YGG_*` or `CF_*` aliases.** Update both `ebertek/yggflare` and `ebertek/ebertek-compose` when configuration changes, with compatible image and Compose released together.
 
 ## Build, test and release
 
@@ -72,8 +76,9 @@ docker exec yggflare yggflare network discord-test
 ## Current roadmap (verify on GitHub)
 
 - **v1.0.0** was published November 2026 following live verification of Cloudflare lifecycle, 14/14 doctor checks, inventory scan, Discord delivery and isolated archive restore-test.
-- Automatic orphan retirement with a minimum 24-hour grace period was developed in PR **#24**; verify merge and actual opt-in before claiming it operates in production.
-- A read-only, spreadsheet-style inventory web UI, grouped by /27 with search/ports/DNS-SD/local ownership and CSV/JSON export, is being developed in PR **#25**. It is disabled by default. Check CI/Lint and merge status; do not assume a production endpoint exists.
+- Orphan cleanup (PR **#24**), read-only inventory UI (PR **#25**) and standardized environment naming without legacy aliases (PR **#27**) were merged. Companion `ebertek-compose` PRs **#229** and **#232** were also merged. Source merge is not proof that the latest runtime deployment or a specific endpoint has been verified.
+- Environment configuration has **two namespaces only**: `YGGFLARE_*` for Yggflare app features and Cloudflare behavior, and `CLOUDFLARE_*` for connection/account/zone/tunnel settings. Old `YGG_*` and `CF_*` names are unsupported. The companion Compose migration pins a matching image digest to prevent mixed-version deployments.
+- Deployment source enables `YGGFLARE_WEB_ENABLED=true`, `YGGFLARE_WEB_BIND=0.0.0.0`, and `YGGFLARE_WEB_PORT=8787`. Docker `network_mode: host` uses Traefik's explicit backend `http://10.4.21.1:8787`; `Scripts/startup/30-macvlan-host.sh` in `ebertek-compose` creates the Pleiades host-side macvlan shim `macvlan1-host` at `10.4.21.1/32`, enabling Traefik on `10.4.21.44` to reach the host. Cloudflare Access protects `yggflare.ebi.nu` but **does not protect direct LAN TCP/8787**: validate host firewall restrictions separately.
 - Follow-up enhancements should prioritize correctness and security (state validation, preservation of the LAN /27 organization, graceful handling of malformed or absent observations, and authenticated exposure), not additional web-server complexity.
 
 ## Working style for future sessions
