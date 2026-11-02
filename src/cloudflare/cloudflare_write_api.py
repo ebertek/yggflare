@@ -224,6 +224,42 @@ class CloudflareWriter(CloudflareClient):
             {"content": address},
         )
 
+    def _delete(self, path):
+        """Issue one narrowly scoped DELETE without logging response bodies."""
+        request = Request(
+            self.base_url + path,
+            headers={
+                "Authorization": "Bearer " + self._token,
+                "Accept": "application/json",
+            },
+            method="DELETE",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                payload = json.load(response)
+        except HTTPError as error:
+            raise CloudflareError(
+                f"Cloudflare returned HTTP {error.code} for DELETE {path}"
+            ) from None
+        except (URLError, TimeoutError, ValueError) as error:
+            raise CloudflareError(f"Cloudflare DELETE {path} failed") from error
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            raise CloudflareError(f"Cloudflare rejected DELETE {path}")
+        return payload.get("result")
+
+    def delete_dns_record(self, zone, record_id):
+        """Delete a previously revalidated external DNS record by exact ID."""
+        return self._delete(
+            f"/zones/{checked_id(zone)}/dns_records/{checked_id(record_id)}"
+        )
+
+    def delete_access_app(self, account, app_id):
+        """Delete an Access app only after the orphan workflow verifies safety."""
+        return self._delete(
+            f"/accounts/{checked_id(account)}/access/apps/"
+            f"{checked_tunnel_id(app_id)}"
+        )
+
     def get_dns_record(self, zone, record_id):
         """Read one DNS record immediately before an update."""
         return self.get(
