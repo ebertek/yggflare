@@ -4,6 +4,15 @@ Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and
 
 [Quick start](#deployment) · [Operations](#release-readiness-diagnostics) · [Cloudflare safety](#managed-host-lifecycle-and-safe-retirement) · [License](#license)
 
+## Environment-variable naming
+
+Yggflare uses exactly two application-owned environment namespaces:
+
+- `YGGFLARE_*`: controller, network inventory, watches, paths, web UI, and Cloudflare reconciliation/cleanup behavior. For example, `YGGFLARE_LAN_CIDR`, `YGGFLARE_WATCH_COMPOSE`, `YGGFLARE_CLOUDFLARE_AUTO_APPLY`, and `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`.
+- `CLOUDFLARE_*`: Cloudflare connection and resource settings (account, token, zones and tunnel).
+
+This is a **breaking rename**. The former `YGG_*` and `CF_*` names are not recognized. Update deployment environment values in the same release as the image to avoid losing configuration, especially the Cloudflare write/cleanup opt-ins.
+
 ## How it works
 
 - Audits Cloudflare on startup, when Compose/inventory inputs or Docker topology change, and every six hours as a fallback. Writes are disabled by default (`YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`).
