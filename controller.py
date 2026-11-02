@@ -1,4 +1,4 @@
-"""Single-process scheduler for the staged Ygg Cloudflare/LAN migration."""
+"""UTC scheduler for Cloudflare reconciliation, inventory and backups."""
 
 import datetime as dt
 import json
@@ -74,30 +74,36 @@ def log(level, component, message, **fields):
 def run(args, *, env=None):
     component = "cloudflare" if "/cloudflare/" in args[1] else "network"
     log("info", component, "Cycle started")
-    completed = subprocess.run(
+    with subprocess.Popen(
         args,
         env=env,
-        check=False,
-        timeout=3300,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-    )
-    for line in (completed.stdout or "").splitlines():
-        log("info", component, line)
+        bufsize=1,
+    ) as process:
+        assert process.stdout is not None
+        for line in process.stdout:
+            log("info", component, line.rstrip("\\n"))
+        try:
+            exit_code = process.wait(timeout=3300)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            process.wait()
+            raise RuntimeError(f"Command timed out: {args[1]}") from error
     log(
-        "info" if not completed.returncode else "error",
+        "info" if exit_code == 0 else "error",
         component,
         "Cycle finished",
-        exit_code=completed.returncode,
+        exit_code=exit_code,
     )
-    if completed.returncode:
-        raise RuntimeError(f"Command exited {completed.returncode}: {args[1]}")
+    if exit_code:
+        raise RuntimeError(f"Command exited {exit_code}: {args[1]}")
     return completed.returncode
 
 
 def cloudflare_run():
-    """Use Compose settings and secret files; never execute or parse legacy env."""
+    """Run Cloudflare using environment configuration and mounted secrets."""
     auto = os.environ.get("CF_AUTO_APPLY", "false")
     if auto not in ("true", "false"):
         raise ValueError("CF_AUTO_APPLY must be exactly true or false")
