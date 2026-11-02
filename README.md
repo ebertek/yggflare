@@ -93,7 +93,7 @@ Do not publish secret files, `/data`, or backup archives. Backups can contain **
 
 ## Read-only inventory web interface
 
-Yggflare includes an optional, **disabled-by-default** inventory interface inspired by a spreadsheet-style LAN /27 worksheet. It reads the existing private JSON inventory and the last saved Nmap/DNS-SD scan; it does **not** initiate scans, call Cloudflare, or offer mutation endpoints.
+Yggflare includes an optional, **disabled-by-default** inventory interface inspired by a spreadsheet-style LAN /27 worksheet. It reads the existing private JSON inventory, the last saved Nmap/DNS-SD scan, mounted Compose definitions and read-only Docker metadata; it does **not** initiate scans, call Cloudflare, or offer mutation endpoints.
 
 ```yaml
 environment:
@@ -105,9 +105,32 @@ environment:
 When enabled, browse `http://127.0.0.1:8787/inventory` **from the Docker host**. The default bind is loopback and the container uses host networking. The interface provides:
 
 - `/inventory`: searchable, sortable inventory tables grouped by /27, with declared and observed status
-- `/ports`: declared/observed TCP/UDP ports and the latest DNS-SD advertisements
+- `/ports`: declared/inferred and observed TCP/UDP ports, evidence sources, and the latest DNS-SD advertisements
 - `/cloudflare`: **ownership registry snapshot**, not a real-time Cloudflare API audit
 - `/api/inventory.json` and `/api/inventory.csv`: read-only exports
+
+Docker rows include hostnames (qualified with `YGGFLARE_INTERNAL_DOMAIN`), LAN
+IPv4/IPv6 addresses, MACs, network aliases and Traefik router names. Compose
+provides declarations even when Docker is unavailable; running-container metadata
+supplies current addresses and image `EXPOSE` ports. Status distinguishes
+`docker declared`, `docker running` and `docker stopped`; it does not imply
+Cloudflare ownership or a successful port probe. Host-network and other services
+without a LAN IPv4 allocation appear under **Unassigned**, without guessing the
+host's IP or attaching their ports to another device.
+
+Port evidence combines Compose `ports` (container target, not published host port),
+`expose`, Docker exposed/bound ports, Traefik backend ports/URLs and narrowly
+recognized port/listen-address environment hints. These are candidates, **not
+proof of listening sockets**; confirmed scan results remain in the separate
+Observed column. Arbitrary environment values, secret files and raw Docker
+inspection output are never served. Compose interpolation and `env_file` are not
+executed/read by the UI; Docker supplies resolved runtime metadata when available.
+No images are pulled or built, and Docker port scanning remains unchanged.
+
+Metadata is cached for 30 seconds, with a visible fallback notice when Docker or
+a Compose file cannot be read. IPv4, IPv6 and /27 groups sort numerically;
+column clicks toggle ascending/descending order. JSON and CSV exports use the
+same numerically ordered inventory; CSV includes aliases and ports.
 
 The UI intentionally omits Cloudflare credentials, Discord URLs, and private config files. It does not replace `yggflare cloudflare audit` for live drift/orphan counts. **There is no built-in authentication.** Keep it on loopback, use an authenticated tunnel or reverse proxy for remote access, and never expose the HTTP port directly to the public Internet. To serve on the host network instead, explicitly set `YGGFLARE_WEB_BIND=0.0.0.0` and enforce firewall/authentication upstream.
 

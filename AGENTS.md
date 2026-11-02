@@ -26,6 +26,7 @@ Yggflare is a Python 3.15 containerized controller for Cloudflare Access applica
 | `src/network-inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
 | `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
 | `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
+| `docker_inventory.py` | Sanitized, cached read-only Compose/Docker metadata for the web UI; never a reconciliation input |
 | `web.py` | Optional read-only HTTP inventory UI; inventory, ports/DNS-SD, ownership, CSV/JSON exports |
 | `tests/`, `src/cloudflare/test_*.py`, `src/network-inventory/test_*.py` | Regression tests |
 
@@ -86,3 +87,9 @@ docker exec yggflare yggflare network discord-test
 The owner often works from a phone. **Make repository edits and open GitHub PRs rather than supplying standalone scripts, files or manual copy-paste patches.** Include tests and concise rationale; diagnose failing workflow logs and fix the same PR branch. Avoid unnecessary questions when the repository already contains the answer. Distinguish implemented, merged, deployed and production-verified features precisely.
 
 Keep this guide evergreen. Update it when architecture or safety invariants change, but avoid embedding secrets, personal identifying information, ephemeral audit fingerprints or long status logs.
+
+## Inventory presentation invariants
+
+- Keep numeric address/CIDR sorting consistent between initial HTML, browser sorting and exports. Missing/invalid addresses sort last.
+- Docker metadata enriches presentation only. Never infer Cloudflare ownership from Docker status, or promote declared/inferred ports to scan-confirmed observations.
+- Preserve Compose fallback when Docker is unavailable. Never expose raw environment, labels, inspection output or exception details through the UI. Keep Docker reads bounded and cached.
