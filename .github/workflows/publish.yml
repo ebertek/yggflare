@@ -1,0 +1,54 @@
+name: Publish GHCR image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+      - name: Install test and lint dependencies
+        run: |
+          python -m pip install -r src/cloudflare/requirements.txt
+          python -m pip install "ruff==0.14.14" "black==25.12.0"
+      - name: Validate lint and format
+        run: |
+          ruff check .
+          black --check .
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py'
+          python -m unittest discover -s src/cloudflare -p 'test_*.py'
+          python -m unittest discover -s src/network-inventory -p 'test_*.py'
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish verified image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/ebertek/yggflare:main
+            ghcr.io/ebertek/yggflare:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/ebertek/yggflare
+            org.opencontainers.image.revision=${{ github.sha }}
