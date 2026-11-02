@@ -31,9 +31,7 @@ class VerificationTests(unittest.TestCase):
             (root / "config/static-hosts.json").write_text(
                 '{"version":1,"hosts":[{"hostname":"device.ygg.nu"}]}'
             )
-            (root / "data/managed-hosts.json").write_text(
-                '{"version":1,"hosts":{}}'
-            )
+            (root / "data/managed-hosts.json").write_text('{"version":1,"hosts":{}}')
             archive = create_snapshot(root / "config", root / "data", root / "backup")
             result = restore_test(archive, root / "scratch")
             self.assertEqual(result["inventory_hosts"], 1)
