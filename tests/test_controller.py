@@ -46,7 +46,7 @@ class ControllerTests(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "CF_AUTO_APPLY": "false",
+                "YGGFLARE_CLOUDFLARE_AUTO_APPLY": "false",
                 "CLOUDFLARE_API_TOKEN_FILE": "/nonexistent/yggflare-token",
             },
         ):
@@ -55,7 +55,7 @@ class ControllerTests(unittest.TestCase):
 
     def test_invalid_auto_apply_fails_closed(self):
         """Only exact true or false values are accepted."""
-        with patch.dict("os.environ", {"CF_AUTO_APPLY": "yes"}):
+        with patch.dict("os.environ", {"YGGFLARE_CLOUDFLARE_AUTO_APPLY": "yes"}):
             with self.assertRaises(ValueError):
                 controller.cloudflare_run()
 
