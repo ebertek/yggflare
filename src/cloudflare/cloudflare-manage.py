@@ -13,6 +13,8 @@ import fcntl
 import importlib.util
 import json
 import os
+
+from yggflare_config import domain
 import sys
 from pathlib import Path
 
@@ -133,6 +135,8 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     if not root.is_dir():
         raise ValueError("Merged GitOps checkout does not exist")
     settings = json.loads(args.settings.read_text())
+    settings["ebi_zone"] = domain("YGG_EXTERNAL_DOMAIN")
+    settings["ygg_zone"] = domain("YGG_INTERNAL_DOMAIN")
     if not isinstance(settings, dict):
         raise TypeError("Cloudflare settings must be a JSON object")
     for key, envname in (
