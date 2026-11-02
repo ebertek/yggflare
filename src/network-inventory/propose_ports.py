@@ -37,10 +37,10 @@ def propose(document):
         for number, description in proposals:
             if ("tcp", number) not in existing:
                 ports.append(
-                        {"port": number, "protocol": "tcp", "description": description}
-                    )
-                    existing.add(("tcp", number))
-                    changed.append(f"{hostname}: tcp/{number}")
+                    {"port": number, "protocol": "tcp", "description": description}
+                )
+                existing.add(("tcp", number))
+                changed.append(f"{hostname}: tcp/{number}")
     absent = sorted(set(DISCOVERED) - names)
     return result, changed, absent
 
