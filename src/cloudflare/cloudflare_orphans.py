@@ -186,7 +186,9 @@ def claim(client, root, data, bound, hostname):
         registry = load_registry(data, bound)
         wanted = desired_hosts(client, root, bound["account"])
         if hostname not in wanted:
-            raise OwnershipError("Only a hostname still declared in Compose can be claimed")
+            raise OwnershipError(
+                "Only a hostname still declared in Compose can be claimed"
+            )
         identity = claimed_identity(
             client, bound, hostname, live_resources(client, bound), wanted[hostname]
         )
@@ -339,17 +341,18 @@ def retire(client, root, data, bound, hostname, approval):
                 ]
                 validate_tunnel_config(new_config)
                 validate_ingress(new_config["ingress"])
-                client.put_tunnel_ingress(
-                    bound["account"], bound["tunnel"], new_config
-                )
+                client.put_tunnel_ingress(bound["account"], bound["tunnel"], new_config)
             if "delete_access_app" in steps:
                 # DNS must be gone and ingress absent before removing protection.
                 apps, dns, config = live_resources(client, bound)
-                if candidates(hostname, apps, dns, config)[1:][0] or candidates(
-                    hostname, apps, dns, config
-                )[2]:
+                if (
+                    candidates(hostname, apps, dns, config)[1:][0]
+                    or candidates(hostname, apps, dns, config)[2]
+                ):
                     raise OwnershipError("Route or DNS still present; retain Access")
-                app = full_app(client, bound["account"], {"id": plan["identity"]["app_id"]})
+                app = full_app(
+                    client, bound["account"], {"id": plan["identity"]["app_id"]}
+                )
                 if (
                     app.get("id") != plan["identity"]["app_id"]
                     or app.get("domain") != hostname
