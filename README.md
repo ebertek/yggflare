@@ -4,9 +4,18 @@ Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and
 
 [Quick start](#deployment) · [Operations](#release-readiness-diagnostics) · [Cloudflare safety](#managed-host-lifecycle-and-safe-retirement) · [License](#license)
 
+## Environment-variable naming
+
+Yggflare uses exactly two application-owned environment namespaces:
+
+- `YGGFLARE_*`: controller, network inventory, watches, paths, web UI, and Cloudflare reconciliation/cleanup behavior. For example, `YGGFLARE_LAN_CIDR`, `YGGFLARE_WATCH_COMPOSE`, `YGGFLARE_CLOUDFLARE_AUTO_APPLY`, and `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`.
+- `CLOUDFLARE_*`: Cloudflare connection and resource settings (account, token, zones and tunnel).
+
+This is a **breaking rename**. The former `YGG_*` and `CF_*` names are not recognized. Update deployment environment values in the same release as the image to avoid losing configuration, especially the Cloudflare write/cleanup opt-ins.
+
 ## How it works
 
-- Audits Cloudflare on startup, when Compose/inventory inputs or Docker topology change, and every six hours as a fallback. Writes are disabled by default (`CF_AUTO_APPLY=false`).
+- Audits Cloudflare on startup, when Compose/inventory inputs or Docker topology change, and every six hours as a fallback. Writes are disabled by default (`YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`).
 - Audits LAN devices and services daily at **05:15 UTC**.
 - Creates a local backup daily at **04:00 UTC**, retaining 14 snapshots.
 - Uses **UTC** for scheduling and log timestamps.
@@ -23,15 +32,15 @@ Example shell setup, using illustrative network addresses and domains:
 
 ```sh
 export YGGFLARE_HOME=/srv/yggflare
-export YGG_MERGED_ROOT=/srv/compose
-export YGG_LAN_CIDR=192.168.40.0/23
-export YGG_DEVICES_CIDR=192.168.40.0/24
-export YGG_DOCKER_CIDR=192.168.41.0/24
-export YGG_INTERNAL_DOMAIN=home.example.net
-export YGG_EXTERNAL_DOMAIN=services.example.net
+export YGGFLARE_MERGED_ROOT=/srv/compose
+export YGGFLARE_LAN_CIDR=192.168.40.0/23
+export YGGFLARE_DEVICES_CIDR=192.168.40.0/24
+export YGGFLARE_DOCKER_CIDR=192.168.41.0/24
+export YGGFLARE_INTERNAL_DOMAIN=home.example.net
+export YGGFLARE_EXTERNAL_DOMAIN=services.example.net
 export CLOUDFLARE_ACCOUNT_ID=YOUR_ACCOUNT_ID
 export CLOUDFLARE_TUNNEL_NAME=YOUR_TUNNEL_NAME
-export CF_AUTO_APPLY=false
+export YGGFLARE_CLOUDFLARE_AUTO_APPLY=false
 export YGGFLARE_VERSION=main
 
 docker compose config --quiet
@@ -47,24 +56,24 @@ The example domains and ranges are not built-in defaults. Yggflare validates the
 |---|---|
 | `YGGFLARE_VERSION` | GHCR tag to pull; use `v1.0.0` for the first stable release or `main` for development |
 | `YGGFLARE_HOME` | Host directory for config, state, backups and secrets |
-| `YGG_MERGED_ROOT` | Read-only host directory containing Compose source files |
-| `YGG_LAN_CIDR` | Network inventory scan scope |
-| `YGG_DEVICES_CIDR` | IPv4 subnet allowed for static device DNS |
-| `YGG_DOCKER_CIDR` | IPv4 subnet used to identify Docker services |
-| `YGG_INTERNAL_DOMAIN` | Internal DNS zone |
-| `YGG_EXTERNAL_DOMAIN` | External Cloudflare Access/Tunnel DNS zone |
+| `YGGFLARE_MERGED_ROOT` | Read-only host directory containing Compose source files |
+| `YGGFLARE_LAN_CIDR` | Network inventory scan scope |
+| `YGGFLARE_DEVICES_CIDR` | IPv4 subnet allowed for static device DNS |
+| `YGGFLARE_DOCKER_CIDR` | IPv4 subnet used to identify Docker services |
+| `YGGFLARE_INTERNAL_DOMAIN` | Internal DNS zone |
+| `YGGFLARE_EXTERNAL_DOMAIN` | External Cloudflare Access/Tunnel DNS zone |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_TUNNEL_NAME` / `CLOUDFLARE_TUNNEL_ID` | Select Tunnel by name or ID |
 | `CLOUDFLARE_INTERNAL_ZONE_ID` / `CLOUDFLARE_EXTERNAL_ZONE_ID` | Optional zone IDs; otherwise resolved by DNS name |
 | `CLOUDFLARE_STATIC_DNS_REQUIRED` | Require the static-host inventory; default `true` |
 | `CLOUDFLARE_STATIC_DNS_SYNC` | Include static DNS actions in reconciliation planning; default `false` |
-| `CF_AUTO_APPLY` | Enable unattended Cloudflare writes; default `false` |
-| `YGG_LOG_FORMAT` | `text` (default) or newline-delimited `json` |
-| `YGG_WATCH_COMPOSE` | Poll Compose YAML and inventory fingerprints for changes; default `true` |
-| `YGG_WATCH_DOCKER` | Subscribe to Docker container/network events; default `true` |
-| `YGG_WATCH_POLL_SECONDS` | Compose/inventory content check interval; default `15` seconds |
-| `YGG_WATCH_DEBOUNCE_SECONDS` | Wait for changes to settle; default `20` seconds |
-| `YGG_WATCH_COOLDOWN_SECONDS` | Minimum delay after an audit before another event-driven audit; default `60` seconds |
+| `YGGFLARE_CLOUDFLARE_AUTO_APPLY` | Enable unattended Cloudflare writes; default `false` |
+| `YGGFLARE_LOG_FORMAT` | `text` (default) or newline-delimited `json` |
+| `YGGFLARE_WATCH_COMPOSE` | Poll Compose YAML and inventory fingerprints for changes; default `true` |
+| `YGGFLARE_WATCH_DOCKER` | Subscribe to Docker container/network events; default `true` |
+| `YGGFLARE_WATCH_POLL_SECONDS` | Compose/inventory content check interval; default `15` seconds |
+| `YGGFLARE_WATCH_DEBOUNCE_SECONDS` | Wait for changes to settle; default `20` seconds |
+| `YGGFLARE_WATCH_COOLDOWN_SECONDS` | Minimum delay after an audit before another event-driven audit; default `60` seconds |
 | `TZ` | UTC in the supplied Compose definition |
 
 Compose also sets in-container paths for `YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP` and `YGGFLARE_SOURCE`.
@@ -104,7 +113,7 @@ The UI intentionally omits Cloudflare credentials, Discord URLs, and private con
 
 ## Logging and observability
 
-Set `YGG_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGG_LOG_FORMAT=json` for JSON lines with UTC `timestamp`, `level`, `component` and `message`. JSON lines can be parsed and indexed in Grafana Loki using an agent such as Grafana Alloy. The container writes to stdout and stderr; it does not require a separate log file.
+Set `YGGFLARE_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGGFLARE_LOG_FORMAT=json` for JSON lines with UTC `timestamp`, `level`, `component` and `message`. JSON lines can be parsed and indexed in Grafana Loki using an agent such as Grafana Alloy. The container writes to stdout and stderr; it does not require a separate log file.
 
 Use `docker compose logs -f yggflare` to inspect the controller and `docker inspect yggflare --format '{{.State.Health.Status}}'` to check health.
 
@@ -136,7 +145,7 @@ current Cloudflare state before each guarded write. If the plan changes,
 the approval is rejected and must be reviewed again. Use the actual
 fingerprint returned by your audit, not the example placeholder.
 
-`CF_AUTO_APPLY=false` can remain set for manually approved changes; the
+`YGGFLARE_CLOUDFLARE_AUTO_APPLY=false` can remain set for manually approved changes; the
 unattended writer does not need to be enabled. To validate the Cloudflare
 templates without modifying anything:
 
@@ -159,20 +168,20 @@ The read-only audit classifies external hostnames as:
 - **Unmanaged:** present in Cloudflare but not claimed, regardless of whether
   it happens to be absent from Compose
 
-Neither the six-hour audit nor `CF_AUTO_APPLY=true` deletes resources
-unless the **separate**, disabled-by-default `CF_AUTO_CLEANUP=true`
+Neither the six-hour audit nor `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` deletes resources
+unless the **separate**, disabled-by-default `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP=true`
 opt-in is configured. The normal resource reconciler remains non-destructive.
 
 ### Opt-in automatic orphan retirement
 
-The optional cleanup workflow requires both `CF_AUTO_APPLY=true` and
-`CF_AUTO_CLEANUP=true`. Its minimum grace period is 24 hours:
+The optional cleanup workflow requires both `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` and
+`YGGFLARE_CLOUDFLARE_AUTO_CLEANUP=true`. Its minimum grace period is 24 hours:
 
 ```yaml
 environment:
-  CF_AUTO_APPLY: "true"
-  CF_AUTO_CLEANUP: "true"
-  CF_ORPHAN_GRACE_HOURS: "24"
+  YGGFLARE_CLOUDFLARE_AUTO_APPLY: "true"
+  YGGFLARE_CLOUDFLARE_AUTO_CLEANUP: "true"
+  YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS: "24"
 ```
 
 Only previously claimed/created managed resources can be retired. Yggflare
@@ -247,13 +256,13 @@ are unavailable, the six-hour periodic reconciliation still runs.
 
 Multiple changes are coalesced (20-second debounce); a 60-second cooldown
 prevents a stack restart from producing a burst of Cloudflare API checks.
-These timings can be customized through the `YGG_WATCH_*` variables above.
+These timings can be customized through the `YGGFLARE_WATCH_*` variables above.
 The normal Nmap/DNS-SD inventory scan remains **daily**, not on every Docker
 event. Only the Cloudflare reconciliation is triggered reactively.
 
 **Security:** a change notification merely requests the normal reconciliation
 path. It does not alter the guarded plan, the operation limits, or
-`CF_AUTO_APPLY`. With `CF_AUTO_APPLY=false`, every trigger remains
+`YGGFLARE_CLOUDFLARE_AUTO_APPLY`. With `YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`, every trigger remains
 read-only. If you enable unattended writes, both scheduled and reactive
 triggers use the same guarded writer, so review its policy and authorization
 before enabling it.
@@ -315,4 +324,4 @@ Licensed under **Apache License 2.0**. See [LICENSE](LICENSE) and [NOTICE](NOTIC
 
 The repository includes Cloudflare, network-audit and controller unit tests; the CI workflow executes them and builds the image. Ruff and Black enforce Python style. The [publish workflow](.github/workflows/publish.yml) requires tests and lint to pass before uploading images.
 
-Cloudflare auditing can be verified by confirming zero proposed operations and zero unintended static DNS drift with `CF_AUTO_APPLY=false`. Before enabling unattended writes, independently validate write-path safeguards, network inventory alerts, persistence and backup recovery. Avoid running multiple automatic Cloudflare writers at the same time.
+Cloudflare auditing can be verified by confirming zero proposed operations and zero unintended static DNS drift with `YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`. Before enabling unattended writes, independently validate write-path safeguards, network inventory alerts, persistence and backup recovery. Avoid running multiple automatic Cloudflare writers at the same time.

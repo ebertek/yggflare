@@ -90,8 +90,10 @@ def print_static_summary(report):
 
 def require_auto_opt_in():
     """Only a private environment opt-in may authorize unattended writes."""
-    if os.environ.get("CF_AUTO_APPLY") != "true":
-        raise UnsafePlan("Unattended Cloudflare writes require CF_AUTO_APPLY=true")
+    if os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_APPLY") != "true":
+        raise UnsafePlan(
+            "Unattended Cloudflare writes require YGGFLARE_CLOUDFLARE_AUTO_APPLY=true"
+        )
 
 
 def approval_command(token, maximum):
@@ -120,7 +122,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="Unattended apply, requires CF_AUTO_APPLY=true in the container environment",
+        help="Unattended apply, requires YGGFLARE_CLOUDFLARE_AUTO_APPLY=true in the container environment",
     )
     parser.add_argument(
         "--max-operations",

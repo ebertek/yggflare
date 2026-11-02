@@ -97,12 +97,12 @@ class ChangeTests(unittest.TestCase):
         )
 
     def test_invalid_configuration_fails_closed(self):
-        with patch.dict("os.environ", {"YGG_WATCH_DOCKER": "sometimes"}):
+        with patch.dict("os.environ", {"YGGFLARE_WATCH_DOCKER": "sometimes"}):
             with self.assertRaises(ValueError):
-                enabled("YGG_WATCH_DOCKER")
-        with patch.dict("os.environ", {"YGG_WATCH_POLL_SECONDS": "1"}):
+                enabled("YGGFLARE_WATCH_DOCKER")
+        with patch.dict("os.environ", {"YGGFLARE_WATCH_POLL_SECONDS": "1"}):
             with self.assertRaises(ValueError):
-                seconds("YGG_WATCH_POLL_SECONDS", 15, 5, 300)
+                seconds("YGGFLARE_WATCH_POLL_SECONDS", 15, 5, 300)
 
 
 if __name__ == "__main__":

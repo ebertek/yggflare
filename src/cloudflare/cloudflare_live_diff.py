@@ -5,7 +5,7 @@ from collections import Counter
 
 from yggflare_config import domain, network
 
-DOCKER_NETWORK = network("YGG_DOCKER_CIDR")
+DOCKER_NETWORK = network("YGGFLARE_DOCKER_CIDR")
 ORIGIN_CNAME_SUFFIX = ".cfargotunnel.com"
 
 
@@ -140,7 +140,7 @@ def compare_live(
     if docker_addresses is not None:
         private_index = index_records(dns_internal or [], "name")
         for container, address in sorted(docker_addresses.items()):
-            hostname = container + "." + domain("YGG_INTERNAL_DOMAIN")
+            hostname = container + "." + domain("YGGFLARE_INTERNAL_DOMAIN")
             matched = [
                 record
                 for record in private_index.get(hostname, [])

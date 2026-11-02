@@ -10,7 +10,7 @@ from audit import notify_discord
 def main():
     webhook_path = Path(
         os.environ.get(
-            "YGG_NETWORK_DISCORD_WEBHOOK_FILE",
+            "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE",
             "/run/secrets/network_discord_webhook",
         )
     )

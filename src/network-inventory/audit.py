@@ -19,14 +19,16 @@ from pathlib import Path
 
 from discord_format import render
 
-NETWORK = ipaddress.ip_network(os.environ["YGG_LAN_CIDR"], strict=True)
+NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
 DEFAULT_PORTS = (
     "21,22,23,53,80,81,139,443,445,554,1883,3000,5000,"
     "6053,6444,7000,8008,8009,8080,8443,8888,9000,9100,1400"
 )
-DEFAULT_STATE = Path(os.environ.get("YGG_NETWORK_STATE_DIR", "/data/network-inventory"))
+DEFAULT_STATE = Path(
+    os.environ.get("YGGFLARE_NETWORK_STATE_DIR", "/data/network-inventory")
+)
 DEFAULT_INVENTORY = Path(
-    os.environ.get("YGG_STATIC_INVENTORY", "/config/static-hosts.json")
+    os.environ.get("YGGFLARE_STATIC_INVENTORY", "/config/static-hosts.json")
 )
 
 
@@ -405,7 +407,7 @@ def main():
     if bootstrap:
         print("First observation saved; suppressing initial Discord notification.")
     if not bootstrap:
-        webhook_file = os.environ.get("YGG_NETWORK_DISCORD_WEBHOOK_FILE")
+        webhook_file = os.environ.get("YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE")
         webhook = (
             Path(webhook_file).read_text(encoding="utf-8").strip()
             if webhook_file and Path(webhook_file).is_file()
