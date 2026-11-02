@@ -8,10 +8,12 @@ from audit import notify_discord
 
 
 def main():
-    webhook_path = Path(os.environ.get(
-        "YGG_NETWORK_DISCORD_WEBHOOK_FILE",
-        "/run/secrets/network_discord_webhook",
-    ))
+    webhook_path = Path(
+        os.environ.get(
+            "YGG_NETWORK_DISCORD_WEBHOOK_FILE",
+            "/run/secrets/network_discord_webhook",
+        )
+    )
     if not webhook_path.is_file():
         raise ValueError("Discord webhook secret is not mounted")
     webhook = webhook_path.read_text(encoding="utf-8").strip()

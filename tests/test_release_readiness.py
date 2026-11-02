@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backup import create_snapshot, verify_archive
 import backup_verify
+from backup import create_snapshot, verify_archive
 
 
 class VerificationTests(unittest.TestCase):

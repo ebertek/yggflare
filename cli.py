@@ -18,7 +18,9 @@ FINGERPRINT = re.compile(r"^[0-9a-f]{16}$")
 def main(argv=None):
     """Run a Cloudflare operation using the controller's isolated input snapshot."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("component", choices=("cloudflare", "doctor", "backup", "network"))
+    parser.add_argument(
+        "component", choices=("cloudflare", "doctor", "backup", "network")
+    )
     parser.add_argument(
         "operation",
         choices=(
@@ -40,7 +42,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.component != "cloudflare":
         if args.component == "doctor" and args.operation == "run":
-            return subprocess.run([sys.executable, "/app/doctor.py"], check=False).returncode
+            return subprocess.run(
+                [sys.executable, "/app/doctor.py"], check=False
+            ).returncode
         if args.component == "backup" and args.operation == "verify" and args.argument:
             return subprocess.run(
                 [sys.executable, "/app/backup_verify.py", args.argument],

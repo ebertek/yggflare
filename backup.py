@@ -47,6 +47,7 @@ def prune_snapshots(destination: Path, keep: int = RETENTION) -> None:
         if archive.is_file() and not archive.is_symlink():
             archive.unlink()
 
+
 def verify_archive(archive_path: Path) -> dict:
     """Validate archive members and contents without extracting onto live paths."""
     present = set()
