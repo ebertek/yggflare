@@ -141,8 +141,6 @@ def load_inventory(path):
             elif protocol is None:
                 # Legacy protocol-unspecified entries denote TCP candidates.
                 ports.add(f"tcp/{port['port']}")
-        for port in entry.get("open_ports", []):
-            ports.add(f"tcp/{port}")
         canonical_mac = (entry.get("mac") or "").lower()
         observed_macs = entry.get("observed_macs", [])
         if not isinstance(observed_macs, list):
