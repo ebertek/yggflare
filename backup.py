@@ -1,14 +1,17 @@
 """Restricted local snapshots of Yggflare unversioned config and state."""
-from datetime import UTC, datetime
-from pathlib import Path
+
 import os
 import tarfile
 import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
 
 RETENTION = 14
 
 
-def create_snapshot(config: Path, data: Path, destination: Path, secrets: Path | None = None) -> Path:
+def create_snapshot(
+    config: Path, data: Path, destination: Path, secrets: Path | None = None
+) -> Path:
     """Atomically create a plaintext archive. Never follow symlinks."""
     destination.mkdir(mode=0o700, parents=True, exist_ok=True)
     if not config.is_dir() or not data.is_dir():
@@ -19,12 +22,16 @@ def create_snapshot(config: Path, data: Path, destination: Path, secrets: Path |
     try:
         os.fchmod(handle, 0o600)
         with os.fdopen(handle, "wb") as fileobj:
-            with tarfile.open(mode="w:gz", fileobj=fileobj, dereference=False) as archive:
+            with tarfile.open(
+                mode="w:gz", fileobj=fileobj, dereference=False
+            ) as archive:
                 archive.add(config, arcname="config", recursive=True)
                 archive.add(data, arcname="data", recursive=True)
                 if secrets is not None:
                     if not secrets.is_dir():
-                        raise FileNotFoundError("Secrets directory unavailable for backup")
+                        raise FileNotFoundError(
+                            "Secrets directory unavailable for backup"
+                        )
                     archive.add(secrets, arcname="secrets", recursive=True)
         os.replace(temporary, target)
     finally:

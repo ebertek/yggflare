@@ -104,7 +104,9 @@ class InventoryTests(unittest.TestCase):  # pylint: disable=too-many-public-meth
             "description": "Test appliance",
             "serial_number": "0x00124b003414bac3",
             "purchase_date": "2023-01-26",
-            "ports": [{"port": p, "protocol": "tcp"} for p in (5000, 7000, 49152, 62078)],
+            "ports": [
+                {"port": p, "protocol": "tcp"} for p in (5000, 7000, 49152, 62078)
+            ],
         }
         expected = {HOST: ADDRESS}
         self.assertEqual(self.load(inventory([row])), expected)
@@ -136,9 +138,17 @@ class InventoryTests(unittest.TestCase):  # pylint: disable=too-many-public-meth
     def test_legacy_open_ports_is_rejected(self):
         """Fresh Yggflare inventory must use ports only."""
         with self.assertRaisesRegex(ValueError, "unknown fields"):
-            self.load(inventory([{
-                "hostname": HOST, "ipv4": ADDRESS, "open_ports": [80],
-            }]))
+            self.load(
+                inventory(
+                    [
+                        {
+                            "hostname": HOST,
+                            "ipv4": ADDRESS,
+                            "open_ports": [80],
+                        }
+                    ]
+                )
+            )
 
     def test_protocol_aware_ports_and_aliases_are_private_metadata(self):
         """Aliases and port details never influence primary or companion DNS."""

@@ -1,6 +1,7 @@
 """Backups must be complete, private, and retain only recent snapshots."""
-import tempfile
+
 import tarfile
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,7 +12,9 @@ class BackupTests(unittest.TestCase):
     def test_backup_contains_configuration_and_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            config, data, backup = (root / item for item in ("config", "data", "backup"))
+            config, data, backup = (
+                root / item for item in ("config", "data", "backup")
+            )
             config.mkdir()
             data.mkdir()
             (config / "cloudflare.env").write_text("CF_AUTO_APPLY=false\n")

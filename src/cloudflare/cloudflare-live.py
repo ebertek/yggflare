@@ -16,8 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cloudflare_credentials import api_token
 from cloudflare_api import CloudflareClient, CloudflareError, checked_id
+from cloudflare_credentials import api_token
 from cloudflare_desired import compose_inventory, discover
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
 from cloudflare_retained_dns import RETAINED, load_retained_dns

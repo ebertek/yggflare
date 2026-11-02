@@ -1,14 +1,14 @@
 """Single-process scheduler for the staged Ygg Cloudflare/LAN migration."""
+
 import datetime as dt
-import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import threading
+import time
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from backup import create_snapshot, prune_snapshots
@@ -24,7 +24,9 @@ NETWORK_HOUR, NETWORK_MINUTE = 5, 15
 
 def snapshot(root):
     """Copy only Compose YAML into an isolated working tree; no source mutation."""
-    source_files = list(SOURCE.rglob("compose.yaml")) + list(SOURCE.rglob("compose.yml"))
+    source_files = list(SOURCE.rglob("compose.yaml")) + list(
+        SOURCE.rglob("compose.yml")
+    )
     if not source_files:
         raise RuntimeError("No Compose files in mounted merged GitOps checkout")
     for source_file in source_files:
@@ -56,7 +58,9 @@ def cloudflare_run():
     if auto not in ("true", "false"):
         raise ValueError("CF_AUTO_APPLY must be exactly true or false")
     env = os.environ.copy()
-    secret = Path(env.get("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token"))
+    secret = Path(
+        env.get("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
+    )
     if not secret.is_file():
         raise FileNotFoundError("Cloudflare API token secret missing")
     env["CLOUDFLARE_API_TOKEN_FILE"] = str(secret)
@@ -69,22 +73,34 @@ def cloudflare_run():
             else "/app/cloudflare/cloudflare-live.py"
         )
         args = [
-            sys.executable, script, "--root", str(root),
-            "--settings", str(CONFIG / "cloudflare-settings.json"),
+            sys.executable,
+            script,
+            "--root",
+            str(root),
+            "--settings",
+            str(CONFIG / "cloudflare-settings.json"),
         ]
         if auto == "true":
             args.append("--auto")
         run(args, env=env)
 
+
 def network_run():
     """Read DNS-SD settings from environment and webhook from secret file."""
     env = os.environ.copy()
     env.pop("YGG_NETWORK_DISCORD_WEBHOOK_URL", None)
-    run([
-        sys.executable, "/app/network-inventory/audit.py",
-        "--inventory", str(CONFIG / "static-hosts.json"),
-        "--state-dir", str(DATA / "network-inventory"),
-    ], env=env)
+    run(
+        [
+            sys.executable,
+            "/app/network-inventory/audit.py",
+            "--inventory",
+            str(CONFIG / "static-hosts.json"),
+            "--state-dir",
+            str(DATA / "network-inventory"),
+        ],
+        env=env,
+    )
+
 
 def heartbeat_loop():
     """Maintain health independently of long-running scan subprocesses."""
@@ -121,7 +137,9 @@ def main():
         if (local.hour, local.minute) >= (4, 0):
             if last_backup_day != local.date().isoformat():
                 try:
-                    archive = create_snapshot(CONFIG, DATA, BACKUP, Path("/run/secrets"))
+                    archive = create_snapshot(
+                        CONFIG, DATA, BACKUP, Path("/run/secrets")
+                    )
                     prune_snapshots(BACKUP)
                     print(f"Local snapshot created: {archive.name}", flush=True)
                     last_backup_day = local.date().isoformat()

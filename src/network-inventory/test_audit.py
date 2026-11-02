@@ -34,7 +34,9 @@ class NetworkAuditTests(unittest.TestCase):
 
     def test_docker_inspection_failure_aborts_instead_of_reporting_containers(self):
         """Do not mistake running containers for unexpected LAN devices."""
-        with patch.object(audit, "run_command", side_effect=FileNotFoundError("docker")):
+        with patch.object(
+            audit, "run_command", side_effect=FileNotFoundError("docker")
+        ):
             with self.assertRaisesRegex(RuntimeError, "Docker inspection failed"):
                 audit.docker_ips()
 
@@ -56,7 +58,10 @@ class NetworkAuditTests(unittest.TestCase):
                 {
                     "hostname": "older-device.ygg.nu",
                     "ipv4": "10.4.20.25",
-                    "ports": [{"protocol": "tcp", "port": 80}, {"protocol": "tcp", "port": 443}],
+                    "ports": [
+                        {"protocol": "tcp", "port": 80},
+                        {"protocol": "tcp", "port": 443},
+                    ],
                 },
                 {
                     "hostname": "unspecified-port.ygg.nu",

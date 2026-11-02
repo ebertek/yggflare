@@ -1,18 +1,23 @@
 """Regression tests for Yggflare scheduling/configuration."""
+
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
 import controller
 
 
 class ControllerTests(unittest.TestCase):
     def test_cloudflare_requires_secret_file(self):
         """Cloudflare cycle must fail closed without the token secret."""
-        with patch.dict("os.environ", {
-            "CF_AUTO_APPLY": "false",
-            "CLOUDFLARE_API_TOKEN_FILE": "/nonexistent/yggflare-token",
-        }):
+        with patch.dict(
+            "os.environ",
+            {
+                "CF_AUTO_APPLY": "false",
+                "CLOUDFLARE_API_TOKEN_FILE": "/nonexistent/yggflare-token",
+            },
+        ):
             with self.assertRaises(FileNotFoundError):
                 controller.cloudflare_run()
 
@@ -23,7 +28,10 @@ class ControllerTests(unittest.TestCase):
                 controller.cloudflare_run()
 
     def test_snapshot_does_not_write_source(self):
-        with tempfile.TemporaryDirectory() as source, tempfile.TemporaryDirectory() as config:
+        with (
+            tempfile.TemporaryDirectory() as source,
+            tempfile.TemporaryDirectory() as config,
+        ):
             with tempfile.TemporaryDirectory() as destination:
                 original = Path(source) / "stack" / "compose.yaml"
                 original.parent.mkdir(parents=True)
@@ -36,7 +44,9 @@ class ControllerTests(unittest.TestCase):
                         controller.snapshot(Path(destination))
                 self.assertEqual(original.read_text(encoding="utf-8"), "services: {}\n")
                 self.assertTrue(
-                    (Path(destination) / "Scripts/cloudflare/static-hosts.json").is_file()
+                    (
+                        Path(destination) / "Scripts/cloudflare/static-hosts.json"
+                    ).is_file()
                 )
 
 
