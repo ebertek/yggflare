@@ -1,9 +1,10 @@
 """Prove that non-Ygg deployments can use entirely different CIDRs and DNS zones."""
+
 import os
-from pathlib import Path
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
