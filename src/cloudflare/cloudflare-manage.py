@@ -11,7 +11,6 @@ No Terraform invocation, Git changes, deletion, or unattended scheduling.
 import argparse
 import fcntl
 import importlib.util
-import json
 import os
 import sys
 from pathlib import Path
@@ -28,7 +27,7 @@ from cloudflare_guarded import (
 )
 from cloudflare_unaccounted_dns import print_unaccounted_summary
 from cloudflare_write_api import CloudflareWriter
-from yggflare_config import cloudflare_settings, domain
+from yggflare_config import cloudflare_settings
 
 SPEC = importlib.util.spec_from_file_location(
     "cloudflare_live_cli", Path(__file__).with_name("cloudflare-live.py")

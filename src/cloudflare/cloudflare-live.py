@@ -10,7 +10,6 @@ GET requests only and does not use Terraform files, state, or local source repos
 import argparse
 import ipaddress
 import json
-import os
 import re
 import subprocess
 import sys
