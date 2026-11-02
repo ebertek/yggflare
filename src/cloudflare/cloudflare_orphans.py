@@ -405,6 +405,7 @@ def retire(client, root, data, bound, hostname, approval):
             save_registry(data, registry)
     return steps
 
+
 # Automatic retirement is intentionally separate from the manual approval path.
 # Observation state is private, scope-bound and never inferred from Cloudflare.
 AUTO_STATE = "orphan-observations.json"
@@ -416,7 +417,11 @@ def observe_orphans(data, bound, desired, now, grace_hours=24):
     Missing/corrupt observation state never shortens a waiting period. A gap
     greater than eight hours or an invalid wall clock resets the timer.
     """
-    from datetime import UTC, datetime, timedelta  # pylint: disable=import-outside-toplevel
+    from datetime import (  # pylint: disable=import-outside-toplevel
+        UTC,
+        datetime,
+        timedelta,
+    )
 
     if not 24 <= grace_hours <= 720:
         raise OwnershipError("Orphan grace period must be 24-720 hours")
