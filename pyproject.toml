@@ -1,10 +1,10 @@
 [tool.black]
 line-length = 88
-target-version = ["py315"]
+target-version = ["py314"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py315"
+target-version = "py314"
 extend-exclude = [".git"]
 
 [tool.ruff.lint]
