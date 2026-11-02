@@ -34,6 +34,7 @@ from cloudflare_unaccounted_dns import (
     declared_dns_names,
     print_unaccounted_summary,
 )
+from cloudflare_view import begin, project, publish
 from yggflare_config import cloudflare_settings, domain
 
 CONTAINER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -146,6 +147,9 @@ def run_audit(
     )
     bound = scope(account, ebi, tunnel_id)
     registered = load_registry(Path(os.environ.get("YGGFLARE_DATA", "/data")), bound)
+    report["web_view"] = project(
+        registered, desired, apps, public_dns, config["config"]
+    )
     report["lifecycle"] = summarize(
         registered, desired, apps, public_dns, config["config"]
     )
@@ -215,13 +219,25 @@ def main():
         help="Skip Docker and internal-domain DNS inspection",
     )
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--save-view",
+        action="store_true",
+        help="Save sanitized local UI snapshot; Cloudflare remains GET-only",
+    )
     args = parser.parse_args()
+    data = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+    if args.save_view:
+        begin(data)
     root = args.root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"Merged GitOps checkout does not exist: {root}")
     settings = cloudflare_settings()
     client = CloudflareClient(api_token())
     report = run_audit(client, root, settings, skip_docker=args.skip_docker)
+    if args.save_view:
+        publish(data, report["web_view"])
+        print("Read-only Cloudflare presentation snapshot refreshed.")
+        return 0
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:

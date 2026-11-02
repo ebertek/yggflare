@@ -127,6 +127,50 @@ class NetworkAuditTests(unittest.TestCase):
         self.assertEqual(hosts["10.4.20.33"]["mac"], "84:7c:9b:24:5d:9a")
         self.assertEqual(hosts["10.4.20.33"]["ports"], ["tcp/6444"])
 
+    def test_service_metadata_excludes_unrelated_xml_attributes(self):
+        xml = XML.replace('<state state="open"', '<state state="open"')
+        xml = xml.replace(
+            "</port>",
+            '<service name="http" product="Example" version="1" method="probed" secret="DO-NOT-EXPORT"/></port>',
+        )
+        hosts = audit.parse_nmap_xml(xml)
+        self.assertEqual(
+            hosts["10.4.20.33"]["services"]["tcp/6444"]["method"], "probed"
+        )
+        self.assertNotIn("DO-NOT-EXPORT", json.dumps(hosts))
+
+    def test_offline_scan_persists_bounded_history_and_baseline(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "scan.xml"
+            source.write_text(XML)
+            inventory = root / "inventory.json"
+            inventory.write_text('{"version":1,"hosts":[]}')
+            args = [
+                "audit",
+                "--inventory",
+                str(inventory),
+                "--state-dir",
+                str(root),
+                "--discovery-xml",
+                str(source),
+            ]
+            with (
+                patch("sys.argv", args),
+                patch.object(audit, "notify_discord") as notify,
+            ):
+                audit.main()
+                state = json.loads((root / "state.json").read_text())
+                self.assertTrue(state["recent_events"][0]["baseline"])
+                notify.assert_not_called()
+                state["recent_events"] = state["recent_events"] * 201
+                state["reported"] = {}
+                (root / "state.json").write_text(json.dumps(state))
+                audit.main()
+                updated = json.loads((root / "state.json").read_text())
+                self.assertEqual(len(updated["recent_events"]), 200)
+                self.assertFalse(updated["recent_events"][-1]["baseline"])
+
     def test_avahi_deduplicates_ip_versions_and_interfaces(self):
         """Verify avahi deduplicates ip versions and interfaces."""
         line = "=;eth0;IPv4;Aircon;_example._tcp;local;air.local;10.4.20.33;6444;data"
@@ -134,6 +178,7 @@ class NetworkAuditTests(unittest.TestCase):
         records = audit.parse_avahi(line + "\n" + another)
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["port"], 6444)
+        self.assertEqual(records[0]["addresses"], ["10.4.20.33", "fd00::1"])
 
     def test_new_service_alert_once_until_it_disappears(self):
         """Verify new service alert once until it disappears."""

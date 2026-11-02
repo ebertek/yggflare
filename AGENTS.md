@@ -27,7 +27,8 @@ Yggflare is a Python 3.15 containerized controller for Cloudflare Access applica
 | `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
 | `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
 | `docker_inventory.py` | Sanitized, cached read-only Compose/Docker metadata for the web UI; never a reconciliation input |
-| `web.py` | Optional read-only HTTP inventory UI; inventory, ports/DNS-SD, ownership, CSV/JSON exports |
+| `web.py`, `web_views.py` | Read-only HTTP inventory, per-port services, drift history and Cloudflare lifecycle views |
+| `src/cloudflare/cloudflare_view.py` | Allowlisted, atomic presentation snapshots; never used to authorize writes |
 | `tests/`, `src/cloudflare/test_*.py`, `src/network-inventory/test_*.py` | Regression tests |
 
 The inventory UI and automatic cleanup modules have landed on `main`. Check actual runtime deployment independently.
@@ -93,3 +94,6 @@ Keep this guide evergreen. Update it when architecture or safety invariants chan
 - Keep numeric address/CIDR sorting consistent between initial HTML, browser sorting and exports. Missing/invalid addresses sort last.
 - Docker metadata enriches presentation only. Never infer Cloudflare ownership from Docker status, or promote declared/inferred ports to scan-confirmed observations.
 - Preserve Compose fallback when Docker is unavailable. Never expose raw environment, labels, inspection output or exception details through the UI. Keep Docker reads bounded and cached.
+
+- With web enabled, controller refreshes the GET-only Cloudflare presentation snapshot after reconciliation attempts. Preserve last-good data and show failed/stale refreshes; never call Cloudflare on HTTP requests.
+- Network state retains service detection metadata, resolved DNS-SD addresses (no TXT data), and at most 200 recent events. Keep scan-confirmed ports, probed identities, port-name hints and advertisements distinct.

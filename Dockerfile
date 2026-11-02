@@ -10,7 +10,7 @@ RUN docker --version
 WORKDIR /app
 COPY src/cloudflare/ /app/cloudflare/
 COPY src/network-inventory/ /app/network-inventory/
-COPY controller.py backup.py backup_verify.py doctor.py watchers.py web.py docker_inventory.py /app/
+COPY controller.py backup.py backup_verify.py doctor.py watchers.py web.py web_views.py docker_inventory.py /app/
 COPY --chmod=755 cli.py /usr/local/bin/yggflare
 RUN pip install --no-cache-dir -r /app/cloudflare/requirements.txt
 HEALTHCHECK --interval=60s --timeout=5s --start-period=90s --retries=3 \
