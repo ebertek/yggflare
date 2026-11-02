@@ -1,8 +1,10 @@
 """Explicit opt-in, time-delayed retirement of one proven orphan per cycle."""
 
+import json
 import os
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 from cloudflare_api import CloudflareError, checked_id, checked_tunnel_id
@@ -64,21 +66,40 @@ def main():
     steps = retire(client, source, data, bound, hostname, approval)
     print(f"Auto-retired managed orphan: {hostname} ({', '.join(steps)})")
 
-    # Best-effort notification; no credential is printed to the log.
-    secret = Path(os.environ.get(
-        "YGG_NETWORK_DISCORD_WEBHOOK_FILE",
-        "/run/secrets/network_discord_webhook",
-    ))
+    # Best-effort reporting; never expose the webhook credential in logs.
+    secret = Path(
+        os.environ.get(
+            "YGG_NETWORK_DISCORD_WEBHOOK_FILE",
+            "/run/secrets/network_discord_webhook",
+        )
+    )
     if secret.is_file():
         webhook = secret.read_text(encoding="utf-8").strip()
         if webhook:
-            sys.path.insert(0, "/app/network-inventory")
-            from audit import notify_discord  # pylint: disable=import-outside-toplevel
-
-            notify_discord(
+            message = json.dumps({
+                "allowed_mentions": {"parse": []},
+                "embeds": [{
+                    "title": "Yggflare - Managed orphan retired",
+                    "description": f"Removed Cloudflare resources for `{hostname}` "
+                    "after the configured absence grace period.",
+                    "color": 3066993,
+                    "footer": {"text": "Automatic cleanup • Verified ownership"},
+                }],
+            }).encode("utf-8")
+            request = urllib.request.Request(
                 webhook,
-                [f"CHANGED IP Automatic orphan cleanup completed: {hostname}"],
+                data=message,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Yggflare/0 (https://github.com/ebertek/yggflare)",
+                },
+                method="POST",
             )
+            try:
+                with urllib.request.urlopen(request, timeout=15):
+                    pass
+            except OSError:
+                print("WARNING: Orphan retired, but Discord notification failed.")
     return 0
 
 
