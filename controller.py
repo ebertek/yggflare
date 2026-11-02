@@ -77,8 +77,6 @@ def cloudflare_run():
             script,
             "--root",
             str(root),
-            "--settings",
-            str(CONFIG / "cloudflare-settings.json"),
         ]
         if auto == "true":
             args.append("--auto")
