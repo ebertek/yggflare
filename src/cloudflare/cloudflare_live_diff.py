@@ -3,7 +3,9 @@
 import ipaddress
 from collections import Counter
 
-DOCKER_NETWORK = ipaddress.ip_network("10.4.21.0/24")
+from yggflare_config import network, domain
+
+DOCKER_NETWORK = network("YGG_DOCKER_CIDR")
 ORIGIN_CNAME_SUFFIX = ".cfargotunnel.com"
 
 
@@ -138,7 +140,7 @@ def compare_live(
     if docker_addresses is not None:
         private_index = index_records(dns_ygg or [], "name")
         for container, address in sorted(docker_addresses.items()):
-            hostname = container + ".ygg.nu"
+            hostname = container + "." + domain("YGG_INTERNAL_DOMAIN")
             matched = [
                 record
                 for record in private_index.get(hostname, [])
