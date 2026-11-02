@@ -46,20 +46,27 @@ def snapshot(root):
     return root
 
 
-
 def log(level, component, message, **fields):
     """Emit one UTC record, as readable text or JSON lines."""
-    timestamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00", "Z"
+    timestamp = (
+        dt.datetime.now(dt.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
     )
     if LOG_FORMAT == "json":
-        print(json.dumps({
-            "timestamp": timestamp,
-            "level": level.lower(),
-            "component": component,
-            "message": message,
-            **fields,
-        }, sort_keys=True), flush=True)
+        print(
+            json.dumps(
+                {
+                    "timestamp": timestamp,
+                    "level": level.lower(),
+                    "component": component,
+                    "message": message,
+                    **fields,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
     else:
         print(f"{timestamp} {level.upper():<5} [{component}] {message}", flush=True)
 
@@ -68,13 +75,22 @@ def run(args, *, env=None):
     component = "cloudflare" if "/cloudflare/" in args[1] else "network"
     log("info", component, "Cycle started")
     completed = subprocess.run(
-        args, env=env, check=False, timeout=3300,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        args,
+        env=env,
+        check=False,
+        timeout=3300,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     for line in (completed.stdout or "").splitlines():
         log("info", component, line)
-    log("info" if not completed.returncode else "error", component,
-        "Cycle finished", exit_code=completed.returncode)
+    log(
+        "info" if not completed.returncode else "error",
+        component,
+        "Cycle finished",
+        exit_code=completed.returncode,
+    )
     if completed.returncode:
         raise RuntimeError(f"Command exited {completed.returncode}: {args[1]}")
     return completed.returncode
