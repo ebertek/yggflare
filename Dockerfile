@@ -6,6 +6,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY src/cloudflare/ /app/cloudflare/
 COPY src/network-inventory/ /app/network-inventory/
-COPY controller.py /app/controller.py
+COPY controller.py backup.py /app/
 RUN pip install --no-cache-dir -r /app/cloudflare/requirements.txt
 CMD ["python", "/app/controller.py"]
