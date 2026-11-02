@@ -127,7 +127,7 @@ def run_audit(
         collisions = sorted(
             hostname
             for hostname in static_hosts
-            if hostname.removesuffix("." + domain("YGG_INTERNAL_DOMAIN"))
+            if hostname.removesuffix("." + domain("YGGFLARE_INTERNAL_DOMAIN"))
             in docker_addresses
         )
         if collisions:
