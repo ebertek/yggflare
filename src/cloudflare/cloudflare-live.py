@@ -211,6 +211,8 @@ def main():
     if not root.is_dir():
         raise ValueError(f"Merged GitOps checkout does not exist: {root}")
     settings = json.loads(args.settings.read_text())
+    settings["ebi_zone"] = domain("YGG_EXTERNAL_DOMAIN")
+    settings["ygg_zone"] = domain("YGG_INTERNAL_DOMAIN")
     if not isinstance(settings, dict):
         raise TypeError("Cloudflare settings must be a JSON object")
     for setting, name in (
