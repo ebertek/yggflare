@@ -17,7 +17,9 @@ class BackupTests(unittest.TestCase):
             )
             config.mkdir()
             data.mkdir()
-            (config / "cloudflare.env").write_text("YGGFLARE_CLOUDFLARE_AUTO_APPLY=false\n")
+            (config / "cloudflare.env").write_text(
+                "YGGFLARE_CLOUDFLARE_AUTO_APPLY=false\n"
+            )
             (data / "state.json").write_text("{}")
             secrets = root / "secrets"
             secrets.mkdir()

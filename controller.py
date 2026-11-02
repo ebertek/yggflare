@@ -134,7 +134,9 @@ def cloudflare_run():
         run(args, env=env)
         if env.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true":
             if auto != "true":
-                raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP requires YGGFLARE_CLOUDFLARE_AUTO_APPLY=true")
+                raise ValueError(
+                    "YGGFLARE_CLOUDFLARE_AUTO_CLEANUP requires YGGFLARE_CLOUDFLARE_AUTO_APPLY=true"
+                )
             run(
                 [
                     sys.executable,

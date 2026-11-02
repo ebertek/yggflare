@@ -93,7 +93,8 @@ def checks():
     )
     webhook = Path(
         os.environ.get(
-            "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE", "/run/secrets/network_discord_webhook"
+            "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE",
+            "/run/secrets/network_discord_webhook",
         )
     )
     add(

@@ -91,7 +91,9 @@ def print_static_summary(report):
 def require_auto_opt_in():
     """Only a private environment opt-in may authorize unattended writes."""
     if os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_APPLY") != "true":
-        raise UnsafePlan("Unattended Cloudflare writes require YGGFLARE_CLOUDFLARE_AUTO_APPLY=true")
+        raise UnsafePlan(
+            "Unattended Cloudflare writes require YGGFLARE_CLOUDFLARE_AUTO_APPLY=true"
+        )
 
 
 def approval_command(token, maximum):
