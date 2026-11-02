@@ -12,6 +12,12 @@ services:
       YGGFLARE_BACKUP: /backup
       YGGFLARE_SOURCE: /compose-source
       CF_AUTO_APPLY: "${CF_AUTO_APPLY:-false}"
+      YGG_LAN_CIDR: "${YGG_LAN_CIDR:?Set LAN discovery CIDR}"
+      YGG_DEVICES_CIDR: "${YGG_DEVICES_CIDR:?Set static device CIDR}"
+      YGG_DOCKER_CIDR: "${YGG_DOCKER_CIDR:?Set Docker services CIDR}"
+      YGG_INTERNAL_DOMAIN: "${YGG_INTERNAL_DOMAIN:?Set internal DNS zone}"
+      YGG_EXTERNAL_DOMAIN: "${YGG_EXTERNAL_DOMAIN:?Set external DNS zone}"
+      PYTHONPATH: /app/cloudflare
       CLOUDFLARE_API_TOKEN_FILE: /run/secrets/cloudflare_api_token
       YGG_NETWORK_DISCORD_WEBHOOK_FILE: /run/secrets/network_discord_webhook
       CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
