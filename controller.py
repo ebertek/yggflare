@@ -121,7 +121,7 @@ def main():
         if (local.hour, local.minute) >= (4, 0):
             if last_backup_day != local.date().isoformat():
                 try:
-                    archive = create_snapshot(CONFIG, DATA, BACKUP)
+                    archive = create_snapshot(CONFIG, DATA, BACKUP, Path("/run/secrets"))
                     prune_snapshots(BACKUP)
                     print(f"Local snapshot created: {archive.name}", flush=True)
                     last_backup_day = local.date().isoformat()
