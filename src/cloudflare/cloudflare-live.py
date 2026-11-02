@@ -94,8 +94,8 @@ def run_audit(
         )
     )
     account = checked_id(settings["account_id"], "account ID")
-    ebi = settings.get("ebi_zone_id") or client.zone_id(settings["ebi_zone"], account)
-    ygg = settings.get("ygg_zone_id") or client.zone_id(settings["ygg_zone"], account)
+    ebi = settings.get("external_zone_id") or client.zone_id(settings["external_zone"], account)
+    ygg = settings.get("internal_zone_id") or client.zone_id(settings["internal_zone"], account)
     tunnel_id = settings.get("tunnel_id") or client.tunnel_id(
         account, settings["tunnel_name"]
     )
@@ -136,10 +136,10 @@ def run_audit(
         routes,
         tunnel_id,
         docker_addresses=docker_addresses,
-        dns_ygg=internal_dns,
+        dns_internal=internal_dns,
     )
     report["counts"]["live_reusable_policies"] = len(policies)
-    report["counts"]["live_ygg_dns_records"] = len(internal_dns)
+    report["counts"]["live_internal_dns_records"] = len(internal_dns)
     report["static_dns"] = compare_static_dns(
         static_hosts, internal_dns, static_companions
     )
