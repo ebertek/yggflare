@@ -43,9 +43,7 @@ class FingerprintTests(unittest.TestCase):
             config = Path(folder) / "config"
             source.mkdir()
             config.mkdir()
-            (source / "compose.yaml").write_text(
-                "services: {}\n", encoding="utf-8"
-            )
+            (source / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
             inventory = config / "static-hosts.json"
             inventory.write_text("{}", encoding="utf-8")
             original = fingerprint(source, config)

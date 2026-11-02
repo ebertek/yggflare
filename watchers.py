@@ -35,9 +35,7 @@ def seconds(name, default, minimum, maximum):
 
 def fingerprint(source, config):
     """Hash only the Compose and private inventory inputs used by audits."""
-    paths = sorted(
-        set(source.rglob("compose.yaml")) | set(source.rglob("compose.yml"))
-    )
+    paths = sorted(set(source.rglob("compose.yaml")) | set(source.rglob("compose.yml")))
     if not paths:
         raise FileNotFoundError(f"No Compose files found under {source}")
 
@@ -112,9 +110,7 @@ def watch_files(source, config, changes, interval, log):
         time.sleep(interval)
 
 
-ACTIONS = frozenset(
-    {"start", "die", "destroy", "rename", "connect", "disconnect"}
-)
+ACTIONS = frozenset({"start", "die", "destroy", "rename", "connect", "disconnect"})
 
 
 def event_reason(event, own_container):
