@@ -31,7 +31,7 @@ class ControllerTests(unittest.TestCase):
                 controller.log("warning", "cloudflare", "Drift detected")
             line = output.getvalue()
             self.assertIn("WARNING [cloudflare] Drift detected", line)
-            self.assertRegex(line, r"^\\d{4}-\\d{2}-\\d{2}T.*Z ")
+            self.assertRegex(line, r"^\d{4}-\d{2}-\d{2}T.*Z ")
 
     def test_subprocess_failure_is_reported(self):
         with patch.object(controller, "log") as log:
