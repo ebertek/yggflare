@@ -16,8 +16,8 @@ Standalone, always-running Cloudflare + LAN inventory controller for the Ygg hom
 
 ## Prepare source
 
-1. Run `./scripts/import-legacy-code.sh /home/docker/ygg-compose` **on a host with the merged checkout** or on a separate trusted development machine with an equivalent complete checkout. Review copied code and dependencies and commit them into the new repository. The import is a one-time source transfer, not a runtime dependency.
-2. For development, run `docker compose build`. The Dockerfile refuses to build until the legacy sources are copied into `src`.
+1. The legacy controller and network-audit modules are now imported under `src/cloudflare` and `src/network-inventory`; the deployment must use this version-controlled source, not copy from the runtime checkout.
+2. Run the Cloudflare and network inventory tests, then build the Docker image. The old import helper is for historical reference only.
 3. Migrate configuration with `sudo ./scripts/migrate-config.sh /home/docker/ygg-compose /home/docker/yggflare` (copy only; DOES NOT modify either Git repository).
 4. Edit `.env` from `.env.example` for host locations. Set `CF_AUTO_APPLY=false` in the *unversioned* `config/cloudflare.env` while shadow-testing.
 5. Start shadow mode: `docker compose up -d`, inspect `docker compose logs -f`, and compare reports with the existing Komodo actions. Avoid concurrent auto writers.
@@ -38,4 +38,4 @@ For an initial manually-triggered snapshot, run `sudo ./scripts/backup.sh /home/
 
 ## Verification status
 
-Scaffold unit tests pass in a standalone Python interpreter. Full Cloudflare API parity, Docker build, Nmap/Avahi behavior, and backup/restore have **not** been verified against the live Pleiades environment. Do not enable unattended writes before those checks.
+The imported source and new regression tests are in GitHub; the combined CI and Docker build results are not yet verified. Full Cloudflare API parity, Docker build, Nmap/Avahi behavior, and backup/restore have **not** been verified against the live Pleiades environment. Do not enable unattended writes before those checks.
