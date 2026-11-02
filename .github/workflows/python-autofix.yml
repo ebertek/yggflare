@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - name: Install formatters
         run: python -m pip install "ruff==0.14.14" "black==25.12.0"
       - name: Ruff safe fixes
