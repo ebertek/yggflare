@@ -394,7 +394,13 @@ def main():
     if bootstrap:
         print("First observation saved; suppressing initial Discord notification.")
     if not bootstrap:
-        notify_discord(os.environ.get("YGG_NETWORK_DISCORD_WEBHOOK_URL", ""), events)
+        webhook_file = os.environ.get("YGG_NETWORK_DISCORD_WEBHOOK_FILE")
+        webhook = (
+            Path(webhook_file).read_text(encoding="utf-8").strip()
+            if webhook_file and Path(webhook_file).is_file()
+            else ""
+        )
+        notify_discord(webhook, events)
     save_state(args.state_dir, snapshot)
     print(f"New observations: {len(events)}; inventory and Cloudflare unchanged.")
 
