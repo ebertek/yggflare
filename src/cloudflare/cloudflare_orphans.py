@@ -404,3 +404,75 @@ def retire(client, root, data, bound, hostname, approval):
             del registry["hosts"][hostname]
             save_registry(data, registry)
     return steps
+
+# Automatic retirement is intentionally separate from the manual approval path.
+# Observation state is private, scope-bound and never inferred from Cloudflare.
+AUTO_STATE = "orphan-observations.json"
+
+
+def observe_orphans(data, bound, desired, now, grace_hours=24):
+    """Record continuous absences and return eligible, explicitly owned hosts.
+
+    Missing/corrupt observation state never shortens a waiting period. A gap
+    greater than eight hours or an invalid wall clock resets the timer.
+    """
+    from datetime import UTC, datetime, timedelta  # pylint: disable=import-outside-toplevel
+
+    if not 24 <= grace_hours <= 720:
+        raise OwnershipError("Orphan grace period must be 24-720 hours")
+    current = datetime.fromtimestamp(now, UTC)
+    observations = Path(data) / AUTO_STATE
+    with locked_registry(data):
+        registry = load_registry(data, bound)
+        previous = {}
+        if observations.is_symlink():
+            raise OwnershipError("Orphan observation state must not be a symlink")
+        if observations.is_file():
+            if observations.stat().st_size > MAX_REGISTRY_BYTES:
+                raise OwnershipError("Orphan observation state too large")
+            try:
+                saved = json.loads(observations.read_text(encoding="utf-8"))
+                if (
+                    saved.get("version") != 1
+                    or saved.get("scope") != bound
+                    or not isinstance(saved.get("missing"), dict)
+                ):
+                    raise OwnershipError("Invalid orphan observation state")
+                previous = saved["missing"]
+            except (ValueError, TypeError, AttributeError) as error:
+                raise OwnershipError("Invalid orphan observation state") from error
+        fresh = {}
+        eligible = []
+        for host in sorted(registry["hosts"].keys() - set(desired)):
+            old = previous.get(host, {})
+            first = current
+            if isinstance(old, dict):
+                try:
+                    first_candidate = datetime.fromisoformat(old["first"])
+                    last_candidate = datetime.fromisoformat(old["last"])
+                    if (
+                        first_candidate.tzinfo is not None
+                        and last_candidate.tzinfo is not None
+                        and first_candidate <= last_candidate <= current
+                        and current - last_candidate <= timedelta(hours=8)
+                    ):
+                        first = first_candidate
+                except (KeyError, ValueError, TypeError):
+                    pass
+            fresh[host] = {"first": first.isoformat(), "last": current.isoformat()}
+            if current - first >= timedelta(hours=grace_hours):
+                eligible.append(host)
+        payload = {"version": 1, "scope": bound, "missing": fresh}
+        handle, temp = tempfile.mkstemp(prefix=".orphan-observations-", dir=data)
+        try:
+            os.fchmod(handle, 0o600)
+            with os.fdopen(handle, "w", encoding="utf-8") as output:
+                json.dump(payload, output, indent=2, sort_keys=True)
+                output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temp, observations)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+    return eligible
