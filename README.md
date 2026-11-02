@@ -35,15 +35,15 @@ All managed IP ranges and both DNS zones are set with Compose environment variab
 | `YGG_INTERNAL_DOMAIN` | `ygg.nu` | Internal DNS zone |
 | `YGG_EXTERNAL_DOMAIN` | `ebi.nu` | External Cloudflare Access/Tunnel hostnames |
 
-Tests explicitly set these values as fixture data. Existing `cloudflare-settings.json` retains other reconciliation settings; its zone names are overridden by these runtime environment variables.
+Tests explicitly set these values as fixture data. Existing `(no settings file)` retains other reconciliation settings; its zone names are overridden by these runtime environment variables.
 
 ## Runtime configuration
 
 There are **no application dotenv files** in Yggflare.
 
-- **Compose environment (nonsecret):** `YGG_LAN_CIDR`, `YGG_DEVICES_CIDR`, `YGG_DOCKER_CIDR`, `YGG_INTERNAL_DOMAIN`, `YGG_EXTERNAL_DOMAIN`, `CF_AUTO_APPLY=false` (default), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ID`, `CLOUDFLARE_EBI_ZONE_ID`, `CLOUDFLARE_YGG_ZONE_ID`, `TZ`, `YGGFLARE_HOME`, and `YGG_MERGED_ROOT`. Set them through Komodo or exported environment variables when running Compose. The IDs may also be resolved from `config/cloudflare-settings.json`; explicit Compose values override those settings.
+- **Compose environment (nonsecret):** `YGG_LAN_CIDR`, `YGG_DEVICES_CIDR`, `YGG_DOCKER_CIDR`, `YGG_INTERNAL_DOMAIN`, `YGG_EXTERNAL_DOMAIN`, `CF_AUTO_APPLY=false` (default), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ID`, `CLOUDFLARE_EBI_ZONE_ID`, `CLOUDFLARE_YGG_ZONE_ID`, `TZ`, `YGGFLARE_HOME`, and `YGG_MERGED_ROOT`. Set them through Komodo or exported environment variables when running Compose. All identifiers and switches are provided through environment variables.
 - **Compose secrets:** `secrets/cloudflare_api_token` and `secrets/network_discord_webhook` on the host, mounted as `/run/secrets/cloudflare_api_token` and `/run/secrets/network_discord_webhook`. The Discord webhook is optional in behavior, but the Compose file expects the secret file to exist; create an empty file if unused. Never store either secret in a Compose environment value.
-- **Persistent JSON:** `config/cloudflare-settings.json`, `config/static-hosts.json`, `config/retained-dns.json`, and optional reserved/retired device records.
+- **Persistent JSON:** `config/static-hosts.json`, `config/retained-dns.json`, and optional reserved/retired device records.
 - **Inventory schema:** use only `ports: [{"protocol":"tcp","port":443}]`; legacy `open_ports` is deliberately rejected by both Cloudflare inventory validation and the network auditor. Convert old inventory before starting the container.
 
 For example, provide host configuration through Komodo or exported variables before `docker compose up -d`:
@@ -92,3 +92,15 @@ The imported source and new regression tests are in GitHub; the combined CI and 
   black --check .
   ```
 - The imported source may need an initial formatting pass to make the new checks green. Branch autofix does not rewrite `main` automatically.
+
+## Cloudflare configuration (environment-only)
+
+The former JSON settings file is obsolete. Set:
+- `CLOUDFLARE_ACCOUNT_ID` (required).
+- `CLOUDFLARE_TUNNEL_NAME` or `CLOUDFLARE_TUNNEL_ID` (at least one).
+- `YGG_EXTERNAL_DOMAIN`, `YGG_INTERNAL_DOMAIN` (required).
+- `CLOUDFLARE_EBI_ZONE_ID`, `CLOUDFLARE_YGG_ZONE_ID` (optional explicit IDs; zone names are resolved from the domain variables otherwise).
+- `CLOUDFLARE_STATIC_DNS_REQUIRED=true` and `CLOUDFLARE_STATIC_DNS_SYNC=false` (strict boolean values; auto-write disabled by default).
+- `CF_AUTO_APPLY=false` until after parity validation and legacy writer shutdown.
+
+Credential tokens and webhooks remain in Compose secrets, never environment variables. Existing private JSON inventories are still stored in `/config`; only the *settings* JSON is removed.
