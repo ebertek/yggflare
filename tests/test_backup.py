@@ -16,11 +16,15 @@ class BackupTests(unittest.TestCase):
             data.mkdir()
             (config / "cloudflare.env").write_text("CF_AUTO_APPLY=false\n")
             (data / "state.json").write_text("{}")
-            archive = create_snapshot(config, data, backup)
+            secrets = root / "secrets"
+            secrets.mkdir()
+            (secrets / "cloudflare_api_token").write_text("example-token")
+            archive = create_snapshot(config, data, backup, secrets)
             self.assertEqual(archive.stat().st_mode & 0o777, 0o600)
             with tarfile.open(archive, "r:gz") as content:
                 self.assertIn("config/cloudflare.env", content.getnames())
                 self.assertIn("data/state.json", content.getnames())
+                self.assertIn("secrets/cloudflare_api_token", content.getnames())
 
     def test_prune_removes_only_matching_old_archives(self):
         with tempfile.TemporaryDirectory() as directory:
