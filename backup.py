@@ -46,3 +46,32 @@ def prune_snapshots(destination: Path, keep: int = RETENTION) -> None:
     for archive in archives[:-keep]:
         if archive.is_file() and not archive.is_symlink():
             archive.unlink()
+
+
+def verify_archive(archive_path: Path) -> dict:
+    """Validate archive members and contents without extracting onto live paths."""
+    present = set()
+    count = 0
+    with tarfile.open(archive_path, "r:gz") as source:
+        for member in source:
+            path = Path(member.name)
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or not path.parts
+                or path.parts[0] not in {"config", "data", "secrets"}
+                or not (member.isfile() or member.isdir())
+                or member.name in present
+            ):
+                raise ValueError("Unsafe or duplicate backup archive member")
+            present.add(member.name)
+            count += 1
+            if member.isfile():
+                stream = source.extractfile(member)
+                if stream is None:
+                    raise ValueError("Cannot read backup member")
+                while stream.read(65536):
+                    pass
+    if not {"config", "data"}.issubset(present):
+        raise ValueError("Backup must include config and data directories")
+    return {"members": count, "has_secrets": "secrets" in present}

@@ -234,6 +234,37 @@ docker compose up -d --no-build
 
 **The first stable release tag has not been created.** The `v1.0.0` examples document the future deployment workflow; the actual release requires complete parity validation first.
 
+## Release-readiness diagnostics
+
+Commands run in the deployed container; they never edit GitOps source files.
+
+```sh
+# Read-only checks for mounts, secrets, Docker, tools, scheduler and backup
+docker exec yggflare yggflare doctor run
+
+# Validate an existing backup archive without restoring live files
+docker exec yggflare yggflare backup verify yggflare-YYYYMMDDTHHMMSSZ.tar.gz
+
+# Explicitly run the LAN inventory scan (may update /data observations
+# and send real drift notifications if a Discord webhook is configured)
+docker exec yggflare yggflare network run
+
+# Explicitly send ONE Discord delivery test; no network scanning
+docker exec yggflare yggflare network discord-test
+```
+
+The doctor does not call Cloudflare or post messages. A missing/empty
+`network_discord_webhook` is reported as a warning and must be configured
+before delivery can be validated. The test notification is deliberately
+opt-in. Real inventory scans are **not** read-only: they update observation
+state and can deliver detected changes, but never edit DNS/Compose.
+
+Backup verification checks archive member integrity and rejects absolute
+paths, traversal, links, duplicate members and unexpected file types. It
+does **not** extract into `/config`, `/data` or `/run/secrets`; an
+actual disaster-recovery restoration remains a separate controlled operation.
+Do not treat a verified archive as proof that a live restoration succeeded.
+
 ## Validation
 
 The repository includes Cloudflare, network-audit and controller unit tests; the CI workflow executes them and builds the image. Ruff and Black enforce Python style. The [publish workflow](.github/workflows/publish.yml) requires tests and lint to pass before uploading images.
