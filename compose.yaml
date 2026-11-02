@@ -1,0 +1,28 @@
+services:
+  yggflare:
+    build: .
+    image: yggflare:local
+    container_name: yggflare
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${TZ:-Europe/Stockholm}
+      YGGFLARE_CONFIG: /config
+      YGGFLARE_DATA: /data
+      YGGFLARE_BACKUP: /backup
+      YGGFLARE_SOURCE: /compose-source
+    volumes:
+      - ${YGGFLARE_HOME:?Set YGGFLARE_HOME}/config:/config:ro
+      - ${YGGFLARE_HOME:?Set YGGFLARE_HOME}/data:/data
+      - ${YGGFLARE_HOME:?Set YGGFLARE_HOME}/backup:/backup
+      - ${YGG_MERGED_ROOT:?Set YGG_MERGED_ROOT}:/compose-source:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+    # Docker socket access is effectively host-root access.
+    # Keep auto-apply off until shadow validation and cutover.
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; import time; p=Path('/data/heartbeat'); assert p.exists() and time.time()-p.stat().st_mtime < 300"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
