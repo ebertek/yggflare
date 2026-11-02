@@ -1,6 +1,6 @@
 services:
   yggflare:
-    image: ghcr.io/ebertek/yggflare:main
+    image: ghcr.io/ebertek/yggflare:${YGGFLARE_VERSION:-main}
     pull_policy: always
     container_name: yggflare
     restart: unless-stopped
