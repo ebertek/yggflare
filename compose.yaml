@@ -6,7 +6,8 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      TZ: ${TZ:-Europe/Stockholm}
+      TZ: UTC
+      YGG_LOG_FORMAT: "${YGG_LOG_FORMAT:-text}"
       YGGFLARE_CONFIG: /config
       YGGFLARE_DATA: /data
       YGGFLARE_BACKUP: /backup

@@ -1,6 +1,7 @@
 """Single-process scheduler for the staged Ygg Cloudflare/LAN migration."""
 
 import datetime as dt
+import json
 import os
 import shutil
 import subprocess
@@ -9,7 +10,6 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from backup import create_snapshot, prune_snapshots
 
@@ -17,7 +17,9 @@ CONFIG = Path(os.getenv("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.getenv("YGGFLARE_DATA", "/data"))
 SOURCE = Path(os.getenv("YGGFLARE_SOURCE", "/compose-source"))
 BACKUP = Path(os.getenv("YGGFLARE_BACKUP", "/backup"))
-TZ = ZoneInfo(os.getenv("TZ", "Europe/Stockholm"))
+LOG_FORMAT = os.getenv("YGG_LOG_FORMAT", "text").lower()
+if LOG_FORMAT not in ("text", "json"):
+    raise ValueError("YGG_LOG_FORMAT must be text or json")
 CLOUD_INTERVAL = dt.timedelta(hours=6)
 NETWORK_HOUR, NETWORK_MINUTE = 5, 15
 
@@ -44,9 +46,51 @@ def snapshot(root):
     return root
 
 
+def log(level, component, message, **fields):
+    """Emit one UTC record, as readable text or JSON lines."""
+    timestamp = (
+        dt.datetime.now(dt.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+    if LOG_FORMAT == "json":
+        print(
+            json.dumps(
+                {
+                    "timestamp": timestamp,
+                    "level": level.lower(),
+                    "component": component,
+                    "message": message,
+                    **fields,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+    else:
+        print(f"{timestamp} {level.upper():<5} [{component}] {message}", flush=True)
+
+
 def run(args, *, env=None):
-    print("Executing:", " ".join(args[:3]), flush=True)
-    completed = subprocess.run(args, env=env, check=False, timeout=3300)
+    component = "cloudflare" if "/cloudflare/" in args[1] else "network"
+    log("info", component, "Cycle started")
+    completed = subprocess.run(
+        args,
+        env=env,
+        check=False,
+        timeout=3300,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    for line in (completed.stdout or "").splitlines():
+        log("info", component, line)
+    log(
+        "info" if not completed.returncode else "error",
+        component,
+        "Cycle finished",
+        exit_code=completed.returncode,
+    )
     if completed.returncode:
         raise RuntimeError(f"Command exited {completed.returncode}: {args[1]}")
     return completed.returncode
@@ -129,29 +173,29 @@ def main():
             try:
                 cloudflare_run()
             except Exception as error:
-                print(f"ERROR Cloudflare cycle: {error}", file=sys.stderr, flush=True)
+                log("error", "cloudflare", f"Cycle failed: {error}")
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
-        local = dt.datetime.now(TZ)
-        if (local.hour, local.minute) >= (4, 0):
-            if last_backup_day != local.date().isoformat():
+        current_utc = dt.datetime.now(dt.timezone.utc)
+        if (current_utc.hour, current_utc.minute) >= (4, 0):
+            if last_backup_day != current_utc.date().isoformat():
                 try:
                     archive = create_snapshot(
                         CONFIG, DATA, BACKUP, Path("/run/secrets")
                     )
                     prune_snapshots(BACKUP)
-                    print(f"Local snapshot created: {archive.name}", flush=True)
-                    last_backup_day = local.date().isoformat()
+                    log("info", "backup", f"Snapshot created: {archive.name}")
+                    last_backup_day = current_utc.date().isoformat()
                     backup_marker.write_text(last_backup_day + "\n", encoding="utf-8")
                 except Exception as error:
-                    print(f"ERROR backup cycle: {error}", file=sys.stderr, flush=True)
-        if (local.hour, local.minute) >= (NETWORK_HOUR, NETWORK_MINUTE):
-            if last_network_day != local.date().isoformat():
+                    log("error", "backup", f"Cycle failed: {error}")
+        if (current_utc.hour, current_utc.minute) >= (NETWORK_HOUR, NETWORK_MINUTE):
+            if last_network_day != current_utc.date().isoformat():
                 try:
                     network_run()
+                    last_network_day = current_utc.date().isoformat()
+                    network_marker.write_text(last_network_day + "\n", encoding="utf-8")
                 except Exception as error:
-                    print(f"ERROR Network audit: {error}", file=sys.stderr, flush=True)
-                last_network_day = local.date().isoformat()
-                network_marker.write_text(last_network_day + "\n", encoding="utf-8")
+                    log("error", "network", f"Cycle failed: {error}")
         time.sleep(20)
 
 

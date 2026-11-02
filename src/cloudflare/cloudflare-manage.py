@@ -2,7 +2,7 @@
 
 Default: GET-only audit and an approval fingerprint.
 To apply: re-run with --apply <fingerprint> after reviewing the exact plan.
-No Terraform invocation, Git changes, deletion, or unattended scheduling.
+No Git changes, deletion, or unattended scheduling.
 """
 
 # Preserve existing kebab-case executable naming.

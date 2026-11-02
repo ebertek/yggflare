@@ -1,7 +1,7 @@
 """Read-only live Cloudflare audit against merged Compose and Docker inventory.
 
 Run from Pleiades with CLOUDFLARE_API_TOKEN exported. This command performs
-GET requests only and does not use Terraform files, state, or local source repos.
+GET requests only and does not use legacy state or local source repositories.
 """
 
 # Preserve established kebab-case CLI entry point filename.
@@ -179,7 +179,7 @@ def run_audit(
     report["mode"] = "READ_ONLY_LIVE_API"
     report["notes"] = [
         "Cloudflare API GET requests only; no updates or deletions",
-        "Terraform configuration and state are not consulted",
+        "Legacy configuration and state are not consulted",
         "Unmanaged Cloudflare resources and stopped containers are preserved",
         "Policy changes are suggestions, not automatically applied",
         "Static non-Docker DNS is managed only when static_dns_sync is enabled",
@@ -232,7 +232,7 @@ def main():
         else:
             print("Static DNS: inventory not configured (audit disabled)")
         print_unaccounted_summary(report)
-        print("No changes made to Cloudflare, Terraform, or Git.")
+        print("No changes made to Cloudflare.")
     return 2 if report["blocked"] or report["counts"]["static_dns_drift"] else 0
 
 
