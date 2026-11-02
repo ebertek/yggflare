@@ -21,8 +21,7 @@ def context(client, settings):
         "external zone ID",
     )
     tunnel = checked_tunnel_id(
-        settings.get("tunnel_id")
-        or client.tunnel_id(account, settings["tunnel_name"])
+        settings.get("tunnel_id") or client.tunnel_id(account, settings["tunnel_name"])
     )
     return scope(account, zone, tunnel)
 
@@ -66,6 +65,13 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (CloudflareError, OwnershipError, ValueError, TypeError, KeyError, OSError) as error:
+    except (
+        CloudflareError,
+        OwnershipError,
+        ValueError,
+        TypeError,
+        KeyError,
+        OSError,
+    ) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         sys.exit(2)

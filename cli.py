@@ -19,7 +19,18 @@ def main(argv=None):
     """Run a Cloudflare operation using the controller's isolated input snapshot."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("component", choices=("cloudflare",))
-    parser.add_argument("operation", choices=("plan", "apply", "preflight", "audit", "claim", "orphan-plan", "orphan-apply"))
+    parser.add_argument(
+        "operation",
+        choices=(
+            "plan",
+            "apply",
+            "preflight",
+            "audit",
+            "claim",
+            "orphan-plan",
+            "orphan-apply",
+        ),
+    )
     parser.add_argument("argument", nargs="?")
     parser.add_argument("approval", nargs="?")
     parser.add_argument("--max-operations", type=int, default=10)
