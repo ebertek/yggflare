@@ -14,11 +14,11 @@ class PortableConfigurationTests(unittest.TestCase):
         env = {
             **os.environ,
             "PYTHONPATH": str(ROOT / "src" / "cloudflare"),
-            "YGG_LAN_CIDR": "192.168.10.0/23",
-            "YGG_DEVICES_CIDR": "192.168.10.0/24",
-            "YGG_DOCKER_CIDR": "192.168.11.0/24",
-            "YGG_INTERNAL_DOMAIN": "home.example.net",
-            "YGG_EXTERNAL_DOMAIN": "edge.example.com",
+            "YGGFLARE_LAN_CIDR": "192.168.10.0/23",
+            "YGGFLARE_DEVICES_CIDR": "192.168.10.0/24",
+            "YGGFLARE_DOCKER_CIDR": "192.168.11.0/24",
+            "YGGFLARE_INTERNAL_DOMAIN": "home.example.net",
+            "YGGFLARE_EXTERNAL_DOMAIN": "edge.example.com",
         }
         code = """
 from cloudflare_desired import HOST as external_host
@@ -31,7 +31,7 @@ assert internal_host.fullmatch('printer.home.example.net')
 assert not internal_host.fullmatch('printer.ygg.nu')
 assert '192.168.10.45' in [str(ip) for ip in STATIC_NETWORK.hosts()]
 assert '192.168.11.45' in [str(ip) for ip in DOCKER_NETWORK.hosts()]
-assert domain('YGG_INTERNAL_DOMAIN') == 'home.example.net'
+assert domain('YGGFLARE_INTERNAL_DOMAIN') == 'home.example.net'
 """
         subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=20)
 
@@ -39,7 +39,7 @@ assert domain('YGG_INTERNAL_DOMAIN') == 'home.example.net'
         env = {
             **os.environ,
             "PYTHONPATH": str(ROOT / "src" / "cloudflare"),
-            "YGG_EXTERNAL_DOMAIN": "",
+            "YGGFLARE_EXTERNAL_DOMAIN": "",
         }
         code = "from cloudflare_desired import HOST"
         completed = subprocess.run(
@@ -51,7 +51,7 @@ assert domain('YGG_INTERNAL_DOMAIN') == 'home.example.net'
             timeout=20,
         )
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("YGG_EXTERNAL_DOMAIN", completed.stderr)
+        self.assertIn("YGGFLARE_EXTERNAL_DOMAIN", completed.stderr)
 
 
 if __name__ == "__main__":
