@@ -32,21 +32,11 @@ def propose(document):
         proposals = DISCOVERED.get(hostname, [])
         if not proposals:
             continue
-        if "ports" in host and "open_ports" in host:
-            raise ValueError(f"{hostname}: conflicting port formats")
-        if "open_ports" in host:
-            existing = set(host["open_ports"])
-            for number, _ in proposals:
-                if number not in existing:
-                    host["open_ports"].append(number)
-                    existing.add(number)
-                    changed.append(f"{hostname}: tcp/{number} (legacy format)")
-        else:
-            ports = host.setdefault("ports", [])
-            existing = {(item.get("protocol", "tcp"), item["port"]) for item in ports}
-            for number, description in proposals:
-                if ("tcp", number) not in existing:
-                    ports.append(
+        ports = host.setdefault("ports", [])
+        existing = {(item.get("protocol", "tcp"), item["port"]) for item in ports}
+        for number, description in proposals:
+            if ("tcp", number) not in existing:
+                ports.append(
                         {"port": number, "protocol": "tcp", "description": description}
                     )
                     existing.add(("tcp", number))
