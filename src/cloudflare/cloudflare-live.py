@@ -10,6 +10,7 @@ GET requests only and does not use legacy state or local source repositories.
 import argparse
 import ipaddress
 import json
+import os
 import re
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from cloudflare_api import CloudflareClient, CloudflareError, checked_id
 from cloudflare_credentials import api_token
 from cloudflare_desired import compose_inventory, discover
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
+from cloudflare_orphans import load_registry, print_summary, scope, summarize
 from cloudflare_retained_dns import RETAINED, load_retained_dns
 from cloudflare_static_dns import (
     INVENTORY,
@@ -142,6 +144,16 @@ def run_audit(
         docker_addresses=docker_addresses,
         dns_internal=internal_dns,
     )
+    bound = scope(account, ebi, tunnel_id)
+    registered = load_registry(
+        Path(os.environ.get("YGGFLARE_DATA", "/data")), bound
+    )
+    report["lifecycle"] = summarize(
+        registered, desired, apps, public_dns, config["config"]
+    )
+    report["counts"]["managed_hosts"] = report["lifecycle"]["managed"]
+    report["counts"]["orphaned_hosts"] = len(report["lifecycle"]["orphaned"])
+    report["counts"]["unmanaged_external_hosts"] = len(report["lifecycle"]["unmanaged"])
     report["counts"]["live_reusable_policies"] = len(policies)
     report["counts"]["live_internal_dns_records"] = len(internal_dns)
     report["static_dns"] = compare_static_dns(
@@ -232,6 +244,7 @@ def main():
         else:
             print("Static DNS: inventory not configured (audit disabled)")
         print_unaccounted_summary(report)
+        print_summary(report)
         print("No changes made to Cloudflare.")
     return 2 if report["blocked"] or report["counts"]["static_dns_drift"] else 0
 
