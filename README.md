@@ -4,7 +4,7 @@ Yggflare is a containerized Cloudflare and local network inventory controller. I
 
 ## How it works
 
-- Audits Cloudflare every six hours; writes are disabled by default (`CF_AUTO_APPLY=false`).
+- Audits Cloudflare on startup, when Compose/inventory inputs or Docker topology change, and every six hours as a fallback. Writes are disabled by default (`CF_AUTO_APPLY=false`).
 - Audits LAN devices and services daily at **05:15 UTC**.
 - Creates a local backup daily at **04:00 UTC**, retaining 14 snapshots.
 - Uses **UTC** for scheduling and log timestamps.
@@ -58,6 +58,11 @@ The example domains and ranges are not built-in defaults. Yggflare validates the
 | `CLOUDFLARE_STATIC_DNS_SYNC` | Include static DNS actions in reconciliation planning; default `false` |
 | `CF_AUTO_APPLY` | Enable unattended Cloudflare writes; default `false` |
 | `YGG_LOG_FORMAT` | `text` (default) or newline-delimited `json` |
+| `YGG_WATCH_COMPOSE` | Poll Compose YAML and inventory fingerprints for changes; default `true` |
+| `YGG_WATCH_DOCKER` | Subscribe to Docker container/network events; default `true` |
+| `YGG_WATCH_POLL_SECONDS` | Compose/inventory content check interval; default `15` seconds |
+| `YGG_WATCH_DEBOUNCE_SECONDS` | Wait for changes to settle; default `20` seconds |
+| `YGG_WATCH_COOLDOWN_SECONDS` | Minimum delay after an audit before another event-driven audit; default `60` seconds |
 | `TZ` | UTC in the supplied Compose definition |
 
 Compose also sets in-container paths for `YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP` and `YGGFLARE_SOURCE`.
@@ -80,6 +85,32 @@ Do not publish secret files, `/data`, or backup archives. Backups can contain **
 Set `YGG_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGG_LOG_FORMAT=json` for JSON lines with UTC `timestamp`, `level`, `component` and `message`. JSON lines can be parsed and indexed in Grafana Loki using an agent such as Grafana Alloy. The container writes to stdout and stderr; it does not require a separate log file.
 
 Use `docker compose logs -f yggflare` to inspect the controller and `docker inspect yggflare --format '{{.State.Health.Status}}'` to check health.
+
+## Reactive reconciliation
+
+The Compose watcher computes a content fingerprint of `compose.yaml`/`compose.yml`
+under `/compose-source` and `static-hosts.json`/`retained-dns.json` under
+`/config` every 15 seconds by default. It detects changes after Git pulls,
+including atomic file replacement, without writing to the source tree.
+Changes to unrelated files do not trigger reconciliation.
+
+The Docker watcher listens on the existing Docker socket for container
+start/stop/destroy/rename events and Docker network connects/disconnects.
+Self-events and container health-status noise are ignored. When Docker events
+are unavailable, the six-hour periodic reconciliation still runs.
+
+Multiple changes are coalesced (20-second debounce); a 60-second cooldown
+prevents a stack restart from producing a burst of Cloudflare API checks.
+These timings can be customized through the `YGG_WATCH_*` variables above.
+The normal Nmap/DNS-SD inventory scan remains **daily**, not on every Docker
+event. Only the Cloudflare reconciliation is triggered reactively.
+
+**Security:** a change notification merely requests the normal reconciliation
+path. It does not alter the guarded plan, the operation limits, or
+`CF_AUTO_APPLY`. With `CF_AUTO_APPLY=false`, every trigger remains
+read-only. If you enable unattended writes, both scheduled and reactive
+triggers use the same guarded writer, so review its policy and authorization
+before enabling it.
 
 ## Image versions and releases
 

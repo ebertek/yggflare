@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from backup import create_snapshot, prune_snapshots
+from watchers import start as start_watchers
 
 CONFIG = Path(os.getenv("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.getenv("YGGFLARE_DATA", "/data"))
@@ -160,7 +161,9 @@ def heartbeat_loop():
 def main():
     DATA.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
+    changes, debounce, cooldown = start_watchers(SOURCE, CONFIG, log)
     next_cloud = dt.datetime.now(dt.timezone.utc)
+    last_cloud_completed = 0.0
     backup_marker = DATA / "backup-last-run.txt"
     last_backup_day = (
         backup_marker.read_text(encoding="utf-8").strip()
@@ -175,11 +178,23 @@ def main():
     )
     while True:
         now = dt.datetime.now(dt.timezone.utc)
-        if now >= next_cloud:
+        periodic = now >= next_cloud
+        reasons = (
+            changes.clear()
+            if periodic
+            else changes.take(
+                debounce=debounce,
+                earliest=last_cloud_completed + cooldown,
+            )
+        )
+        if periodic or reasons:
+            trigger = "scheduled" if periodic else ", ".join(reasons)
+            log("info", "cloudflare", f"Reconciliation triggered: {trigger}")
             try:
                 cloudflare_run()
             except Exception as error:
                 log("error", "cloudflare", f"Cycle failed: {error}")
+            last_cloud_completed = time.monotonic()
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):
@@ -202,7 +217,7 @@ def main():
                     network_marker.write_text(last_network_day + "\n", encoding="utf-8")
                 except Exception as error:
                     log("error", "network", f"Cycle failed: {error}")
-        time.sleep(20)
+        time.sleep(5)
 
 
 if __name__ == "__main__":
