@@ -7,7 +7,7 @@ from yggflare_config import domain
 
 HOST = re.compile(
     r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\."
-    + re.escape(domain("YGG_EXTERNAL_DOMAIN"))
+    + re.escape(domain("YGGFLARE_EXTERNAL_DOMAIN"))
     + r"$"
 )
 RULE = re.compile(r"^traefik\.http\.routers\.[^.]+\.rule$")
@@ -76,7 +76,7 @@ def router_hosts(labels, name):
         expression = str(rule)
         matches = list(HOST_RULE.finditer(expression))
         hosts.update(match.group(2) for match in matches)
-        if ("." + domain("YGG_EXTERNAL_DOMAIN")) in expression.lower() and (
+        if ("." + domain("YGGFLARE_EXTERNAL_DOMAIN")) in expression.lower() and (
             not matches or expression.count("Host(") != len(matches)
         ):
             errors.append(f"{name}: malformed Traefik Host() rule in {key}")
@@ -147,7 +147,7 @@ def discover(containers, known_policies):  # pylint: disable=too-many-branches
         ebi = {
             v.lower()
             for v in names
-            if v.lower().endswith("." + domain("YGG_EXTERNAL_DOMAIN"))
+            if v.lower().endswith("." + domain("YGGFLARE_EXTERNAL_DOMAIN"))
         }
         if not ebi:
             continue
