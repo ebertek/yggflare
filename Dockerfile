@@ -12,4 +12,7 @@ COPY src/cloudflare/ /app/cloudflare/
 COPY src/network-inventory/ /app/network-inventory/
 COPY controller.py backup.py /app/
 RUN pip install --no-cache-dir -r /app/cloudflare/requirements.txt
+HEALTHCHECK --interval=60s --timeout=5s --start-period=90s --retries=3 \
+    CMD ["python", "-c", "import os,time; p='/data/heartbeat'; assert os.path.isfile(p) and time.time()-os.stat(p).st_mtime < 300"]
+
 CMD ["python", "/app/controller.py"]
