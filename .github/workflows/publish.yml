@@ -53,8 +53,8 @@ jobs:
             exit 1
           fi
       - name: Check whether release is current main HEAD
-        id: release-main
-        if: startsWith(github.ref, 'refs/tags/v')
+        id: release_main
+        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
         shell: bash
         env:
           RELEASE_SHA: ${{ github.sha }}
@@ -80,7 +80,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/ebertek/yggflare:sha-${{ github.sha }}
-            ${{ (github.ref == 'refs/heads/main' || steps.release-main.outputs.matches == 'true') && 'ghcr.io/ebertek/yggflare:main' || '' }}
+            ${{ (github.ref == 'refs/heads/main' || steps.release_main.outputs.matches == 'true') && 'ghcr.io/ebertek/yggflare:main' || '' }}
             ${{ startsWith(github.ref, 'refs/tags/v') && format('ghcr.io/ebertek/yggflare:{0}', github.ref_name) || '' }}
           labels: |
             org.opencontainers.image.source=https://github.com/ebertek/yggflare
