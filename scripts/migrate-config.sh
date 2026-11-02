@@ -16,6 +16,38 @@ for name in cloudflare-settings.json static-hosts.json \
   fi
 done
 
+# One-time migration of the copied inventory; never alter the source checkout.
+# Prior legacy port lists denoted TCP candidates in the old audit.
+python3 - "${home}/config/static-hosts.json" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+document = json.loads(path.read_text(encoding="utf-8"))
+for host in document.get("hosts", []):
+    old_ports = host.pop("open_ports", [])
+    if old_ports:
+        new_ports = host.setdefault("ports", [])
+        if not isinstance(new_ports, list):
+            raise ValueError("Invalid ports metadata in migration target")
+        known = {
+            (entry.get("protocol", "tcp"), entry["port"])
+            for entry in new_ports
+        }
+        for value in old_ports:
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError("Invalid legacy port in migration source")
+            if ("tcp", value) not in known:
+                new_ports.append({"protocol": "tcp", "port": value})
+                known.add(("tcp", value))
+temporary = path.with_suffix(".json.tmp")
+temporary.write_text(json.dumps(document, indent=2) + "\\n", encoding="utf-8")
+os.chmod(temporary, 0o600)
+temporary.replace(path)
+PY
+
 if [[ -f /home/docker/cloudflare/network-inventory/state.json ]]; then
   install -d -m 0700 "${home}/data/network-inventory"
   install -m 0600 /home/docker/cloudflare/network-inventory/state.json \
