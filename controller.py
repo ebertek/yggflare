@@ -1,6 +1,7 @@
 """Single-process scheduler for the staged Ygg Cloudflare/LAN migration."""
 
 import datetime as dt
+import json
 import os
 import shutil
 import subprocess
@@ -9,7 +10,6 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-import json
 
 from backup import create_snapshot, prune_snapshots
 
