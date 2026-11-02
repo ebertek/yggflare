@@ -3,7 +3,7 @@
 import ipaddress
 from collections import Counter
 
-from yggflare_config import network, domain
+from yggflare_config import domain, network
 
 DOCKER_NETWORK = network("YGG_DOCKER_CIDR")
 ORIGIN_CNAME_SUFFIX = ".cfargotunnel.com"

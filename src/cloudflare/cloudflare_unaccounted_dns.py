@@ -5,9 +5,8 @@ Findings are review hints only. Never add them to Cloudflare mutation plans.
 
 import re
 
-from yggflare_config import domain
-
 from cloudflare_retained_dns import matches_retained, retained_summary
+from yggflare_config import domain
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 ADDRESS_TYPES = frozenset({"A", "AAAA", "CNAME"})
@@ -53,7 +52,11 @@ def audit_unaccounted_dns(records, static_hosts, declared_names, retained=None):
         if not isinstance(name, str):
             continue
         name = name.lower().rstrip(".")
-        if name == domain("YGG_INTERNAL_DOMAIN") or not name.endswith("." + domain("YGG_INTERNAL_DOMAIN")) or name in owned:
+        if (
+            name == domain("YGG_INTERNAL_DOMAIN")
+            or not name.endswith("." + domain("YGG_INTERNAL_DOMAIN"))
+            or name in owned
+        ):
             continue
         if any(matches_retained(wanted, record) for wanted in retained):
             continue

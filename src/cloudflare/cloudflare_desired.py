@@ -5,7 +5,11 @@ import re
 
 from yggflare_config import domain
 
-HOST = re.compile(r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\\." + re.escape(domain("YGG_EXTERNAL_DOMAIN")) + r"$")
+HOST = re.compile(
+    r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\\."
+    + re.escape(domain("YGG_EXTERNAL_DOMAIN"))
+    + r"$"
+)
 RULE = re.compile(r"^traefik\.http\.routers\.[^.]+\.rule$")
 HOST_RULE = re.compile(r'Host\(\s*([`"])([^`"]+)\1\s*\)')
 UUID = re.compile(r"^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
@@ -140,7 +144,11 @@ def discover(containers, known_policies):  # pylint: disable=too-many-branches
         errors.extend(router_errors)
         if not names:
             continue
-        ebi = {v.lower() for v in names if v.lower().endswith("." + domain("YGG_EXTERNAL_DOMAIN"))}
+        ebi = {
+            v.lower()
+            for v in names
+            if v.lower().endswith("." + domain("YGG_EXTERNAL_DOMAIN"))
+        }
         if not ebi:
             continue
         raw = labels.get("cf.access.policies")

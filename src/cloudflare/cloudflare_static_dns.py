@@ -10,12 +10,16 @@ import re
 from collections import Counter
 from datetime import date
 
-from yggflare_config import domain, network
 from cloudflare_api import IDENTIFIER
 from cloudflare_live_diff import DOCKER_NETWORK, index_records
+from yggflare_config import domain, network
 
 STATIC_NETWORK = network("YGG_DEVICES_CIDR")
-HOST = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\." + re.escape(domain("YGG_INTERNAL_DOMAIN")) + r"$")
+HOST = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\."
+    + re.escape(domain("YGG_INTERNAL_DOMAIN"))
+    + r"$"
+)
 MAC = re.compile(r"^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$")
 INVENTORY = "Scripts/cloudflare/static-hosts.json"
 MAX_HOSTS = 256
