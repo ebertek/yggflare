@@ -61,6 +61,44 @@ class CommandTests(unittest.TestCase):
         )
         self.assertEqual(result, 2)
 
+
+    def test_claim_and_orphan_cleanup_dispatch(self):
+        _, claim = self.invoke(["cloudflare", "claim", "test.ebi.nu"])
+        self.assertEqual(claim[1], "/app/cloudflare/cloudflare-orphans.py")
+        self.assertEqual(claim[-4:], ["--action", "claim", "--hostname", "test.ebi.nu"])
+
+        _, plan = self.invoke(["cloudflare", "orphan-plan", "test.ebi.nu"])
+        self.assertEqual(plan[-4:], ["--action", "plan", "--hostname", "test.ebi.nu"])
+
+        _, apply = self.invoke(
+            ["cloudflare", "orphan-apply", "test.ebi.nu", "da8fce91d8119265"]
+        )
+        self.assertEqual(
+            apply[-6:],
+            [
+                "--action",
+                "apply",
+                "--hostname",
+                "test.ebi.nu",
+                "--approval",
+                "da8fce91d8119265",
+            ],
+        )
+
+    def test_orphan_requires_hostname_and_approval_and_rejects_auto_limit(self):
+        for args in (
+            ["cloudflare", "claim"],
+            ["cloudflare", "orphan-plan"],
+            ["cloudflare", "orphan-apply", "test.ebi.nu"],
+            ["cloudflare", "orphan-apply", "test.ebi.nu", "bad"],
+            ["cloudflare", "claim", "test.ebi.nu", "unexpected"],
+            ["cloudflare", "orphan-plan", "test.ebi.nu", "--max-operations", "1"],
+        ):
+            with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    cli.main(args)
+                self.assertEqual(error.exception.code, 2)
+
     def test_invalid_fingerprint_or_limit_is_rejected(self):
         for args in (
             ["cloudflare", "apply"],
