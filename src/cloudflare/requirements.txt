@@ -1,0 +1,2 @@
+# Required to parse Compose YAML in the Cloudflare reconcilers.
+ruamel.yaml>=0.18,<0.20
