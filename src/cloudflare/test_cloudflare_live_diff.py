@@ -155,7 +155,7 @@ class LiveDiffTests(unittest.TestCase):
             routes("grafana.ebi.nu"),
             TUNNEL,
             docker_addresses={"grafana": "10.4.21.6"},
-            dns_ygg=[local],
+            dns_internal=[local],
         )
         self.assertEqual(report["proposed_by_kind"], {"update_docker_dns_a": 1})
         changed = {**local, "content": "10.4.20.5"}
@@ -166,7 +166,7 @@ class LiveDiffTests(unittest.TestCase):
             routes("grafana.ebi.nu"),
             TUNNEL,
             docker_addresses={"grafana": "10.4.21.6"},
-            dns_ygg=[changed],
+            dns_internal=[changed],
         )
         self.assertEqual(report["counts"]["blocked"], 1)
         self.assertEqual(report["actions"], [])
@@ -180,7 +180,7 @@ class LiveDiffTests(unittest.TestCase):
             routes("grafana.ebi.nu"),
             TUNNEL,
             docker_addresses={"unlisted": "10.4.21.10"},
-            dns_ygg=[],
+            dns_internal=[],
         )
         self.assertEqual(report["actions"], [])
 
