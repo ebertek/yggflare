@@ -8,7 +8,7 @@ import tempfile
 RETENTION = 14
 
 
-def create_snapshot(config: Path, data: Path, destination: Path) -> Path:
+def create_snapshot(config: Path, data: Path, destination: Path, secrets: Path | None = None) -> Path:
     """Atomically create a plaintext archive. Never follow symlinks."""
     destination.mkdir(mode=0o700, parents=True, exist_ok=True)
     if not config.is_dir() or not data.is_dir():
@@ -22,6 +22,10 @@ def create_snapshot(config: Path, data: Path, destination: Path) -> Path:
             with tarfile.open(mode="w:gz", fileobj=fileobj, dereference=False) as archive:
                 archive.add(config, arcname="config", recursive=True)
                 archive.add(data, arcname="data", recursive=True)
+                if secrets is not None:
+                    if not secrets.is_dir():
+                        raise FileNotFoundError("Secrets directory unavailable for backup")
+                    archive.add(secrets, arcname="secrets", recursive=True)
         os.replace(temporary, target)
     finally:
         if os.path.exists(temporary):
