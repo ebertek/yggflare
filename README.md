@@ -245,6 +245,9 @@ docker exec yggflare yggflare doctor run
 # Validate an existing backup archive without restoring live files
 docker exec yggflare yggflare backup verify yggflare-YYYYMMDDTHHMMSSZ.tar.gz
 
+# Extract and validate into temporary private /data storage; never replace live files
+docker exec yggflare yggflare backup restore-test yggflare-YYYYMMDDTHHMMSSZ.tar.gz
+
 # Explicitly run the LAN inventory scan (may update /data observations
 # and send real drift notifications if a Discord webhook is configured)
 docker exec yggflare yggflare network run

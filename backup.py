@@ -75,3 +75,77 @@ def verify_archive(archive_path: Path) -> dict:
     if not {"config", "data"}.issubset(present):
         raise ValueError("Backup must include config and data directories")
     return {"members": count, "has_secrets": "secrets" in present}
+
+
+MAX_RESTORE_BYTES = 256 * 1024 * 1024
+MAX_RESTORE_MEMBERS = 10000
+
+
+def restore_test(archive_path: Path, scratch: Path) -> dict:
+    """Rehearse extraction into a private temporary directory, never live mounts.
+
+    Validate the whole archive before writing, then write regular files only
+    with restrictive permissions. Temporary content is removed automatically.
+    """
+    import json  # pylint: disable=import-outside-toplevel
+
+    verify_archive(archive_path)
+    scratch.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="yggflare-restore-", dir=scratch) as temp:
+        target = Path(temp)
+        members = 0
+        total = 0
+        with tarfile.open(archive_path, "r:gz") as source:
+            for member in source:
+                parts = Path(member.name).parts
+                if (
+                    not parts
+                    or parts[0] not in {"config", "data", "secrets"}
+                    or Path(member.name).is_absolute()
+                    or ".." in parts
+                    or not (member.isdir() or member.isfile())
+                ):
+                    raise ValueError("Unsafe restoration archive member")
+                members += 1
+                total += member.size if member.isfile() else 0
+                if members > MAX_RESTORE_MEMBERS or total > MAX_RESTORE_BYTES:
+                    raise ValueError("Restoration exceeds safe size limit")
+                dest = target.joinpath(*parts)
+                if member.isdir():
+                    dest.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    continue
+                dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                stream = source.extractfile(member)
+                if stream is None:
+                    raise ValueError("Archive file member cannot be opened")
+                with dest.open("xb") as output:
+                    os.chmod(dest, 0o600)
+                    remaining = member.size
+                    while remaining:
+                        block = stream.read(min(65536, remaining))
+                        if not block:
+                            raise ValueError("Archive file member truncated")
+                        output.write(block)
+                        remaining -= len(block)
+        for name in ("config", "data"):
+            if not (target / name).is_dir():
+                raise ValueError(f"Restored {name} directory missing")
+        inventory = target / "config" / "static-hosts.json"
+        if not inventory.is_file():
+            raise ValueError("Restored static-hosts.json missing")
+        data = json.loads(inventory.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.get("version") != 1:
+            raise ValueError("Restored static-hosts.json schema invalid")
+        for relative in (
+            "data/managed-hosts.json",
+            "data/network-inventory/state.json",
+        ):
+            candidate = target / relative
+            if candidate.is_file():
+                json.loads(candidate.read_text(encoding="utf-8"))
+        return {
+            "members": members,
+            "bytes": total,
+            "has_secrets": (target / "secrets").is_dir(),
+            "inventory_hosts": len(data.get("hosts", [])),
+        }
