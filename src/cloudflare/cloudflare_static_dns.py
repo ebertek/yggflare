@@ -16,7 +16,7 @@ from yggflare_config import domain, network
 
 STATIC_NETWORK = network("YGG_DEVICES_CIDR")
 HOST = re.compile(
-    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\."
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\."
     + re.escape(domain("YGG_INTERNAL_DOMAIN"))
     + r"$"
 )
