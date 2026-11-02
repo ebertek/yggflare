@@ -32,6 +32,7 @@ def main(argv=None):
             "orphan-plan",
             "orphan-apply",
             "verify",
+            "restore-test",
             "run",
             "discord-test",
         ),
@@ -44,6 +45,21 @@ def main(argv=None):
         if args.component == "doctor" and args.operation == "run":
             return subprocess.run(
                 [sys.executable, "/app/doctor.py"], check=False
+            ).returncode
+        if (
+            args.component == "backup"
+            and args.operation == "restore-test"
+            and args.argument
+            and args.approval is None
+        ):
+            return subprocess.run(
+                [
+                    sys.executable,
+                    "/app/backup_verify.py",
+                    args.argument,
+                    "--restore-test",
+                ],
+                check=False,
             ).returncode
         if args.component == "backup" and args.operation == "verify" and args.argument:
             return subprocess.run(
