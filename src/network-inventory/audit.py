@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+
+from discord_format import render
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
@@ -327,10 +329,8 @@ def notify_discord(webhook, messages):
     """Post only summarized events; never include credentials."""
     if not webhook or not messages:
         return
-    text = "**Ygg network inventory drift**\n" + "\n".join(messages[:35])
-    if len(messages) > 35:
-        text += f"\n... and {len(messages) - 35} more"
-    body = json.dumps({"content": text[:1900]}).encode("utf-8")
+    is_test = len(messages) == 1 and messages[0].startswith("TEST ONLY:")
+    body = json.dumps(render(messages, test=is_test)).encode("utf-8")
     request = urllib.request.Request(
         webhook,
         data=body,
