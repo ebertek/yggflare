@@ -34,7 +34,6 @@ class AutoOptInTests(unittest.TestCase):
                 with self.assertRaises(UnsafePlan):
                     MANAGE.require_auto_opt_in()
 
-
     def test_manual_approval_prints_runnable_container_command(self):
         """The approval command must preserve the reviewed operation limit."""
         with patch.dict(os.environ, {"YGGFLARE_CONTAINER_NAME": "yggflare"}):
@@ -49,13 +48,9 @@ class AutoOptInTests(unittest.TestCase):
 
     def test_custom_container_name_is_shell_quoted(self):
         """No arbitrary shell text is injected through the container name."""
-        with patch.dict(
-            os.environ, {"YGGFLARE_CONTAINER_NAME": "another container"}
-        ):
+        with patch.dict(os.environ, {"YGGFLARE_CONTAINER_NAME": "another container"}):
             command = MANAGE.approval_command("da8fce91d8119265", 1)
-        self.assertTrue(
-            command.startswith("docker exec 'another container' yggflare ")
-        )
+        self.assertTrue(command.startswith("docker exec 'another container' yggflare "))
 
 
 if __name__ == "__main__":
