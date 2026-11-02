@@ -8,6 +8,10 @@ source_config="${source_root}/Scripts/cloudflare"
 
 test -r "${source_config}/static-hosts.json"
 install -d -m 0700 "${home}/config" "${home}/data" "${home}/backup" "${home}/secrets"
+# Optional webhook must still exist as an empty Compose secret file.
+if [[ ! -e "${home}/secrets/network_discord_webhook" ]]; then
+  install -m 0600 /dev/null "${home}/secrets/network_discord_webhook"
+fi
 
 for name in cloudflare-settings.json static-hosts.json \
             static-hosts-reserved.json retained-dns.json retired-devices.json; do
