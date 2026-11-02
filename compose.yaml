@@ -7,26 +7,26 @@ services:
     network_mode: host
     environment:
       TZ: UTC
-      YGG_LOG_FORMAT: "${YGG_LOG_FORMAT:-text}"
-      YGG_WATCH_COMPOSE: "${YGG_WATCH_COMPOSE:-true}"
-      YGG_WATCH_DOCKER: "${YGG_WATCH_DOCKER:-true}"
-      YGG_WATCH_POLL_SECONDS: "${YGG_WATCH_POLL_SECONDS:-15}"
-      YGG_WATCH_DEBOUNCE_SECONDS: "${YGG_WATCH_DEBOUNCE_SECONDS:-20}"
-      YGG_WATCH_COOLDOWN_SECONDS: "${YGG_WATCH_COOLDOWN_SECONDS:-60}"
+      YGGFLARE_LOG_FORMAT: "${YGGFLARE_LOG_FORMAT:-text}"
+      YGGFLARE_WATCH_COMPOSE: "${YGGFLARE_WATCH_COMPOSE:-true}"
+      YGGFLARE_WATCH_DOCKER: "${YGGFLARE_WATCH_DOCKER:-true}"
+      YGGFLARE_WATCH_POLL_SECONDS: "${YGGFLARE_WATCH_POLL_SECONDS:-15}"
+      YGGFLARE_WATCH_DEBOUNCE_SECONDS: "${YGGFLARE_WATCH_DEBOUNCE_SECONDS:-20}"
+      YGGFLARE_WATCH_COOLDOWN_SECONDS: "${YGGFLARE_WATCH_COOLDOWN_SECONDS:-60}"
       YGGFLARE_CONTAINER_NAME: yggflare
       YGGFLARE_CONFIG: /config
       YGGFLARE_DATA: /data
       YGGFLARE_BACKUP: /backup
       YGGFLARE_SOURCE: /compose-source
-      CF_AUTO_APPLY: "${CF_AUTO_APPLY:-false}"
-      YGG_LAN_CIDR: "${YGG_LAN_CIDR:?Set LAN discovery CIDR}"
-      YGG_DEVICES_CIDR: "${YGG_DEVICES_CIDR:?Set static device CIDR}"
-      YGG_DOCKER_CIDR: "${YGG_DOCKER_CIDR:?Set Docker services CIDR}"
-      YGG_INTERNAL_DOMAIN: "${YGG_INTERNAL_DOMAIN:?Set internal DNS zone}"
-      YGG_EXTERNAL_DOMAIN: "${YGG_EXTERNAL_DOMAIN:?Set external DNS zone}"
+      YGGFLARE_CLOUDFLARE_AUTO_APPLY: "${YGGFLARE_CLOUDFLARE_AUTO_APPLY:-false}"
+      YGGFLARE_LAN_CIDR: "${YGGFLARE_LAN_CIDR:?Set LAN discovery CIDR}"
+      YGGFLARE_DEVICES_CIDR: "${YGGFLARE_DEVICES_CIDR:?Set static device CIDR}"
+      YGGFLARE_DOCKER_CIDR: "${YGGFLARE_DOCKER_CIDR:?Set Docker services CIDR}"
+      YGGFLARE_INTERNAL_DOMAIN: "${YGGFLARE_INTERNAL_DOMAIN:?Set internal DNS zone}"
+      YGGFLARE_EXTERNAL_DOMAIN: "${YGGFLARE_EXTERNAL_DOMAIN:?Set external DNS zone}"
       PYTHONPATH: /app/cloudflare
       CLOUDFLARE_API_TOKEN_FILE: /run/secrets/cloudflare_api_token
-      YGG_NETWORK_DISCORD_WEBHOOK_FILE: /run/secrets/network_discord_webhook
+      YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE: /run/secrets/network_discord_webhook
       CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:?Set account ID}"
       CLOUDFLARE_TUNNEL_NAME: "${CLOUDFLARE_TUNNEL_NAME:-}"
       CLOUDFLARE_STATIC_DNS_REQUIRED: "${CLOUDFLARE_STATIC_DNS_REQUIRED:-true}"
@@ -41,7 +41,7 @@ services:
       - ${YGGFLARE_HOME:?Set YGGFLARE_HOME}/config:/config:ro
       - ${YGGFLARE_HOME:?Set YGGFLARE_HOME}/data:/data
       - ${YGGFLARE_HOME:?Set YGGFLARE_HOME}/backup:/backup
-      - ${YGG_MERGED_ROOT:?Set YGG_MERGED_ROOT}:/compose-source:ro
+      - ${YGGFLARE_MERGED_ROOT:?Set YGGFLARE_MERGED_ROOT}:/compose-source:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
     # Docker socket access is effectively host-root access.
