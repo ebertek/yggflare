@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -50,8 +51,9 @@ def main():
             print(f"  - {step}")
         print(f"Approval fingerprint: {fingerprint}")
         print(
-            "To apply: docker exec yggflare yggflare cloudflare orphan-apply "
-            f"{args.hostname} {fingerprint}"
+            "To apply: docker exec "
+            f"{shlex.quote(os.environ.get('YGGFLARE_CONTAINER_NAME', 'yggflare'))}"
+            f" yggflare cloudflare orphan-apply {args.hostname} {fingerprint}"
         )
         print("No changes made to Cloudflare.")
     else:
