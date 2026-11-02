@@ -18,7 +18,7 @@ FINGERPRINT = re.compile(r"^[0-9a-f]{16}$")
 def main(argv=None):
     """Run a Cloudflare operation using the controller's isolated input snapshot."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("component", choices=("cloudflare",))
+    parser.add_argument("component", choices=("cloudflare", "doctor", "backup", "network"))
     parser.add_argument(
         "operation",
         choices=(
@@ -29,12 +29,29 @@ def main(argv=None):
             "claim",
             "orphan-plan",
             "orphan-apply",
+            "verify",
+            "run",
+            "discord-test",
         ),
     )
     parser.add_argument("argument", nargs="?")
     parser.add_argument("approval", nargs="?")
     parser.add_argument("--max-operations", type=int, default=10)
     args = parser.parse_args(argv)
+    if args.component != "cloudflare":
+        if args.component == "doctor" and args.operation == "run":
+            return subprocess.run([sys.executable, "/app/doctor.py"], check=False).returncode
+        if args.component == "backup" and args.operation == "verify" and args.argument:
+            return subprocess.run(
+                [sys.executable, "/app/backup_verify.py", args.argument],
+                check=False,
+            ).returncode
+        if args.component == "network" and args.operation in ("run", "discord-test"):
+            command = [sys.executable, "/app/network-inventory/audit.py"]
+            if args.operation == "discord-test":
+                command = [sys.executable, "/app/network-inventory/discord_test.py"]
+            return subprocess.run(command, check=False).returncode
+        parser.error("Unsupported command for this component")
 
     if not 1 <= args.max_operations <= 10:
         parser.error("--max-operations must be between 1 and 10")
