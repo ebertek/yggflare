@@ -212,7 +212,11 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
         # Only Yggflare-created endpoints can be claimed automatically.
         # Existing pre-migration hostnames must be claimed explicitly.
         created = sorted(
-            {item["hostname"] for item in completed if item["kind"] == "create_access_app"}
+            {
+                item["hostname"]
+                for item in completed
+                if item["kind"] == "create_access_app"
+            }
         )
         if created:
             bound = scope(context["account"], context["ebi"], context["tunnel"])

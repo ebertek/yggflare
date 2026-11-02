@@ -237,7 +237,6 @@ def summarize(registry, desired, applications, dns, config):
     }
 
 
-
 def print_summary(report):
     """Show managed, orphaned and unmanaged counts without authorizing deletion."""
     lifecycle = report.get("lifecycle", {})

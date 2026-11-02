@@ -145,9 +145,7 @@ def run_audit(
         dns_internal=internal_dns,
     )
     bound = scope(account, ebi, tunnel_id)
-    registered = load_registry(
-        Path(os.environ.get("YGGFLARE_DATA", "/data")), bound
-    )
+    registered = load_registry(Path(os.environ.get("YGGFLARE_DATA", "/data")), bound)
     report["lifecycle"] = summarize(
         registered, desired, apps, public_dns, config["config"]
     )
