@@ -3,6 +3,14 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+env:
+  YGG_LAN_CIDR: 10.4.20.0/23
+  YGG_DEVICES_CIDR: 10.4.20.0/24
+  YGG_DOCKER_CIDR: 10.4.21.0/24
+  YGG_INTERNAL_DOMAIN: ygg.nu
+  YGG_EXTERNAL_DOMAIN: ebi.nu
+  PYTHONPATH: src/cloudflare
+
 permissions:
   contents: read
 jobs:
