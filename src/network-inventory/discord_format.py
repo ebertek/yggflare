@@ -11,7 +11,7 @@ def render(messages, test=False):
             "embeds": [
                 {
                     "title": "Yggflare - Delivery test",
-                    "description": "Notification delivery works. No drift was detected by this test.",
+                    "description": "TEST ONLY — Notification delivery works. No drift was detected by this test.",
                     "color": 3066993,
                 }
             ],
