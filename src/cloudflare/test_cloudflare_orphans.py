@@ -11,6 +11,7 @@ from cloudflare_orphans import (
     OwnershipError,
     claim,
     load_registry,
+    observe_orphans,
     registry_path,
     retire,
     review_orphan,
@@ -117,6 +118,31 @@ class LifecycleTests(unittest.TestCase):
             patch.dict("os.environ", {"YGGFLARE_SOURCE": str(self.path)}),
         ):
             return retire(self.client, self.path, self.path, BOUND, HOST, fingerprint)
+
+    def test_grace_period_and_reappearance_reset(self):
+        self.claim()
+        start = 1700000000.0
+        self.assertEqual(observe_orphans(self.path, BOUND, {}, start), [])
+        self.assertEqual(observe_orphans(self.path, BOUND, {}, start + 6 * 3600), [])
+        self.assertEqual(observe_orphans(self.path, BOUND, {}, start + 24 * 3600), [])
+        # Missing observation cycles reset the timer.
+        self.assertEqual(observe_orphans(self.path, BOUND, {}, start + 30 * 3600), [])
+        self.assertEqual(
+            observe_orphans(self.path, BOUND, {HOST: [POLICY]}, start + 31 * 3600),
+            [],
+        )
+        self.assertEqual(observe_orphans(self.path, BOUND, {}, start + 32 * 3600), [])
+        for hour in (38, 44, 50, 56):
+            result = observe_orphans(self.path, BOUND, {}, start + hour * 3600)
+        self.assertEqual(result, [HOST])
+
+    def test_unmanaged_hosts_never_eligible(self):
+        self.assertEqual(observe_orphans(self.path, BOUND, {}, 1700000000.0), [])
+
+    def test_invalid_grace_period_is_rejected(self):
+        for hours in (0, 1, 23, 721):
+            with self.assertRaises(OwnershipError):
+                observe_orphans(self.path, BOUND, {}, 1700000000.0, hours)
 
     def test_missing_registry_never_claims_existing_resources(self):
         registry = load_registry(self.path, BOUND)

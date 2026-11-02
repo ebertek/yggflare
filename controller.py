@@ -132,6 +132,16 @@ def cloudflare_run():
         if auto == "true":
             args.append("--auto")
         run(args, env=env)
+        if env.get("CF_AUTO_CLEANUP", "false") == "true":
+            if auto != "true":
+                raise ValueError("CF_AUTO_CLEANUP requires CF_AUTO_APPLY=true")
+            run(
+                [
+                    sys.executable,
+                    "/app/cloudflare/cloudflare-auto-cleanup.py",
+                ],
+                env=env,
+            )
 
 
 def network_run():
