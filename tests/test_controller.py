@@ -37,14 +37,9 @@ class ControllerTests(unittest.TestCase):
     def test_subprocess_failure_is_reported(self):
         with patch.object(controller, "log") as log:
             with self.assertRaises(RuntimeError):
-                controller.run(
-                    [sys.executable, "-c", "import sys; sys.exit(7)"]
-                )
+                controller.run([sys.executable, "-c", "import sys; sys.exit(7)"])
             self.assertTrue(
-                any(
-                    call.kwargs.get("exit_code") == 7
-                    for call in log.call_args_list
-                )
+                any(call.kwargs.get("exit_code") == 7 for call in log.call_args_list)
             )
 
     def test_cloudflare_requires_secret_file(self):
