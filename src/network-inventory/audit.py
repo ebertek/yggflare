@@ -329,7 +329,7 @@ def notify_discord(webhook, messages):
     """Post only summarized events; never include credentials."""
     if not webhook or not messages:
         return
-    is_test = len(messages) == 1 and messages[0].startswith("TEST ONLY:")
+    is_test = len(messages) == 1 and messages[0].startswith("TEST ONLY")
     body = json.dumps(render(messages, test=is_test)).encode("utf-8")
     request = urllib.request.Request(
         webhook,
