@@ -17,11 +17,11 @@ Standalone, always-running Cloudflare + LAN inventory controller for the Ygg hom
 ## Prepare source
 
 1. The legacy controller and network-audit modules are now imported under `src/cloudflare` and `src/network-inventory`; the deployment must use this version-controlled source, not copy from the runtime checkout.
-2. Run the Cloudflare and network inventory tests, then build the Docker image. The old import helper is for historical reference only.
+2. Run the Cloudflare and network inventory tests, then build the Docker image. No legacy source import is needed.
 3. Migrate configuration with `sudo ./scripts/migrate-config.sh /home/docker/ygg-compose /home/docker/yggflare` (copy only; DOES NOT modify either Git repository).
 4. Supply Compose interpolation values using exported host environment variables or Komodo's environment configuration; do not create a `.env` file. Configure `CF_AUTO_APPLY=false` as a container environment value while shadow-testing.
 5. Start shadow mode: `docker compose up -d`, inspect `docker compose logs -f`, and compare reports with the existing Komodo actions. Avoid concurrent auto writers.
-6. Only after tests, parity, and backup restore drills, disable the legacy Komodo Cloudflare and inventory schedules, explicitly opt into unattended writes in `/config/cloudflare.env`, then enable the new controller's write mode using the Compose environment variable `CF_AUTO_APPLY=true`.
+6. Only after tests, parity, and backup restore drills, disable the legacy Komodo Cloudflare and inventory schedules, enable unattended writes by setting the Compose environment variable `CF_AUTO_APPLY=true` after disabling the old writer.
 
 ## Runtime configuration
 
@@ -45,7 +45,7 @@ The migration helper **copies JSON and state only**, never imports the legacy `c
 
 ## Important cutover safeguards
 
-- Back up BOTH `/config` and `/data` to **separate durable storage**. The included snapshot script produces **plaintext** archives; store and replicate them securely. Never expose archives through web.
+- Back up `/config`, `/data`, and the Compose secrets to **separate durable storage**. The included snapshot script produces **plaintext** archives; store and replicate them securely. Never expose archives through web.
 - Historical Git commits may still contain retired secrets. Review repository history and rotate credentials when appropriate.
 - Do not remove files from `ebertek-compose-secrets` until the new service has been proven stable, ownership/backup is established, and you are ready to remove old readers.
 - Never edit tracked files under `/home/docker/ygg-compose`; source changes go to `ebertek-compose` and private changes to `ebertek-compose-secrets`.
@@ -54,7 +54,7 @@ The migration helper **copies JSON and state only**, never imports the legacy `c
 
 ## Backups
 
-The controller creates **daily snapshots at 04:00 Europe/Stockholm**, containing the `/config` and `/data` volumes. Archives have mode 0600 and are kept for 14 local snapshots. Backups are **plaintext**, and `/backup` must reside on protected persistent storage. Schedule off-host replication using an existing backup system, and test restoration before cutover. A manual host-side snapshot is also available with `sudo ./scripts/backup.sh /home/docker/yggflare`.
+The controller creates **daily snapshots at 04:00 Europe/Stockholm**, containing `/config`, `/data`, and the mounted Compose secrets. Archives have mode 0600 and are kept for 14 local snapshots. Backups are **plaintext**, and `/backup` must reside on protected persistent storage. Schedule off-host replication using an existing backup system, and test restoration before cutover. A manual host-side snapshot is also available with `sudo ./scripts/backup.sh /home/docker/yggflare`.
 
 ## Verification status
 
