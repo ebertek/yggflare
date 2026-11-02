@@ -117,9 +117,12 @@ def docker_ips():
             ).values()
             if isinstance(value.get("IPAddress"), str)
         }
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        # Do not silently classify unknown .21 hosts as Docker-owned.
-        return set()
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        # Inability to inspect Docker makes LAN attribution unsafe: never
+        # generate false device alerts or overwrite the known-good state.
+        raise RuntimeError(
+            "Docker inspection failed; refusing network audit to protect state"
+        ) from error
 
 
 def load_inventory(path):
