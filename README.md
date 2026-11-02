@@ -7,7 +7,7 @@ Standalone, always-running Cloudflare + LAN inventory controller for the Ygg hom
 ## Architecture
 
 - A single long-lived process schedules Cloudflare reconciliation every six hours.
-- Network inventory runs daily at 05:15 local time (Europe/Stockholm).
+- Network inventory runs daily at 05:15 UTC.
 - `CF_AUTO_APPLY` defaults to `false`; existing `cloudflare-manage.py --auto` guard remains the only automatic write path.
 - `/config` stores *unversioned* private JSON inventory and settings files, `/data` stores audit state and scheduling markers, and `/backup` stores local snapshots.
 - `/compose-source` is a **read-only mount** of the deployed merged GitOps checkout. The controller builds a read-only-to-itself *working snapshot* of Compose YAML with private inventory injected from `/config`.
@@ -35,13 +35,13 @@ All managed IP ranges and both DNS zones are set with Compose environment variab
 | `YGG_INTERNAL_DOMAIN` | `ygg.nu` | Internal DNS zone |
 | `YGG_EXTERNAL_DOMAIN` | `ebi.nu` | External Cloudflare Access/Tunnel hostnames |
 
-Tests explicitly set these values as fixture data. Existing `(no settings file)` retains other reconciliation settings; its zone names are overridden by these runtime environment variables.
+Tests explicitly set these values as fixture data. Cloudflare settings are provided exclusively through environment variables.
 
 ## Runtime configuration
 
 There are **no application dotenv files** in Yggflare.
 
-- **Compose environment (nonsecret):** `YGG_LAN_CIDR`, `YGG_DEVICES_CIDR`, `YGG_DOCKER_CIDR`, `YGG_INTERNAL_DOMAIN`, `YGG_EXTERNAL_DOMAIN`, `CF_AUTO_APPLY=false` (default), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ID`, `CLOUDFLARE_EXTERNAL_ZONE_ID`, `CLOUDFLARE_INTERNAL_ZONE_ID`, `TZ`, `YGGFLARE_HOME`, and `YGG_MERGED_ROOT`. Set them through Komodo or exported environment variables when running Compose. All identifiers and switches are provided through environment variables.
+- **Compose environment (nonsecret):** `YGG_LAN_CIDR`, `YGG_DEVICES_CIDR`, `YGG_DOCKER_CIDR`, `YGG_INTERNAL_DOMAIN`, `YGG_EXTERNAL_DOMAIN`, `CF_AUTO_APPLY=false` (default), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_TUNNEL_ID`, `CLOUDFLARE_EXTERNAL_ZONE_ID`, `CLOUDFLARE_INTERNAL_ZONE_ID`, `YGG_LOG_FORMAT`, `YGGFLARE_HOME`, and `YGG_MERGED_ROOT`. Set them through Komodo or exported environment variables when running Compose. All identifiers and switches are provided through environment variables.
 - **Compose secrets:** `secrets/cloudflare_api_token` and `secrets/network_discord_webhook` on the host, mounted as `/run/secrets/cloudflare_api_token` and `/run/secrets/network_discord_webhook`. The Discord webhook is optional in behavior, but the Compose file expects the secret file to exist; create an empty file if unused. Never store either secret in a Compose environment value.
 - **Persistent JSON:** `config/static-hosts.json`, `config/retained-dns.json`, and optional reserved/retired device records.
 - **Inventory schema:** use only `ports: [{"protocol":"tcp","port":443}]`; legacy `open_ports` is deliberately rejected by both Cloudflare inventory validation and the network auditor. Convert old inventory before starting the container.
@@ -104,3 +104,9 @@ The former JSON settings file is obsolete. Set:
 - `CF_AUTO_APPLY=false` until after parity validation and legacy writer shutdown.
 
 Credential tokens and webhooks remain in Compose secrets, never environment variables. Existing private JSON inventories are still stored in `/config`; only the *settings* JSON is removed.
+
+## Logging
+
+`YGG_LOG_FORMAT=text` (default) emits UTC timestamped, component-labelled readable lines. `YGG_LOG_FORMAT=json` emits one JSON object per line for Loki/Alloy/Promtail with `timestamp` (UTC RFC3339), `level`, `component`, `message`, and optional event fields. All child-process output is re-emitted by the controller in the chosen format. This does not change Docker's logging driver.
+
+Scheduling always uses UTC: backup at 04:00 UTC, LAN audit at 05:15 UTC, Cloudflare every six hours. These are fixed UTC times and no longer follow daylight saving time.
