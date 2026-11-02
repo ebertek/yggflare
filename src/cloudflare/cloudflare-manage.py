@@ -16,6 +16,7 @@ import os
 import sys
 from pathlib import Path
 
+from cloudflare_credentials import api_token
 from cloudflare_api import CloudflareError, checked_id, checked_tunnel_id
 from cloudflare_guarded import (
     UnsafePlan,
@@ -142,7 +143,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     ):
         if os.environ.get(envname):
             settings[key] = os.environ[envname]
-    client = CloudflareWriter(os.environ.get("CLOUDFLARE_API_TOKEN"))
+    client = CloudflareWriter(api_token())
 
     if args.apply is None and not args.auto:
         report, context, actions, token = plan(
