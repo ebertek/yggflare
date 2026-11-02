@@ -5,6 +5,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
     "network_audit", Path(__file__).with_name("audit.py")
@@ -30,6 +31,12 @@ XML = """<?xml version="1.0"?>
 
 class NetworkAuditTests(unittest.TestCase):
     """Scanners must not infer open services from uncertainty."""
+
+    def test_docker_inspection_failure_aborts_instead_of_reporting_containers(self):
+        """Do not mistake running containers for unexpected LAN devices."""
+        with patch.object(audit, "run_command", side_effect=FileNotFoundError("docker")):
+            with self.assertRaisesRegex(RuntimeError, "Docker inspection failed"):
+                audit.docker_ips()
 
     def test_realistic_private_inventory_loads_without_ip_type_error(self):
         """Load canonical IPv4, companion addresses and mixed port metadata."""
