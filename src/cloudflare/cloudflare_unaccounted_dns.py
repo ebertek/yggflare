@@ -1,4 +1,4 @@
-"""Read-only reporting of ygg.nu records without an inventory owner.
+"""Read-only reporting of internal domain records without an inventory owner.
 
 Findings are review hints only. Never add them to Cloudflare mutation plans.
 """
@@ -6,6 +6,7 @@ Findings are review hints only. Never add them to Cloudflare mutation plans.
 import re
 
 from cloudflare_retained_dns import matches_retained, retained_summary
+from yggflare_config import domain
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 ADDRESS_TYPES = frozenset({"A", "AAAA", "CNAME"})
@@ -17,13 +18,13 @@ def declared_dns_names(static_aliases, compose_services, running):
     for service in compose_services:
         name = service.get("Name", "").rsplit("/", 1)[-1]
         if NAME.fullmatch(name):
-            owned.add(name + ".ygg.nu")
+            owned.add(name + "." + domain("YGG_INTERNAL_DOMAIN"))
         custom = service.get("ContainerName")
         if isinstance(custom, str) and NAME.fullmatch(custom):
-            owned.add(custom + ".ygg.nu")
+            owned.add(custom + "." + domain("YGG_INTERNAL_DOMAIN"))
     for name in running:
         if NAME.fullmatch(name):
-            owned.add(name + ".ygg.nu")
+            owned.add(name + "." + domain("YGG_INTERNAL_DOMAIN"))
     return owned
 
 
@@ -51,7 +52,11 @@ def audit_unaccounted_dns(records, static_hosts, declared_names, retained=None):
         if not isinstance(name, str):
             continue
         name = name.lower().rstrip(".")
-        if name == "ygg.nu" or not name.endswith(".ygg.nu") or name in owned:
+        if (
+            name == domain("YGG_INTERNAL_DOMAIN")
+            or not name.endswith("." + domain("YGG_INTERNAL_DOMAIN"))
+            or name in owned
+        ):
             continue
         if any(matches_retained(wanted, record) for wanted in retained):
             continue
@@ -95,7 +100,7 @@ def print_unaccounted_summary(report):
     declared = summary.get("retained", {})
     if declared.get("declared"):
         print(
-            f"Retained ygg.nu DNS: {declared['present']}/"
+            f"Retained {domain('YGG_INTERNAL_DOMAIN')} DNS: {declared['present']}/"
             f"{declared['declared']} matching (review only; no writes)"
         )
         for expected in declared["missing"]:
@@ -106,7 +111,7 @@ def print_unaccounted_summary(report):
             )
     counts = summary["counts"]
     print(
-        f"Unaccounted ygg.nu DNS: {counts['records']} records across "
+        f"Unaccounted {domain('YGG_INTERNAL_DOMAIN')} DNS: {counts['records']} records across "
         f"{counts['hostnames']} hostnames (review only; no deletions)"
     )
     for finding in summary["findings"]:

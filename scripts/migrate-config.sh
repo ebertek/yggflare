@@ -13,7 +13,7 @@ if [[ ! -e "${home}/secrets/network_discord_webhook" ]]; then
   install -m 0600 /dev/null "${home}/secrets/network_discord_webhook"
 fi
 
-for name in cloudflare-settings.json static-hosts.json \
+for name in static-hosts.json \
             static-hosts-reserved.json retained-dns.json retired-devices.json; do
   if [[ -f "${source_config}/${name}" ]]; then
     install -m 0600 "${source_config}/${name}" "${home}/config/${name}"

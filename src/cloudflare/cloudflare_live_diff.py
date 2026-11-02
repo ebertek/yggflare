@@ -3,7 +3,9 @@
 import ipaddress
 from collections import Counter
 
-DOCKER_NETWORK = ipaddress.ip_network("10.4.21.0/24")
+from yggflare_config import domain, network
+
+DOCKER_NETWORK = network("YGG_DOCKER_CIDR")
 ORIGIN_CNAME_SUFFIX = ".cfargotunnel.com"
 
 
@@ -62,17 +64,17 @@ def validate_ingress(ingress):
 def compare_live(
     desired,
     apps,
-    dns_ebi,
+    dns_external,
     tunnel_ingress,
     tunnel_id,
     docker_addresses=None,
-    dns_ygg=None,
+    dns_internal=None,
 ):
     """Compare Compose with live Cloudflare and propose non-destructive actions."""
     actions = []
     blocked = []
     app_index = index_records(apps, "domain")
-    dns_index = index_records(dns_ebi, "name")
+    dns_index = index_records(dns_external, "name")
     tunnel_hosts = validate_ingress(tunnel_ingress)
     target = tunnel_id.lower() + ORIGIN_CNAME_SUFFIX
 
@@ -136,9 +138,9 @@ def compare_live(
             )
 
     if docker_addresses is not None:
-        private_index = index_records(dns_ygg or [], "name")
+        private_index = index_records(dns_internal or [], "name")
         for container, address in sorted(docker_addresses.items()):
-            hostname = container + ".ygg.nu"
+            hostname = container + "." + domain("YGG_INTERNAL_DOMAIN")
             matched = [
                 record
                 for record in private_index.get(hostname, [])
@@ -182,7 +184,7 @@ def compare_live(
         "counts": {
             "desired_hosts": len(desired),
             "live_access_apps": len(apps),
-            "live_ebi_dns_records": len(dns_ebi),
+            "live_external_dns_records": len(dns_external),
             "tunnel_routes": len(tunnel_ingress),
             "proposed_operations": len(actions),
             "blocked": len(blocked),

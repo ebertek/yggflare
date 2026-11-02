@@ -10,7 +10,6 @@ GET requests only and does not use Terraform files, state, or local source repos
 import argparse
 import ipaddress
 import json
-import os
 import re
 import subprocess
 import sys
@@ -33,6 +32,7 @@ from cloudflare_unaccounted_dns import (
     declared_dns_names,
     print_unaccounted_summary,
 )
+from yggflare_config import cloudflare_settings, domain
 
 CONTAINER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -94,8 +94,12 @@ def run_audit(
         )
     )
     account = checked_id(settings["account_id"], "account ID")
-    ebi = settings.get("ebi_zone_id") or client.zone_id(settings["ebi_zone"], account)
-    ygg = settings.get("ygg_zone_id") or client.zone_id(settings["ygg_zone"], account)
+    ebi = settings.get("external_zone_id") or client.zone_id(
+        settings["external_zone"], account
+    )
+    ygg = settings.get("internal_zone_id") or client.zone_id(
+        settings["internal_zone"], account
+    )
     tunnel_id = settings.get("tunnel_id") or client.tunnel_id(
         account, settings["tunnel_name"]
     )
@@ -109,7 +113,7 @@ def run_audit(
             "Compose labels failed Access validation:\n" + "\n".join(errors)
         )
     if not desired:
-        raise ValueError("No managed ebi.nu hostnames found in Compose")
+        raise ValueError("No managed external-domain hostnames found in Compose")
 
     apps = hydrate_apps(client, account, client.list_applications(account))
     public_dns = client.list_dns(ebi)
@@ -121,7 +125,8 @@ def run_audit(
         collisions = sorted(
             hostname
             for hostname in static_hosts
-            if hostname.removesuffix(".ygg.nu") in docker_addresses
+            if hostname.removesuffix("." + domain("YGG_INTERNAL_DOMAIN"))
+            in docker_addresses
         )
         if collisions:
             raise ValueError(
@@ -135,10 +140,10 @@ def run_audit(
         routes,
         tunnel_id,
         docker_addresses=docker_addresses,
-        dns_ygg=internal_dns,
+        dns_internal=internal_dns,
     )
     report["counts"]["live_reusable_policies"] = len(policies)
-    report["counts"]["live_ygg_dns_records"] = len(internal_dns)
+    report["counts"]["live_internal_dns_records"] = len(internal_dns)
     report["static_dns"] = compare_static_dns(
         static_hosts, internal_dns, static_companions
     )
@@ -178,7 +183,8 @@ def run_audit(
         "Unmanaged Cloudflare resources and stopped containers are preserved",
         "Policy changes are suggestions, not automatically applied",
         "Static non-Docker DNS is managed only when static_dns_sync is enabled",
-        "Unaccounted ygg.nu DNS findings are review-only; never deleted automatically",
+        "Unaccounted internal-domain DNS findings are review-only; "
+        "never deleted automatically",
         "Retained DNS declarations are read-only exact-type expectations",
     ]
     return report
@@ -194,33 +200,16 @@ def main():
         help="Merged GitOps repository containing Compose definitions",
     )
     parser.add_argument(
-        "--settings",
-        type=Path,
-        default=Path(__file__).with_name("cloudflare-settings.json"),
-        help="Nonsecret Cloudflare account and zone identifiers",
-    )
-    parser.add_argument(
         "--skip-docker",
         action="store_true",
-        help="Skip Docker and ygg.nu DNS inspection",
+        help="Skip Docker and internal-domain DNS inspection",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     root = args.root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"Merged GitOps checkout does not exist: {root}")
-    settings = json.loads(args.settings.read_text())
-    if not isinstance(settings, dict):
-        raise TypeError("Cloudflare settings must be a JSON object")
-    for setting, name in (
-        ("account_id", "CLOUDFLARE_ACCOUNT_ID"),
-        ("tunnel_id", "CLOUDFLARE_TUNNEL_ID"),
-        ("ebi_zone_id", "CLOUDFLARE_EBI_ZONE_ID"),
-        ("ygg_zone_id", "CLOUDFLARE_YGG_ZONE_ID"),
-    ):
-        if os.environ.get(name):
-            settings[setting] = os.environ[name]
-
+    settings = cloudflare_settings()
     client = CloudflareClient(api_token())
     report = run_audit(client, root, settings, skip_docker=args.skip_docker)
     if args.json:

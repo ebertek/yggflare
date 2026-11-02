@@ -93,7 +93,7 @@ def main():
         except ipaddress.AddressValueError:
             parser.error("Targets must be explicit IPv4 addresses, not DNS names")
         if address not in NETWORK:
-            parser.error("Only 10.4.20.0/23 addresses are permitted")
+            parser.error("Only addresses within YGG_LAN_CIDR are permitted")
     print(
         json.dumps(
             {

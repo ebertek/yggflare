@@ -12,12 +12,21 @@ services:
       YGGFLARE_BACKUP: /backup
       YGGFLARE_SOURCE: /compose-source
       CF_AUTO_APPLY: "${CF_AUTO_APPLY:-false}"
+      YGG_LAN_CIDR: "${YGG_LAN_CIDR:?Set LAN discovery CIDR}"
+      YGG_DEVICES_CIDR: "${YGG_DEVICES_CIDR:?Set static device CIDR}"
+      YGG_DOCKER_CIDR: "${YGG_DOCKER_CIDR:?Set Docker services CIDR}"
+      YGG_INTERNAL_DOMAIN: "${YGG_INTERNAL_DOMAIN:?Set internal DNS zone}"
+      YGG_EXTERNAL_DOMAIN: "${YGG_EXTERNAL_DOMAIN:?Set external DNS zone}"
+      PYTHONPATH: /app/cloudflare
       CLOUDFLARE_API_TOKEN_FILE: /run/secrets/cloudflare_api_token
       YGG_NETWORK_DISCORD_WEBHOOK_FILE: /run/secrets/network_discord_webhook
-      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:?Set account ID}"
+      CLOUDFLARE_TUNNEL_NAME: "${CLOUDFLARE_TUNNEL_NAME:-}"
+      CLOUDFLARE_STATIC_DNS_REQUIRED: "${CLOUDFLARE_STATIC_DNS_REQUIRED:-true}"
+      CLOUDFLARE_STATIC_DNS_SYNC: "${CLOUDFLARE_STATIC_DNS_SYNC:-false}"
       CLOUDFLARE_TUNNEL_ID: "${CLOUDFLARE_TUNNEL_ID:-}"
-      CLOUDFLARE_EBI_ZONE_ID: "${CLOUDFLARE_EBI_ZONE_ID:-}"
-      CLOUDFLARE_YGG_ZONE_ID: "${CLOUDFLARE_YGG_ZONE_ID:-}"
+      CLOUDFLARE_EXTERNAL_ZONE_ID: "${CLOUDFLARE_EXTERNAL_ZONE_ID:-}"
+      CLOUDFLARE_INTERNAL_ZONE_ID: "${CLOUDFLARE_INTERNAL_ZONE_ID:-}"
     secrets:
       - cloudflare_api_token
       - network_discord_webhook

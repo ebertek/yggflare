@@ -3,7 +3,13 @@
 import json
 import re
 
-HOST = re.compile(r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.ebi\.nu$")
+from yggflare_config import domain
+
+HOST = re.compile(
+    r"^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\."
+    + re.escape(domain("YGG_EXTERNAL_DOMAIN"))
+    + r"$"
+)
 RULE = re.compile(r"^traefik\.http\.routers\.[^.]+\.rule$")
 HOST_RULE = re.compile(r'Host\(\s*([`"])([^`"]+)\1\s*\)')
 UUID = re.compile(r"^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
@@ -61,7 +67,7 @@ def compose_inventory(root):  # pylint: disable=too-many-locals,too-many-branche
 
 
 def router_hosts(labels, name):
-    """Extract quoted Traefik Host rules and report unsupported ebi.nu syntax."""
+    """Extract quoted Traefik Host rules and report unsupported external-domain syntax."""
     hosts = set()
     errors = []
     for key, rule in labels.items():
@@ -70,7 +76,7 @@ def router_hosts(labels, name):
         expression = str(rule)
         matches = list(HOST_RULE.finditer(expression))
         hosts.update(match.group(2) for match in matches)
-        if ".ebi.nu" in expression.lower() and (
+        if ("." + domain("YGG_EXTERNAL_DOMAIN")) in expression.lower() and (
             not matches or expression.count("Host(") != len(matches)
         ):
             errors.append(f"{name}: malformed Traefik Host() rule in {key}")
@@ -138,7 +144,11 @@ def discover(containers, known_policies):  # pylint: disable=too-many-branches
         errors.extend(router_errors)
         if not names:
             continue
-        ebi = {v.lower() for v in names if v.lower().endswith(".ebi.nu")}
+        ebi = {
+            v.lower()
+            for v in names
+            if v.lower().endswith("." + domain("YGG_EXTERNAL_DOMAIN"))
+        }
         if not ebi:
             continue
         raw = labels.get("cf.access.policies")
