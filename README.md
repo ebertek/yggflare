@@ -86,6 +86,42 @@ Set `YGG_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGG_LO
 
 Use `docker compose logs -f yggflare` to inspect the controller and `docker inspect yggflare --format '{{.State.Health.Status}}'` to check health.
 
+## Manual Cloudflare reconciliation
+
+Run administrative commands **on the Docker host** against the running
+`yggflare` container. The installed `yggflare` CLI copies the merged
+Compose definitions and private inventory into an isolated temporary snapshot,
+just like the scheduled controller; it never modifies `/compose-source`.
+
+```sh
+# Read-only drift audit
+docker exec yggflare yggflare cloudflare audit
+
+# Review a bounded, read-only approval plan
+docker exec yggflare yggflare cloudflare plan --max-operations 1
+```
+
+If a plan proposes only the intended operation, it prints an approval
+fingerprint and a **ready-to-run host command**, for example:
+
+```sh
+docker exec yggflare yggflare cloudflare apply <approval-fingerprint> --max-operations 1
+```
+
+The CLI preserves the plan's `--max-operations` limit in the suggested
+command. Applying requires the same live plan fingerprint and rechecks the
+current Cloudflare state before each guarded write. If the plan changes,
+the approval is rejected and must be reviewed again. Use the actual
+fingerprint returned by your audit, not the example placeholder.
+
+`CF_AUTO_APPLY=false` can remain set for manually approved changes; the
+unattended writer does not need to be enabled. To validate the Cloudflare
+templates without modifying anything:
+
+```sh
+docker exec yggflare yggflare cloudflare preflight
+```
+
 ## Reactive reconciliation
 
 The Compose watcher computes a content fingerprint of `compose.yaml`/`compose.yml`

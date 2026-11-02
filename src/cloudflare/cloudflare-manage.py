@@ -12,6 +12,7 @@ import argparse
 import fcntl
 import importlib.util
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -92,6 +93,15 @@ def require_auto_opt_in():
         raise UnsafePlan("Unattended Cloudflare writes require CF_AUTO_APPLY=true")
 
 
+def approval_command(token, maximum):
+    """Print a host-side command that can reconstruct the required private snapshot."""
+    container = shlex.quote(os.environ.get("YGGFLARE_CONTAINER_NAME", "yggflare"))
+    return (
+        f"docker exec {container} yggflare cloudflare apply {token} "
+        f"--max-operations {maximum}"
+    )
+
+
 def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     """Preview operations or execute exactly one revalidated approval."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -109,7 +119,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="Unattended apply, requires CF_AUTO_APPLY=true in private cloudflare.env",
+        help="Unattended apply, requires CF_AUTO_APPLY=true in the container environment",
     )
     parser.add_argument(
         "--max-operations",
@@ -158,9 +168,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
             print(f"  {action['kind']}: {action['hostname']}")
         if actions:
             print(f"Approval fingerprint: {token}")
-            print(
-                f"To apply: python3 Scripts/cloudflare/cloudflare-manage.py --apply {token}"
-            )
+            print(f"To apply: {approval_command(token, args.max_operations)}")
         else:
             print("Already synchronized. No changes required.")
         print("No changes made.")
