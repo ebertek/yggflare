@@ -139,8 +139,36 @@ The read-only audit classifies external hostnames as:
 - **Unmanaged:** present in Cloudflare but not claimed, regardless of whether
   it happens to be absent from Compose
 
-Neither the six-hour audit nor `CF_AUTO_APPLY=true` deletes resources.
-The normal automatic reconciler remains **strictly non-destructive**.
+Neither the six-hour audit nor `CF_AUTO_APPLY=true` deletes resources
+unless the **separate**, disabled-by-default `CF_AUTO_CLEANUP=true`
+opt-in is configured. The normal resource reconciler remains non-destructive.
+
+### Opt-in automatic orphan retirement
+
+The optional cleanup workflow requires both `CF_AUTO_APPLY=true` and
+`CF_AUTO_CLEANUP=true`. Its minimum grace period is 24 hours:
+
+```yaml
+environment:
+  CF_AUTO_APPLY: "true"
+  CF_AUTO_CLEANUP: "true"
+  CF_ORPHAN_GRACE_HOURS: "24"
+```
+
+Only previously claimed/created managed resources can be retired. Yggflare
+records first/last absence observations in `/data/orphan-observations.json`
+and resets an orphan timer if Compose reintroduces the hostname or the
+interval between successful observations exceeds eight hours. Missing
+history never authorizes immediate removal. The reconciler verifies the
+current mounted Compose, Cloudflare resource identities, ordered policies,
+Tunnel configuration and registry before deleting. It removes at most one
+orphan per successful cycle (DNS → Tunnel → Access), retaining ownership
+on partial failure; completion generates a Discord confirmation when
+configured. **Unmanaged resources are never eligible.** Invalid Compose
+source or API failures block cleanup, and the default is off.
+
+The normal manual `orphan-plan`/`orphan-apply` workflow remains available
+regardless of unattended cleanup settings.
 
 ### Claiming existing managed services
 
