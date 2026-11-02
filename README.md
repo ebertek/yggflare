@@ -1,6 +1,8 @@
 # Yggflare
 
-Yggflare is a containerized Cloudflare and local network inventory controller. It reconciles Cloudflare Access applications, Tunnel routes and DNS against Compose definitions and JSON device inventories, and audits local network devices and exposed services.
+Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and DNS**, driven by Docker Compose, alongside **LAN device/service inventory, Discord alerts and recovery tooling**. It keeps your Compose source read-only and treats destructive Cloudflare actions as explicit, separately approved operations.
+
+[Quick start](#deployment) · [Operations](#release-readiness-diagnostics) · [Cloudflare safety](#managed-host-lifecycle-and-safe-retirement) · [License](#license)
 
 ## How it works
 
@@ -43,7 +45,7 @@ The example domains and ranges are not built-in defaults. Yggflare validates the
 
 | Variable | Purpose |
 |---|---|
-| `YGGFLARE_VERSION` | GHCR tag to pull; `main` tracks development until a versioned release is available |
+| `YGGFLARE_VERSION` | GHCR tag to pull; use `v1.0.0` for the first stable release or `main` for development |
 | `YGGFLARE_HOME` | Host directory for config, state, backups and secrets |
 | `YGG_MERGED_ROOT` | Read-only host directory containing Compose source files |
 | `YGG_LAN_CIDR` | Network inventory scan scope |
@@ -180,14 +182,7 @@ and registry ownership. Failure leaves the registry in place, so a new plan
 can resume any remaining steps without guessing. No other Tunnel routes are
 removed. Unclaimed hostnames cannot be deleted by this workflow.
 
-**Important migration detail:** already-removed hostnames (for example,
-`yggflare-test.ebi.nu`) appear as **unmanaged**, not proven orphans,
-because the registry did not exist when they were last declared. To use
-managed retirement, first temporarily restore the Compose declaration,
-claim it while the live resources exactly match, and remove the declaration
-again. Otherwise retire those historical resources manually in Cloudflare
-after independent verification. Do **not** populate the ownership registry
-from a blind scan of existing Cloudflare resources.
+**Migration:** Resources that disappeared before Yggflare first tracked them remain **unmanaged**. Do not bulk-claim existing Cloudflare records. A claim requires a currently declared and fully verified Compose hostname.
 
 ## Reactive reconciliation
 
@@ -219,7 +214,7 @@ before enabling it.
 
 Published images are available at `ghcr.io/ebertek/yggflare`.
 
-- `:main` tracks the continuously tested development branch. It is **not** a stable release tag.
+- `:main` follows development builds and is **not** a stable release tag.
 - `:sha-<full-commit-sha>` identifies an exact build.
 - `:vMAJOR.MINOR.PATCH` is produced when a matching Git tag is pushed, such as `:v1.0.0`.
 - No `:latest` alias is published by this workflow.
@@ -232,7 +227,7 @@ docker compose pull
 docker compose up -d --no-build
 ```
 
-**The first stable release tag has not been created.** The `v1.0.0` examples document the future deployment workflow; the actual release requires complete parity validation first.
+Versioned release tags are immutable release references; prefer digest pinning in production. Run `docker exec yggflare yggflare doctor run` after upgrading and verify the backup restore-test before depending on recovery.
 
 ## Release-readiness diagnostics
 
@@ -262,11 +257,11 @@ before delivery can be validated. The test notification is deliberately
 opt-in. Real inventory scans are **not** read-only: they update observation
 state and can deliver detected changes, but never edit DNS/Compose.
 
-Backup verification checks archive member integrity and rejects absolute
-paths, traversal, links, duplicate members and unexpected file types. It
-does **not** extract into `/config`, `/data` or `/run/secrets`; an
-actual disaster-recovery restoration remains a separate controlled operation.
-Do not treat a verified archive as proof that a live restoration succeeded.
+`backup verify` validates archive integrity without extraction. `backup restore-test` rehearses extraction in a temporary, restricted directory under `/data` and checks the restored inventory/JSON state, **without replacing live files**. Neither is a substitute for a full disaster-recovery exercise on an independent host.
+
+## License
+
+Licensed under **Apache License 2.0**. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Cloudflare, Discord and other referenced products retain their respective trademarks and terms.
 
 ## Validation
 
