@@ -46,12 +46,12 @@ def resource_context(client, settings):
         "ebi": checked_id(
             settings.get("ebi_zone_id")
             or client.zone_id(settings["ebi_zone"], account),
-            "ebi.nu zone ID",
+            "external zone ID",
         ),
         "ygg": checked_id(
             settings.get("ygg_zone_id")
             or client.zone_id(settings["ygg_zone"], account),
-            "ygg.nu zone ID",
+            "internal zone ID",
         ),
         "tunnel": checked_tunnel_id(
             settings.get("tunnel_id")
