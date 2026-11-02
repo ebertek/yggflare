@@ -102,6 +102,24 @@ class NetworkAuditTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     audit.load_inventory(path)
 
+    def test_discord_notification_uses_named_user_agent(self):
+        """Discord requests must not use Python's default urllib User-Agent."""
+        from unittest.mock import MagicMock, patch
+
+        with patch.object(audit.urllib.request, "urlopen") as send:
+            response = MagicMock()
+            response.status = 204
+            send.return_value.__enter__.return_value = response
+            audit.notify_discord(
+                "https://discord.com/api/webhooks/test-token/example",
+                ["TEST ONLY"],
+            )
+        request = send.call_args.args[0]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertTrue(request.get_header("User-agent").startswith("Yggflare/"))
+        self.assertIn(b"TEST ONLY", request.data)
+
     def test_xml_only_counts_confirmed_open(self):
         """Verify xml only counts confirmed open."""
         hosts = audit.parse_nmap_xml(XML)
