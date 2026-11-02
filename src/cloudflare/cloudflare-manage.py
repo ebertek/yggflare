@@ -28,7 +28,7 @@ from cloudflare_guarded import (
 )
 from cloudflare_unaccounted_dns import print_unaccounted_summary
 from cloudflare_write_api import CloudflareWriter
-from yggflare_config import domain
+from yggflare_config import cloudflare_settings, domain
 
 SPEC = importlib.util.spec_from_file_location(
     "cloudflare_live_cli", Path(__file__).with_name("cloudflare-live.py")
@@ -98,11 +98,6 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.home() / "ygg-compose")
     parser.add_argument(
-        "--settings",
-        type=Path,
-        default=Path(__file__).with_name("cloudflare-settings.json"),
-    )
-    parser.add_argument(
         "--preflight",
         action="store_true",
         help="GET-only validation of live Access, Tunnel and DNS templates",
@@ -133,19 +128,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     root = args.root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError("Merged GitOps checkout does not exist")
-    settings = json.loads(args.settings.read_text())
-    settings["ebi_zone"] = domain("YGG_EXTERNAL_DOMAIN")
-    settings["ygg_zone"] = domain("YGG_INTERNAL_DOMAIN")
-    if not isinstance(settings, dict):
-        raise TypeError("Cloudflare settings must be a JSON object")
-    for key, envname in (
-        ("account_id", "CLOUDFLARE_ACCOUNT_ID"),
-        ("tunnel_id", "CLOUDFLARE_TUNNEL_ID"),
-        ("ebi_zone_id", "CLOUDFLARE_EBI_ZONE_ID"),
-        ("ygg_zone_id", "CLOUDFLARE_YGG_ZONE_ID"),
-    ):
-        if os.environ.get(envname):
-            settings[key] = os.environ[envname]
+    settings = cloudflare_settings()
     client = CloudflareWriter(api_token())
 
     if args.apply is None and not args.auto:
