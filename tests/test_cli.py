@@ -31,9 +31,7 @@ class CommandTests(unittest.TestCase):
             return result, run.call_args.args[0]
 
     def test_plan_preserves_requested_limit(self):
-        result, command = self.invoke(
-            ["cloudflare", "plan", "--max-operations", "1"]
-        )
+        result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)
         self.assertEqual(command[1], "/app/cloudflare/cloudflare-manage.py")
         self.assertEqual(command[-2:], ["--max-operations", "1"])
