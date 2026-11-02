@@ -36,9 +36,6 @@ def seconds(name, default, minimum, maximum):
 def fingerprint(source, config):
     """Hash only the Compose and private inventory inputs used by audits."""
     paths = sorted(set(source.rglob("compose.yaml")) | set(source.rglob("compose.yml")))
-    if not paths:
-        raise FileNotFoundError(f"No Compose files found under {source}")
-
     digest = hashlib.sha256()
     for path in [*paths, config / "static-hosts.json", config / "retained-dns.json"]:
         # Include relative paths and file presence so rename/deletion is visible.
@@ -51,8 +48,6 @@ def fingerprint(source, config):
         digest.update(b"\\0")
         if not path.is_file():
             digest.update(b"ABSENT")
-            if path.name == "static-hosts.json":
-                raise FileNotFoundError(f"Required inventory is missing: {path}")
             continue
         digest.update(b"PRESENT")
         with path.open("rb") as file:
@@ -98,15 +93,19 @@ class Changes:
 def watch_files(source, config, changes, interval, log):
     """Poll content fingerprints; works even with atomic Git checkout replaces."""
     previous = None
+    last_error = None
     while True:
         try:
             current = fingerprint(source, config)
             if previous is not None and current != previous:
                 changes.mark("compose_or_inventory")
             previous = current
+            last_error = None
         except (OSError, ValueError) as error:
             # Do not erase the last known fingerprint on a transient read failure.
-            log("warning", "watch", f"Input watcher: {error}")
+            if str(error) != last_error:
+                log("warning", "watch", f"Input watcher: {error}")
+                last_error = str(error)
         time.sleep(interval)
 
 
