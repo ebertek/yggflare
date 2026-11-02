@@ -316,7 +316,6 @@ def review_orphan(client, root, data, bound, hostname):
     return plan, digest(plan)
 
 
-
 def require_absent_in_mounted_source(client, bound, hostname):
     """Refuse deletion if the live merged Compose source is missing or redeclared."""
     live_source = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
