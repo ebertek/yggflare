@@ -22,27 +22,6 @@ CLOUD_INTERVAL = dt.timedelta(hours=6)
 NETWORK_HOUR, NETWORK_MINUTE = 5, 15
 
 
-def read_env(path):
-    """Minimal KEY=VALUE parser; no command execution or shell expansion."""
-    result = {}
-    if not path.is_file():
-        raise FileNotFoundError(f"Required private config absent: {path.name}")
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:]
-        name, delimiter, value = line.partition("=")
-        if not delimiter or not name.replace("_", "").isalnum():
-            raise ValueError("Unsupported environment assignment syntax")
-        value = value.strip()
-        if value.startswith(("'", '"')) and value.endswith(value[0]):
-            value = value[1:-1]
-        result[name.strip()] = value
-    return result
-
-
 def snapshot(root):
     """Copy only Compose YAML into an isolated working tree; no source mutation."""
     source_files = list(SOURCE.rglob("compose.yaml")) + list(SOURCE.rglob("compose.yml"))
@@ -72,25 +51,16 @@ def run(args, *, env=None):
 
 
 def cloudflare_run():
-    values = read_env(CONFIG / "cloudflare.env")
-    auto = values.get("CF_AUTO_APPLY", "false")
+    """Use Compose settings and secret files; never execute or parse legacy env."""
+    auto = os.environ.get("CF_AUTO_APPLY", "false")
     if auto not in ("true", "false"):
         raise ValueError("CF_AUTO_APPLY must be exactly true or false")
-    aliases = {
-        "CLOUDFLARE_API_TOKEN": ("CLOUDFLARE_API_TOKEN", "CF_API_TOKEN"),
-        "CLOUDFLARE_ACCOUNT_ID": ("CF_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID"),
-        "CLOUDFLARE_TUNNEL_ID": ("CF_TUNNEL_ID", "CLOUDFLARE_TUNNEL_ID"),
-        "CLOUDFLARE_EBI_ZONE_ID": ("CF_ZONE_EBI_NU", "CLOUDFLARE_EBI_ZONE_ID"),
-        "CLOUDFLARE_YGG_ZONE_ID": ("CF_ZONE_YGG_NU", "CLOUDFLARE_YGG_ZONE_ID"),
-    }
     env = os.environ.copy()
-    # Ignore inherited values; the on-volume private file is authoritative.
-    env.pop("CF_AUTO_APPLY", None)
-    for variable, names in aliases.items():
-        env[variable] = next((values[n] for n in names if values.get(n)), "")
-    if not env["CLOUDFLARE_API_TOKEN"]:
-        raise RuntimeError("Cloudflare API token missing")
-    env["CF_AUTO_APPLY"] = auto
+    secret = Path(env.get("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token"))
+    if not secret.is_file():
+        raise FileNotFoundError("Cloudflare API token secret missing")
+    env["CLOUDFLARE_API_TOKEN_FILE"] = str(secret)
+    env.pop("CLOUDFLARE_API_TOKEN", None)
     with tempfile.TemporaryDirectory(prefix="yggflare-compose-", dir=DATA) as folder:
         root = snapshot(Path(folder))
         script = (
@@ -106,22 +76,15 @@ def cloudflare_run():
             args.append("--auto")
         run(args, env=env)
 
-
 def network_run():
+    """Read DNS-SD settings from environment and webhook from secret file."""
     env = os.environ.copy()
-    optional = CONFIG / "network-inventory.env"
-    if optional.is_file():
-        env["YGG_NETWORK_DISCORD_WEBHOOK_URL"] = read_env(optional).get(
-            "YGG_NETWORK_DISCORD_WEBHOOK_URL", ""
-        )
-    else:
-        env.pop("YGG_NETWORK_DISCORD_WEBHOOK_URL", None)
+    env.pop("YGG_NETWORK_DISCORD_WEBHOOK_URL", None)
     run([
         sys.executable, "/app/network-inventory/audit.py",
         "--inventory", str(CONFIG / "static-hosts.json"),
         "--state-dir", str(DATA / "network-inventory"),
     ], env=env)
-
 
 def heartbeat_loop():
     """Maintain health independently of long-running scan subprocesses."""
