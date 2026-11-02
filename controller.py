@@ -171,6 +171,11 @@ def heartbeat_loop():
 def main():
     DATA.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
+    if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":
+        from web import serve  # pylint: disable=import-outside-toplevel
+
+        threading.Thread(target=serve, daemon=True, name="yggflare-web").start()
+        log("info", "web", "Read-only inventory interface enabled")
     changes, debounce, cooldown = start_watchers(SOURCE, CONFIG, log)
     next_cloud = dt.datetime.now(dt.timezone.utc)
     last_cloud_completed = 0.0
