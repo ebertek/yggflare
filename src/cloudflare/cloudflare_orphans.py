@@ -316,6 +316,16 @@ def review_orphan(client, root, data, bound, hostname):
     return plan, digest(plan)
 
 
+
+def require_absent_in_mounted_source(client, bound, hostname):
+    """Refuse deletion if the live merged Compose source is missing or redeclared."""
+    live_source = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
+    if not live_source.is_dir():
+        raise OwnershipError("Cannot verify currently mounted Compose source")
+    if hostname in desired_hosts(client, live_source, bound["account"]):
+        raise OwnershipError("Hostname has reappeared in the live Compose source")
+
+
 def retire(client, root, data, bound, hostname, approval):
     """One-host explicit cleanup: DNS first, then Tunnel, Access last."""
     if not isinstance(approval, str) or len(approval) != 16:
@@ -331,6 +341,7 @@ def retire(client, root, data, bound, hostname, approval):
             if actual != approval:
                 raise OwnershipError("Orphan plan changed: review a new fingerprint")
             steps = plan["steps"]
+            require_absent_in_mounted_source(client, bound, hostname)
             if "delete_dns_cname" in steps:
                 # Verify exact record identity against a fresh API read.
                 record = client.get_dns_record(
@@ -349,6 +360,7 @@ def retire(client, root, data, bound, hostname, approval):
                     bound["external_zone"], plan["identity"]["dns_id"]
                 )
             if "remove_tunnel_ingress" in steps:
+                require_absent_in_mounted_source(client, bound, hostname)
                 current = client.tunnel_configuration(
                     bound["account"], bound["tunnel"]
                 )["config"]
@@ -364,6 +376,7 @@ def retire(client, root, data, bound, hostname, approval):
                 validate_ingress(new_config["ingress"])
                 client.put_tunnel_ingress(bound["account"], bound["tunnel"], new_config)
             if "delete_access_app" in steps:
+                require_absent_in_mounted_source(client, bound, hostname)
                 # DNS must be gone and ingress absent before removing protection.
                 apps, dns, config = live_resources(client, bound)
                 if (
@@ -382,6 +395,7 @@ def retire(client, root, data, bound, hostname, approval):
                 ):
                     raise OwnershipError("Access changed immediately before deletion")
                 client.delete_access_app(bound["account"], plan["identity"]["app_id"])
+            require_absent_in_mounted_source(client, bound, hostname)
             apps, dns, config = live_resources(client, bound)
             if any(candidates(hostname, apps, dns, config)):
                 raise OwnershipError("Incomplete cleanup; ownership retained for retry")
