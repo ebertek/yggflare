@@ -22,10 +22,8 @@ DEFAULT_PORTS = (
     "21,22,23,53,80,81,139,443,445,554,1883,3000,5000,"
     "6053,6444,7000,8008,8009,8080,8443,8888,9000,9100,1400"
 )
-DEFAULT_STATE = Path("/home/docker/cloudflare/network-inventory")
-DEFAULT_INVENTORY = Path(
-    "/home/docker/ygg-compose/Scripts/cloudflare/static-hosts.json"
-)
+DEFAULT_STATE = Path(os.environ.get("YGG_NETWORK_STATE_DIR", "/data/network-inventory"))
+DEFAULT_INVENTORY = Path(os.environ.get("YGG_STATIC_INVENTORY", "/config/static-hosts.json"))
 
 
 def syn_scan_options(host_timeout="90s"):
