@@ -43,7 +43,7 @@ for host in document.get("hosts", []):
                 new_ports.append({"protocol": "tcp", "port": value})
                 known.add(("tcp", value))
 temporary = path.with_suffix(".json.tmp")
-temporary.write_text(json.dumps(document, indent=2) + "\\n", encoding="utf-8")
+temporary.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 os.chmod(temporary, 0o600)
 temporary.replace(path)
 PY
