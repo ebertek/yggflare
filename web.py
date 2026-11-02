@@ -5,7 +5,6 @@ import io
 import ipaddress
 import json
 import os
-from datetime import datetime, timezone
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -41,6 +40,7 @@ if(filter){filter.addEventListener('input',update);}
 for(const th of document.querySelectorAll('th[data-col]')){th.addEventListener('click',()=>{const index=+th.dataset.col;const table=th.closest('table');const body=table.querySelector('tbody[data-sortable]');if(!body)return;const sorted=[...body.querySelectorAll('tr[data-search]')].sort((a,b)=>a.cells[index].textContent.localeCompare(b.cells[index].textContent,undefined,{numeric:true}));body.replaceChildren(...sorted);});}
 """
 
+
 def read_json(path):
     """Read bounded local JSON, returning an empty object for absent optional state."""
     if not path.is_file():
@@ -71,21 +71,24 @@ def model():
         ports = item.get("ports", [])
         declared_ports = [
             f"{p.get('protocol','tcp')}/{p.get('port')}"
-            for p in ports if isinstance(p, dict) and p.get("port") is not None
+            for p in ports
+            if isinstance(p, dict) and p.get("port") is not None
         ]
-        hosts.append({
-            "hostname": item.get("hostname", ""),
-            "ipv4": ip,
-            "mac": item.get("mac", ""),
-            "description": item.get("notes", item.get("description", "")),
-            "aliases": item.get("aliases", []),
-            "ipv6": item.get("ipv6", ""),
-            "subnet": subnet,
-            "ports": declared_ports,
-            "observed_ports": observed.get("ports", []),
-            "last_seen": state.get("scanned_at", "") if observed else "",
-            "status": "seen" if observed else "not observed",
-        })
+        hosts.append(
+            {
+                "hostname": item.get("hostname", ""),
+                "ipv4": ip,
+                "mac": item.get("mac", ""),
+                "description": item.get("notes", item.get("description", "")),
+                "aliases": item.get("aliases", []),
+                "ipv6": item.get("ipv6", ""),
+                "subnet": subnet,
+                "ports": declared_ports,
+                "observed_ports": observed.get("ports", []),
+                "last_seen": state.get("scanned_at", "") if observed else "",
+                "status": "seen" if observed else "not observed",
+            }
+        )
     for ip, observed in state.get("hosts", {}).items():
         if ip in known:
             continue
@@ -93,12 +96,21 @@ def model():
             subnet = str(ipaddress.ip_network(f"{ip}/27", strict=False))
         except ValueError:
             subnet = "Unassigned"
-        hosts.append({
-            "hostname": "", "ipv4": ip, "mac": observed.get("mac", ""),
-            "description": "Not in static inventory", "aliases": [], "ipv6": "",
-            "subnet": subnet, "ports": [], "observed_ports": observed.get("ports", []),
-            "last_seen": state.get("scanned_at", ""), "status": "unmanaged",
-        })
+        hosts.append(
+            {
+                "hostname": "",
+                "ipv4": ip,
+                "mac": observed.get("mac", ""),
+                "description": "Not in static inventory",
+                "aliases": [],
+                "ipv6": "",
+                "subnet": subnet,
+                "ports": [],
+                "observed_ports": observed.get("ports", []),
+                "last_seen": state.get("scanned_at", ""),
+                "status": "unmanaged",
+            }
+        )
     return {
         "hosts": hosts,
         "services": state.get("advertisements", []),
@@ -112,7 +124,8 @@ def page(tab, content):
     links = "".join(
         f'<a class="{"active" if name == tab else ""}" href="/{name}">{label}</a>'
         for name, label in (
-            ("inventory", "Inventory"), ("ports", "Ports & DNS-SD"),
+            ("inventory", "Inventory"),
+            ("ports", "Ports & DNS-SD"),
             ("cloudflare", "Cloudflare ownership"),
         )
     )
@@ -125,7 +138,9 @@ def page(tab, content):
 
 
 def table(headers, rows):
-    head = "".join(f'<th data-col="{i}">{escape(h)}</th>' for i,h in enumerate(headers))
+    head = "".join(
+        f'<th data-col="{i}">{escape(h)}</th>' for i, h in enumerate(headers)
+    )
     body = []
     for values in rows:
         cells = "".join(f"<td>{escape(str(v))}</td>" for v in values)
@@ -142,23 +157,76 @@ def render(tab, data):
             groups.setdefault(item["subnet"], []).append(item)
         blocks = []
         for group, hosts in sorted(groups.items(), key=lambda x: x[0]):
-            rows = [[
-                i["hostname"], i["mac"], i["ipv4"], i["description"],
-                ", ".join(i["aliases"]) if isinstance(i["aliases"], list) else str(i["aliases"]),
-                i["ipv6"], ", ".join(i["ports"]), i["status"],
-            ] for i in sorted(hosts, key=lambda a: ipaddress.ip_address(a["ipv4"]))]
-            blocks.append(f'<section class="card"><h2>{escape(group)} · {len(rows)} hosts</h2>'
-                          + table(["Host","MAC","IP","Comment","CNAMEs","IPv6","Ports","Status"], rows) + '</section>')
-        content = f'<p class="muted">Latest inventory scan: {escape(data["scanned_at"] or "not available")}</p>' + search + "".join(blocks)
+            rows = [
+                [
+                    i["hostname"],
+                    i["mac"],
+                    i["ipv4"],
+                    i["description"],
+                    (
+                        ", ".join(i["aliases"])
+                        if isinstance(i["aliases"], list)
+                        else str(i["aliases"])
+                    ),
+                    i["ipv6"],
+                    ", ".join(i["ports"]),
+                    i["status"],
+                ]
+                for i in sorted(hosts, key=lambda a: ipaddress.ip_address(a["ipv4"]))
+            ]
+            blocks.append(
+                f'<section class="card"><h2>{escape(group)} · {len(rows)} hosts</h2>'
+                + table(
+                    [
+                        "Host",
+                        "MAC",
+                        "IP",
+                        "Comment",
+                        "CNAMEs",
+                        "IPv6",
+                        "Ports",
+                        "Status",
+                    ],
+                    rows,
+                )
+                + "</section>"
+            )
+        content = (
+            f'<p class="muted">Latest inventory scan: {escape(data["scanned_at"] or "not available")}</p>'
+            + search
+            + "".join(blocks)
+        )
     elif tab == "ports":
-        rows = [[i["hostname"], i["ipv4"], ", ".join(i["ports"]), ", ".join(i["observed_ports"]), i["status"]] for i in data["hosts"]]
+        rows = [
+            [
+                i["hostname"],
+                i["ipv4"],
+                ", ".join(i["ports"]),
+                ", ".join(i["observed_ports"]),
+                i["status"],
+            ]
+            for i in data["hosts"]
+        ]
         services = [[x] for x in data["services"]]
-        content = search + '<section class="card"><h2>Declared vs observed ports</h2>' + table(["Host","IP","Declared","Observed","Status"],rows) + '</section>'
-        content += '<section class="card"><h2>Last DNS-SD advertisements</h2>' + table(["Service identity"],services) + '</section>'
+        content = (
+            search
+            + '<section class="card"><h2>Declared vs observed ports</h2>'
+            + table(["Host", "IP", "Declared", "Observed", "Status"], rows)
+            + "</section>"
+        )
+        content += (
+            '<section class="card"><h2>Last DNS-SD advertisements</h2>'
+            + table(["Service identity"], services)
+            + "</section>"
+        )
     else:
         rows = [[host, "Owned"] for host in data["managed_hosts"]]
         content = '<p class="muted">Ownership registry only. Use the Cloudflare audit CLI for a live orphan/unmanaged classification.</p>'
-        content += '<section class="card"><h2>Explicitly owned hostnames</h2>' + table(["Hostname","Ownership"],rows) + '</section>'
+        content += (
+            '<section class="card"><h2>Explicitly owned hostnames</h2>'
+            + table(["Hostname", "Ownership"], rows)
+            + "</section>"
+        )
     return page(tab, content)
 
 
@@ -169,8 +237,13 @@ class Handler(BaseHTTPRequestHandler):
         uri = urlsplit(self.path).path
         if uri == "/":
             uri = "/inventory"
-        if uri not in ("/inventory", "/ports", "/cloudflare",
-                       "/api/inventory.json", "/api/inventory.csv"):
+        if uri not in (
+            "/inventory",
+            "/ports",
+            "/cloudflare",
+            "/api/inventory.json",
+            "/api/inventory.csv",
+        ):
             self.send_error(404)
             return
         try:
@@ -181,7 +254,15 @@ class Handler(BaseHTTPRequestHandler):
             elif uri == "/api/inventory.csv":
                 output = io.StringIO()
                 writer = csv.writer(output)
-                columns = ("hostname", "mac", "ipv4", "description", "ipv6", "subnet", "status")
+                columns = (
+                    "hostname",
+                    "mac",
+                    "ipv4",
+                    "description",
+                    "ipv6",
+                    "subnet",
+                    "status",
+                )
                 writer.writerow(columns)
                 for host in data["hosts"]:
                     writer.writerow([host.get(key, "") for key in columns])
@@ -198,7 +279,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+        )
         self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         if send_body:
