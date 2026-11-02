@@ -114,6 +114,7 @@ class LifecycleTests(unittest.TestCase):
         with (
             patch("cloudflare_orphans.desired_hosts", return_value={}),
             patch.object(Path, "home", return_value=self.path),
+            patch.dict("os.environ", {"YGGFLARE_SOURCE": str(self.path)}),
         ):
             return retire(self.client, self.path, self.path, BOUND, HOST, fingerprint)
 
@@ -242,6 +243,22 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(
             self.client.events, ["delete_dns", "remove_ingress", "delete_access"]
         )
+
+    def test_live_source_reintroduction_blocks_retirement(self):
+        """A snapshot approval cannot override reintroduction in live Compose."""
+        self.claim()
+        _, token = self.plan()
+        with (
+            patch.object(Path, "home", return_value=self.path),
+            patch.dict("os.environ", {"YGGFLARE_SOURCE": str(self.path)}),
+            patch(
+                "cloudflare_orphans.desired_hosts",
+                side_effect=[{}, {HOST: [POLICY]}],
+            ),
+            self.assertRaises(OwnershipError),
+        ):
+            retire(self.client, self.path, self.path, BOUND, HOST, token)
+        self.assertEqual(self.client.events, [])
 
     def test_registry_fails_closed_on_corruption_and_scope_change(self):
         self.claim()
