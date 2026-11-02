@@ -2,7 +2,7 @@
 
 Standalone, always-running Cloudflare + LAN inventory controller for the Ygg homelab.
 
-**Status:** migration scaffold, not a production-ready cutover. New GitHub repository must be created separately. The old Komodo jobs must remain enabled during shadow-mode validation.
+**Status:** migration scaffold in `ebertek/yggflare`, not a production-ready cutover. The old Komodo jobs must remain enabled during shadow-mode validation.
 
 ## Architecture
 
@@ -16,18 +16,16 @@ Standalone, always-running Cloudflare + LAN inventory controller for the Ygg hom
 
 ## Prepare source
 
-1. Create **`ebertek/yggflare`** as an empty repository under your GitHub account.
-2. Import this scaffold there.
-3. Run `./scripts/import-legacy-code.sh /home/docker/ygg-compose` **on a host with the merged checkout** or on a separate trusted development machine with an equivalent complete checkout. Review copied code and dependencies and commit them into the new repository. The import is a one-time source transfer, not a runtime dependency.
-4. For development, run `docker compose build`. The Dockerfile refuses to build until the legacy sources are copied into `src`.
-5. Migrate configuration with `sudo ./scripts/migrate-config.sh /home/docker/ygg-compose /home/docker/yggflare` (copy only; DOES NOT modify either Git repository).
-6. Edit `.env` from `.env.example` for host locations. Set `CF_AUTO_APPLY=false` in the *unversioned* `config/cloudflare.env` while shadow-testing.
-7. Start shadow mode: `docker compose up -d`, inspect `docker compose logs -f`, and compare reports with the existing Komodo actions. Avoid concurrent auto writers.
-8. Only after tests, parity, and backup restore drills, disable the legacy Komodo Cloudflare and inventory schedules, explicitly opt into unattended writes in `/config/cloudflare.env`, then enable the new controller's write mode.
+1. Run `./scripts/import-legacy-code.sh /home/docker/ygg-compose` **on a host with the merged checkout** or on a separate trusted development machine with an equivalent complete checkout. Review copied code and dependencies and commit them into the new repository. The import is a one-time source transfer, not a runtime dependency.
+2. For development, run `docker compose build`. The Dockerfile refuses to build until the legacy sources are copied into `src`.
+3. Migrate configuration with `sudo ./scripts/migrate-config.sh /home/docker/ygg-compose /home/docker/yggflare` (copy only; DOES NOT modify either Git repository).
+4. Edit `.env` from `.env.example` for host locations. Set `CF_AUTO_APPLY=false` in the *unversioned* `config/cloudflare.env` while shadow-testing.
+5. Start shadow mode: `docker compose up -d`, inspect `docker compose logs -f`, and compare reports with the existing Komodo actions. Avoid concurrent auto writers.
+6. Only after tests, parity, and backup restore drills, disable the legacy Komodo Cloudflare and inventory schedules, explicitly opt into unattended writes in `/config/cloudflare.env`, then enable the new controller's write mode.
 
 ## Important cutover safeguards
 
-- Back up BOTH `/config` and `/data` to **separate durable storage**. The included snapshot script creates timestamped encrypted? **No: backups are plaintext and require protected destination storage.** Never expose archives through web.
+- Back up BOTH `/config` and `/data` to **separate durable storage**. The included snapshot script produces **plaintext** archives; store and replicate them securely. Never expose archives through web.
 - Historical Git commits may still contain retired secrets. Review repository history and rotate credentials when appropriate.
 - Do not remove files from `ebertek-compose-secrets` until the new service has been proven stable, ownership/backup is established, and you are ready to remove old readers.
 - Never edit tracked files under `/home/docker/ygg-compose`; source changes go to `ebertek-compose` and private changes to `ebertek-compose-secrets`.
