@@ -122,6 +122,73 @@ templates without modifying anything:
 docker exec yggflare yggflare cloudflare preflight
 ```
 
+## Managed host lifecycle and safe retirement
+
+Yggflare maintains a **private ownership registry** at
+`/data/managed-hosts.json`, included in the regular `/data` backups.
+Missing registry data is treated as **no proven ownership**, never as a
+reason to delete a live Cloudflare resource.
+
+The read-only audit classifies external hostnames as:
+
+- **Managed:** explicitly claimed while declared in Compose, or fully
+  created and verified by Yggflare; still present in Compose
+- **Orphaned:** previously claimed but no longer declared in Compose
+- **Unmanaged:** present in Cloudflare but not claimed, regardless of whether
+  it happens to be absent from Compose
+
+Neither the six-hour audit nor `CF_AUTO_APPLY=true` deletes resources.
+The normal automatic reconciler remains **strictly non-destructive**.
+
+### Claiming existing managed services
+
+Existing services migrated from Komodo are **not silently adopted**. While
+a service is still declared in Compose and exactly matches its live Access
+policies, proxied Tunnel DNS CNAME, and ingress route, opt in one hostname:
+
+```sh
+docker exec yggflare yggflare cloudflare claim example.ebi.nu
+```
+
+Claims pin the Access application ID, ordered policies, DNS record ID,
+CNAME target, and complete ingress route to a specific account, zone and
+Tunnel. Changing identity or scope blocks subsequent deletion.
+
+An endpoint originally created by Yggflare's guarded reconciler is recorded
+automatically **after** all its requested operations complete and its
+endpoint has been verified. A partial create does not grant ownership.
+
+### Retiring a claimed, removed hostname
+
+After removing its Compose declaration and allowing GitOps to sync,
+inspect the read-only audit:
+
+```sh
+docker exec yggflare yggflare cloudflare audit
+docker exec yggflare yggflare cloudflare orphan-plan example.ebi.nu
+```
+
+Only a previously claimed, now-absent hostname can produce a retirement
+plan. If the plan contains exactly the resources you intend to retire,
+copy the printed `docker exec yggflare yggflare cloudflare orphan-apply ...`
+command using the **actual** fingerprint.
+
+Manual cleanup strictly orders operations as **external DNS CNAME first,
+Tunnel ingress second, Access application last**. It rechecks the live
+record IDs, contents, policy ordering, Tunnel configuration, Compose absence,
+and registry ownership. Failure leaves the registry in place, so a new plan
+can resume any remaining steps without guessing. No other Tunnel routes are
+removed. Unclaimed hostnames cannot be deleted by this workflow.
+
+**Important migration detail:** already-removed hostnames (for example,
+`yggflare-test.ebi.nu`) appear as **unmanaged**, not proven orphans,
+because the registry did not exist when they were last declared. To use
+managed retirement, first temporarily restore the Compose declaration,
+claim it while the live resources exactly match, and remove the declaration
+again. Otherwise retire those historical resources manually in Cloudflare
+after independent verification. Do **not** populate the ownership registry
+from a blind scan of existing Cloudflare resources.
+
 ## Reactive reconciliation
 
 The Compose watcher computes a content fingerprint of `compose.yaml`/`compose.yml`

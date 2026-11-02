@@ -26,6 +26,7 @@ from cloudflare_guarded import (
     fingerprint,
     preflight_compatibility,
 )
+from cloudflare_orphans import claim, print_summary, scope
 from cloudflare_unaccounted_dns import print_unaccounted_summary
 from cloudflare_write_api import CloudflareWriter
 from yggflare_config import cloudflare_settings
@@ -164,6 +165,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
             for finding in report["static_dns"]["findings"]:
                 print(f"  ! STATIC {finding['status']}: {finding['hostname']}")
         print_unaccounted_summary(report)
+        print_summary(report)
         for action in actions:
             print(f"  {action['kind']}: {action['hostname']}")
         if actions:
@@ -185,6 +187,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
         if args.auto:
             print_static_summary(report)
             print_unaccounted_summary(report)
+            print_summary(report)
         if not actions:
             if args.auto:
                 print("Cloudflare auto reconciliation: no changes required.")
@@ -206,6 +209,21 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
             maximum=args.max_operations,
             unattended=args.auto,
         )
+        # Only Yggflare-created endpoints can be claimed automatically.
+        # Existing pre-migration hostnames must be claimed explicitly.
+        created = sorted(
+            {
+                item["hostname"]
+                for item in completed
+                if item["kind"] == "create_access_app"
+            }
+        )
+        if created:
+            bound = scope(context["account"], context["ebi"], context["tunnel"])
+            data = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+            for hostname in created:
+                claim(client, root, data, bound, hostname)
+                print(f"Recorded Yggflare ownership: {hostname}")
         for item in completed:
             print(f"Applied and verified: {item['kind']} {item['hostname']}")
         print(f"Applied {len(completed)} approved Cloudflare operations.")
