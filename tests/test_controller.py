@@ -13,7 +13,6 @@ import controller
 
 
 class ControllerTests(unittest.TestCase):
-
     def test_json_log_has_utc_fields(self):
         with patch.object(controller, "LOG_FORMAT", "json"):
             output = io.StringIO()
