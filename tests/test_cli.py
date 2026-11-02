@@ -61,7 +61,6 @@ class CommandTests(unittest.TestCase):
         )
         self.assertEqual(result, 2)
 
-
     def test_claim_and_orphan_cleanup_dispatch(self):
         _, claim = self.invoke(["cloudflare", "claim", "test.ebi.nu"])
         self.assertEqual(claim[1], "/app/cloudflare/cloudflare-orphans.py")
