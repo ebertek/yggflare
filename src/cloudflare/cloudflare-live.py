@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cloudflare_credentials import api_token
 from cloudflare_api import CloudflareClient, CloudflareError, checked_id
 from cloudflare_desired import compose_inventory, discover
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
@@ -220,7 +221,7 @@ def main():
         if os.environ.get(name):
             settings[setting] = os.environ[name]
 
-    client = CloudflareClient(os.environ.get("CLOUDFLARE_API_TOKEN"))
+    client = CloudflareClient(api_token())
     report = run_audit(client, root, settings, skip_docker=args.skip_docker)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
