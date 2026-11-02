@@ -146,6 +146,32 @@ def cloudflare_run():
             )
 
 
+def refresh_cloudflare_view():
+    """Refresh presentation after reconciliation; never call this from HTTP."""
+    # Mark the attempt before even copying inputs, so snapshot failures cannot
+    # leave an older successful audit looking like a fresh success.
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=DATA, delete=False
+    ) as handle:
+        json.dump(
+            {"ok": False, "attempted_at": dt.datetime.now(dt.timezone.utc).isoformat()},
+            handle,
+        )
+        pending = handle.name
+    os.replace(pending, DATA / "cloudflare-view-status.json")
+    with tempfile.TemporaryDirectory(prefix="yggflare-view-", dir=DATA) as folder:
+        root = snapshot(Path(folder))
+        run(
+            [
+                sys.executable,
+                "/app/cloudflare/cloudflare-live.py",
+                "--root",
+                str(root),
+                "--save-view",
+            ]
+        )
+
+
 def network_run():
     """Read DNS-SD settings from environment and webhook from secret file."""
     env = os.environ.copy()
@@ -211,6 +237,15 @@ def main():
                 cloudflare_run()
             except Exception as error:
                 log("error", "cloudflare", f"Cycle failed: {error}")
+            if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":
+                try:
+                    refresh_cloudflare_view()
+                except Exception:
+                    log(
+                        "warning",
+                        "web",
+                        "Cloudflare view refresh failed; previous snapshot retained",
+                    )
             last_cloud_completed = time.monotonic()
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)

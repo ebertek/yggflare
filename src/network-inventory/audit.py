@@ -75,20 +75,30 @@ def parse_nmap_xml(xml):
         if not ip or ipaddress.ip_address(ip) not in NETWORK:
             continue
         services = set()
+        details = {}
         for port in host.findall("./ports/port"):
             state = port.find("state")
             if state is not None and state.get("state") == "open":
-                services.add(f"{port.get('protocol')}/{int(port.get('portid'))}")
+                key = f"{port.get('protocol')}/{int(port.get('portid'))}"
+                services.add(key)
+                service = port.find("service")
+                if service is not None:
+                    details[key] = {
+                        field: service.get(field, "")[:256]
+                        for field in ("name", "product", "version", "method")
+                    }
+
         result[ip] = {
             "mac": (addresses.get("mac") or "").lower(),
             "ports": sorted(services),
+            "services": details,
         }
     return result
 
 
 def parse_avahi(output):
     """Deduplicate resolved DNS-SD lines across interfaces and address families."""
-    found = set()
+    found = {}
     for raw in output.splitlines():
         fields = raw.split(";")
         if len(fields) < 10 or fields[0] != "=":
@@ -100,9 +110,18 @@ def parse_avahi(output):
         if not port.isdecimal() or not 1 <= int(port) <= 65535:
             continue
         # Keep advertised type, device and port; IPv4/IPv6 duplicate sightings collapse.
-        found.add((host, service, name, int(port)))
+        key = (host, service, name, int(port))
+        addresses = found.setdefault(key, set())
+        try:
+            addresses.add(str(ipaddress.ip_address(fields[7])))
+        except ValueError:
+            pass
     return [
-        dict(zip(("host", "service", "name", "port"), entry)) for entry in sorted(found)
+        {
+            **dict(zip(("host", "service", "name", "port"), entry)),
+            "addresses": sorted(found[entry]),
+        }
+        for entry in sorted(found)
     ]
 
 
@@ -198,6 +217,8 @@ def scan(inventory, timeout, do_dns_sd=True):
             targets_file.flush()
             args = [
                 *syn_scan_options(),
+                "-sV",
+                "--version-light",
                 "--open",
                 "-p",
                 ",".join(map(str, ports)),
@@ -228,6 +249,10 @@ def scan(inventory, timeout, do_dns_sd=True):
                 set(checked.get(ip, {}).get("ports", []))
                 | set(broad.get(ip, {}).get("ports", []))
             )
+            hosts[ip]["services"] = {
+                **broad.get(ip, {}).get("services", {}),
+                **checked.get(ip, {}).get("services", {}),
+            }
     advertised = []
     if do_dns_sd:
         try:
@@ -398,6 +423,22 @@ def main():
         "advertisements": advertisements,
         "hosts": hosts,
         "discovered_hosts": len(hosts),
+        "dns_sd_complete": dns_sd_complete,
+        "dns_sd_scanned_at": (
+            now if dns_sd_complete else previous.get("dns_sd_scanned_at", "")
+        ),
+        "advertisement_details": (
+            advertised if dns_sd_complete else previous.get("advertisement_details", [])
+        ),
+        "latest_events": events,
+        "baseline": bootstrap,
+        "recent_events": (
+            previous.get("recent_events", [])
+            + [
+                {"observed_at": now, "message": event, "baseline": bootstrap}
+                for event in events
+            ]
+        )[-200:],
     }
     print(
         f"Network inventory: {len(hosts)} responsive IPv4 hosts; {len(advertised)} DNS-SD services"

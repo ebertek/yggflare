@@ -105,8 +105,9 @@ environment:
 When enabled, browse `http://127.0.0.1:8787/inventory` **from the Docker host**. The default bind is loopback and the container uses host networking. The interface provides:
 
 - `/inventory`: searchable, sortable inventory tables grouped by /27, with declared and observed status
-- `/ports`: declared/inferred and observed TCP/UDP ports, evidence sources, and the latest DNS-SD advertisements
-- `/cloudflare`: **ownership registry snapshot**, not a real-time Cloudflare API audit
+- `/ports`: one row per endpoint/protocol/port, open-port evidence, detected services, declaration sources and DNS-SD announcements
+- `/drift`: current device/port drift plus the latest 200 findings (new device/port/DNS-SD, changed MAC/IP)
+- `/cloudflare`: saved live-audit classification, claimed resources and lifecycle state
 - `/api/inventory.json` and `/api/inventory.csv`: read-only exports
 
 Docker rows include hostnames (qualified with `YGGFLARE_INTERNAL_DOMAIN`), LAN
@@ -132,7 +133,37 @@ a Compose file cannot be read. IPv4, IPv6 and /27 groups sort numerically;
 column clicks toggle ascending/descending order. JSON and CSV exports use the
 same numerically ordered inventory; CSV includes aliases and ports.
 
-The UI intentionally omits Cloudflare credentials, Discord URLs, and private config files. It does not replace `yggflare cloudflare audit` for live drift/orphan counts. **There is no built-in authentication.** Keep it on loopback, use an authenticated tunnel or reverse proxy for remote access, and never expose the HTTP port directly to the public Internet. To serve on the host network instead, explicitly set `YGGFLARE_WEB_BIND=0.0.0.0` and enforce firewall/authentication upstream.
+The normal targeted TCP scan now uses bounded Nmap light service detection
+(`-sV --version-light`, retaining the existing host/command timeouts). The view
+labels probed service identities separately from Nmap's port-name guesses;
+unknown services remain unknown. Docker scan exclusions are unchanged. DNS-SD
+retains resolved addresses without TXT payloads and is matched by exact address,
+port and protocol; advertisements alone do not prove a port is open. Older state
+files remain readable, with unavailable metadata shown explicitly.
+
+Drift history begins with scans after this upgrade, is capped at 200 findings,
+and distinguishes initial-baseline findings (not notified) from later changes.
+Active device/port drift comes from the existing `reported` state. The history
+records observations, not proof of Discord delivery. Failed/incomplete DNS-SD
+collection retains the previous announcements with their previous timestamp.
+
+When the web UI is enabled, the controller runs a separate **GET-only** Cloudflare
+audit after each scheduled/reactive reconciliation attempt, including cleanup.
+It saves only host classification, resource identifiers, scope and timestamp to
+`/data/cloudflare-view.json`, with a completion marker in
+`cloudflare-view-status.json`. HTTP requests never call the Cloudflare API.
+A failed refresh preserves the last complete snapshot and displays a warning;
+snapshots older than eight hours are marked stale. Before the first successful
+audit, only local claims are shown, without guessing lifecycle state.
+
+Lifecycle distinguishes **managed**, **orphaned**, **unmanaged**, and **declared /
+unclaimed** services. The last category avoids treating a Compose declaration as
+ownership. Claimed Access/DNS IDs and route hostnames are displayed alongside live
+resource IDs/counts. Scope-matched orphan first/last absence observations are
+shown as timestamps, never as cleanup eligibility or a deletion countdown. There
+are no claim, apply or delete buttons; the snapshot is never used by write paths.
+
+The UI intentionally omits Cloudflare credentials, Discord URLs, and private config files. It does not replace `yggflare cloudflare audit` for current live results. **There is no built-in authentication.** Keep it on loopback, use an authenticated tunnel or reverse proxy for remote access, and never expose the HTTP port directly to the public Internet. To serve on the host network instead, explicitly set `YGGFLARE_WEB_BIND=0.0.0.0` and enforce firewall/authentication upstream.
 
 ## Logging and observability
 

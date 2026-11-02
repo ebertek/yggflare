@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from docker_inventory import address_key, snapshot
+from web_views import cloudflare_view, drift_view, ports_view
 
 CONFIG = Path(os.environ.get("YGGFLARE_CONFIG", "/config"))
 DATA = Path(os.environ.get("YGGFLARE_DATA", "/data"))
@@ -104,6 +105,21 @@ def model():
     docker_hosts, warnings = snapshot(
         SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", "")
     )
+
+    def optional_state(filename):
+        try:
+            value = read_json(DATA / filename)
+            if not isinstance(value, dict):
+                raise ValueError("Invalid state")
+            return value
+        except (OSError, ValueError, TypeError):
+            warnings.append(
+                f"{filename} is unavailable or invalid; showing other observations."
+            )
+            return {}
+
+    # The metadata cache is shared; request-specific notices must not mutate it.
+    warnings = list(warnings)
     for item in docker_hosts:
         ip = item["ipv4"]
         observed = state.get("hosts", {}).get(ip, {})
@@ -145,6 +161,10 @@ def model():
     return {
         "hosts": sorted(hosts, key=lambda h: (address_key(h["ipv4"]), h["hostname"])),
         "warnings": warnings,
+        "network_state": state,
+        "cloudflare_view": optional_state("cloudflare-view.json"),
+        "cloudflare_view_status": optional_state("cloudflare-view-status.json"),
+        "orphan_observations": optional_state("orphan-observations.json"),
         "services": state.get("advertisements", []),
         "scanned_at": state.get("scanned_at", ""),
         "managed_hosts": sorted(ownership.get("hosts", {}).keys()),
@@ -158,7 +178,8 @@ def page(tab, content):
         for name, label in (
             ("inventory", "Inventory"),
             ("ports", "Ports & DNS-SD"),
-            ("cloudflare", "Cloudflare ownership"),
+            ("drift", "Recent drift"),
+            ("cloudflare", "Cloudflare lifecycle"),
         )
     )
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -237,50 +258,11 @@ def render(tab, data):
             + "".join(blocks)
         )
     elif tab == "ports":
-        rows = [
-            [
-                i["hostname"],
-                i["ipv4"],
-                ", ".join(i["ports"]),
-                ", ".join(i["observed_ports"]),
-                "; ".join(
-                    f"{port}: {', '.join(sources)}"
-                    for port, sources in i.get("port_sources", {}).items()
-                ),
-                i["status"],
-            ]
-            for i in data["hosts"]
-        ]
-        services = [[x] for x in data["services"]]
-        content = (
-            search
-            + '<section class="card"><h2>Declared vs observed ports</h2>'
-            + table(
-                [
-                    "Host",
-                    "IP",
-                    "Declared / inferred",
-                    "Observed",
-                    "Port evidence",
-                    "Status",
-                ],
-                rows,
-            )
-            + "</section>"
-        )
-        content += (
-            '<section class="card"><h2>Last DNS-SD advertisements</h2>'
-            + table(["Service identity"], services)
-            + "</section>"
-        )
+        content = search + ports_view(data, table)
+    elif tab == "drift":
+        content = search + drift_view(data, table)
     else:
-        rows = [[host, "Owned"] for host in data["managed_hosts"]]
-        content = '<p class="muted">Ownership registry only. Use the Cloudflare audit CLI for a live orphan/unmanaged classification.</p>'
-        content += (
-            '<section class="card"><h2>Explicitly owned hostnames</h2>'
-            + table(["Hostname", "Ownership"], rows)
-            + "</section>"
-        )
+        content = search + cloudflare_view(data, table)
     notices = "".join(
         f'<p class="muted">{escape(warning)}</p>'
         for warning in data.get("warnings", [])
@@ -298,6 +280,7 @@ class Handler(BaseHTTPRequestHandler):
         if uri not in (
             "/inventory",
             "/ports",
+            "/drift",
             "/cloudflare",
             "/api/inventory.json",
             "/api/inventory.csv",

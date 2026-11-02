@@ -59,6 +59,33 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 controller.cloudflare_run()
 
+    def test_view_refresh_uses_only_read_only_audit(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(controller, "DATA", Path(tmp)),
+            patch.object(controller, "snapshot", side_effect=lambda root: root),
+            patch.object(controller, "run") as run,
+        ):
+            controller.refresh_cloudflare_view()
+            args = run.call_args.args[0]
+            self.assertEqual(args[1], "/app/cloudflare/cloudflare-live.py")
+            self.assertIn("--save-view", args)
+            self.assertNotIn("--auto", args)
+
+    def test_view_snapshot_failure_marks_attempt_unsuccessful(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(controller, "DATA", Path(tmp)),
+            patch.object(
+                controller, "snapshot", side_effect=ValueError("private details")
+            ),
+        ):
+            with self.assertRaises(ValueError):
+                controller.refresh_cloudflare_view()
+            status = json.loads((Path(tmp) / "cloudflare-view-status.json").read_text())
+            self.assertFalse(status["ok"])
+            self.assertNotIn("private details", str(status))
+
     def test_snapshot_does_not_write_source(self):
         with (
             tempfile.TemporaryDirectory() as source,
