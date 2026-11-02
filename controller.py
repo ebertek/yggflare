@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 from zoneinfo import ZoneInfo
 
 CONFIG = Path(os.getenv("YGGFLARE_CONFIG", "/config"))
@@ -119,13 +120,25 @@ def network_run():
     ], env=env)
 
 
+def heartbeat_loop():
+    """Maintain health independently of long-running scan subprocesses."""
+    while True:
+        (DATA / "heartbeat").touch()
+        time.sleep(30)
+
+
 def main():
     DATA.mkdir(parents=True, exist_ok=True)
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
     next_cloud = dt.datetime.now(dt.timezone.utc)
-    last_network_day = None
+    network_marker = DATA / "network-last-run.txt"
+    last_network_day = (
+        network_marker.read_text(encoding="utf-8").strip()
+        if network_marker.exists()
+        else None
+    )
     while True:
         now = dt.datetime.now(dt.timezone.utc)
-        (DATA / "heartbeat").touch()
         if now >= next_cloud:
             try:
                 cloudflare_run()
@@ -134,12 +147,13 @@ def main():
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
         local = dt.datetime.now(TZ)
         if (local.hour, local.minute) >= (NETWORK_HOUR, NETWORK_MINUTE):
-            if last_network_day != local.date():
+            if last_network_day != local.date().isoformat():
                 try:
                     network_run()
                 except Exception as error:
                     print(f"ERROR Network audit: {error}", file=sys.stderr, flush=True)
-                last_network_day = local.date()
+                last_network_day = local.date().isoformat()
+                network_marker.write_text(last_network_day + "\n", encoding="utf-8")
         time.sleep(20)
 
 
