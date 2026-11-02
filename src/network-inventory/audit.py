@@ -129,6 +129,8 @@ def load_inventory(path):
         raise ValueError("Invalid static-hosts.json schema")
     known = {}
     for entry in data["hosts"]:
+        if "open_ports" in entry:
+            raise ValueError("Legacy open_ports is unsupported; use ports")
         address = ipaddress.ip_address(entry["ipv4"])
         if address not in NETWORK:
             raise ValueError("Static inventory address outside LAN")
