@@ -1,4 +1,5 @@
 """Validated deployment-specific network and domain configuration."""
+
 import ipaddress
 import os
 import re
