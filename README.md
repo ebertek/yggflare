@@ -59,3 +59,17 @@ The controller creates **daily snapshots at 04:00 Europe/Stockholm**, containing
 ## Verification status
 
 The imported source and new regression tests are in GitHub; the combined CI and Docker build results are not yet verified. Full Cloudflare API parity, Docker build, Nmap/Avahi behavior, and backup/restore have **not** been verified against the live Pleiades environment. Do not enable unattended writes before those checks.
+
+## Python quality automation
+
+- [Lint](.github/workflows/lint.yml) runs Ruff checks, Black formatting checks, and Python compilation on pull requests and pushes to `main`.
+- [Python autofix](.github/workflows/python-autofix.yml) runs on non-`main` branches within this repository, applying Ruff safe fixes followed by Black and committing the result when files change. Forked PRs never receive write credentials.
+- Both workflows pin formatter versions. Run locally with:
+  ```sh
+  python -m pip install "ruff==0.14.14" "black==25.12.0"
+  ruff check --fix .
+  black .
+  ruff check .
+  black --check .
+  ```
+- The imported source may need an initial formatting pass to make the new checks green. Branch autofix does not rewrite `main` automatically.
