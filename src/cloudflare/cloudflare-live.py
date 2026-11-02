@@ -183,7 +183,8 @@ def run_audit(
         "Unmanaged Cloudflare resources and stopped containers are preserved",
         "Policy changes are suggestions, not automatically applied",
         "Static non-Docker DNS is managed only when static_dns_sync is enabled",
-        "Unaccounted internal-domain DNS findings are review-only; never deleted automatically",
+        "Unaccounted internal-domain DNS findings are review-only; "
+        "never deleted automatically",
         "Retained DNS declarations are read-only exact-type expectations",
     ]
     return report
