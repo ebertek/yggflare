@@ -22,10 +22,10 @@ def declared_dns_names(static_aliases, compose_services, running):
             owned.add(name + "." + domain("YGG_INTERNAL_DOMAIN"))
         custom = service.get("ContainerName")
         if isinstance(custom, str) and NAME.fullmatch(custom):
-            owned.add(custom + ".ygg.nu")
+            owned.add(custom + "." + domain("YGG_INTERNAL_DOMAIN"))
     for name in running:
         if NAME.fullmatch(name):
-            owned.add(name + ".ygg.nu")
+            owned.add(name + "." + domain("YGG_INTERNAL_DOMAIN"))
     return owned
 
 
@@ -97,7 +97,7 @@ def print_unaccounted_summary(report):
     declared = summary.get("retained", {})
     if declared.get("declared"):
         print(
-            f"Retained {domain("YGG_INTERNAL_DOMAIN")} DNS: {declared['present']}/"
+            f"Retained {domain('YGG_INTERNAL_DOMAIN')} DNS: {declared['present']}/"
             f"{declared['declared']} matching (review only; no writes)"
         )
         for expected in declared["missing"]:
@@ -108,7 +108,7 @@ def print_unaccounted_summary(report):
             )
     counts = summary["counts"]
     print(
-        f"Unaccounted {domain("YGG_INTERNAL_DOMAIN")} DNS: {counts['records']} records across "
+        f"Unaccounted {domain('YGG_INTERNAL_DOMAIN')} DNS: {counts['records']} records across "
         f"{counts['hostnames']} hostnames (review only; no deletions)"
     )
     for finding in summary["findings"]:
