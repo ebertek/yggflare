@@ -5,3 +5,4 @@ config/
 data/
 backup/
 secrets/
+.venv/
