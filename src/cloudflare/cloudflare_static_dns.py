@@ -1,4 +1,4 @@
-"""Read-only, private-inventory audit for non-Docker ygg.nu A records.
+"""Read-only, private-inventory audit for non-Docker internal-domain A records.
 
 MAC addresses, device descriptions, serials, purchase dates and ports are
 private inventory metadata. They are never sent to Cloudflare or logged.
