@@ -30,12 +30,6 @@ services:
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
     # Docker socket access is effectively host-root access.
     # Keep auto-apply off until shadow validation and cutover.
-    healthcheck:
-      test: ["CMD", "python", "-c", "from pathlib import Path; import time; p=Path('/data/heartbeat'); assert p.exists() and time.time()-p.stat().st_mtime < 300"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 90s
 
 secrets:
   cloudflare_api_token:
