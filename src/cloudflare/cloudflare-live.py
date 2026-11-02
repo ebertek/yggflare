@@ -33,7 +33,7 @@ from cloudflare_unaccounted_dns import (
     declared_dns_names,
     print_unaccounted_summary,
 )
-from yggflare_config import domain
+from yggflare_config import cloudflare_settings, domain
 
 CONTAINER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -196,12 +196,6 @@ def main():
         help="Merged GitOps repository containing Compose definitions",
     )
     parser.add_argument(
-        "--settings",
-        type=Path,
-        default=Path(__file__).with_name("cloudflare-settings.json"),
-        help="Nonsecret Cloudflare account and zone identifiers",
-    )
-    parser.add_argument(
         "--skip-docker",
         action="store_true",
         help="Skip Docker and internal-domain DNS inspection",
@@ -211,20 +205,7 @@ def main():
     root = args.root.expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"Merged GitOps checkout does not exist: {root}")
-    settings = json.loads(args.settings.read_text())
-    settings["ebi_zone"] = domain("YGG_EXTERNAL_DOMAIN")
-    settings["ygg_zone"] = domain("YGG_INTERNAL_DOMAIN")
-    if not isinstance(settings, dict):
-        raise TypeError("Cloudflare settings must be a JSON object")
-    for setting, name in (
-        ("account_id", "CLOUDFLARE_ACCOUNT_ID"),
-        ("tunnel_id", "CLOUDFLARE_TUNNEL_ID"),
-        ("ebi_zone_id", "CLOUDFLARE_EBI_ZONE_ID"),
-        ("ygg_zone_id", "CLOUDFLARE_YGG_ZONE_ID"),
-    ):
-        if os.environ.get(name):
-            settings[setting] = os.environ[name]
-
+    settings = cloudflare_settings()
     client = CloudflareClient(api_token())
     report = run_audit(client, root, settings, skip_docker=args.skip_docker)
     if args.json:
