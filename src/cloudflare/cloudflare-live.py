@@ -94,8 +94,12 @@ def run_audit(
         )
     )
     account = checked_id(settings["account_id"], "account ID")
-    ebi = settings.get("external_zone_id") or client.zone_id(settings["external_zone"], account)
-    ygg = settings.get("internal_zone_id") or client.zone_id(settings["internal_zone"], account)
+    ebi = settings.get("external_zone_id") or client.zone_id(
+        settings["external_zone"], account
+    )
+    ygg = settings.get("internal_zone_id") or client.zone_id(
+        settings["internal_zone"], account
+    )
     tunnel_id = settings.get("tunnel_id") or client.tunnel_id(
         account, settings["tunnel_name"]
     )
