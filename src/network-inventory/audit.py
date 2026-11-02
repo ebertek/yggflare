@@ -13,11 +13,11 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
-
-from discord_format import render
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
+
+from discord_format import render
 
 NETWORK = ipaddress.ip_network(os.environ["YGG_LAN_CIDR"], strict=True)
 DEFAULT_PORTS = (
