@@ -30,11 +30,7 @@ class MetricsTests(unittest.TestCase):
             (root / "network-inventory").mkdir()
             (root / "static-hosts.json").write_text(
                 json.dumps(
-                    {
-                        "hosts": [
-                            {"hostname": "private.example", "ipv4": "10.4.20.40"}
-                        ]
-                    }
+                    {"hosts": [{"hostname": "private.example", "ipv4": "10.4.20.40"}]}
                 )
             )
             (root / "network-inventory/state.json").write_text(
@@ -49,7 +45,7 @@ class MetricsTests(unittest.TestCase):
                         },
                         "reported": {
                             "unknown-device:10.4.20.41:aa": "NEW DEVICE private.example",
-                            "new-port:10.4.20.40:443": "port"
+                            "new-port:10.4.20.40:443": "port",
                         },
                         "advertisements": ["private.example|_http._tcp|80"],
                         "supplemental": {"warnings": ["private error", "timeout"]},
