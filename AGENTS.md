@@ -87,6 +87,10 @@ docker exec yggflare yggflare network discord-test
 
 The owner often works from a phone. **Make repository edits and open GitHub PRs rather than supplying standalone scripts, files or manual copy-paste patches.** Include tests and concise rationale; diagnose failing workflow logs and fix the same PR branch. Avoid unnecessary questions when the repository already contains the answer. Distinguish implemented, merged, deployed and production-verified features precisely.
 
+Use separate commits for separate logical changes, even when they share a PR. Keep each commit understandable and testable on its own, with related tests and documentation alongside the change. Avoid bundling unrelated fixes or features into a single large commit.
+
+The owner welcomes questions when requirements, tradeoffs or missing evidence materially affect the result. Ask for input in those cases while continuing independent work; use repository evidence and judgment for routine choices. Keep this guide up to date proactively as durable preferences and project conventions evolve.
+
 Keep this guide evergreen. Update it when architecture or safety invariants change, but avoid embedding secrets, personal identifying information, ephemeral audit fingerprints or long status logs.
 
 ## Inventory presentation invariants
