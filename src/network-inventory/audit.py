@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from discord_format import render
+from discord_webhook import validate_webhook_url
 from link_discovery import collect as collect_links
 
 NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
@@ -358,6 +359,7 @@ def notify_discord(webhook, messages):
     """Post only summarized events; never include credentials."""
     if not webhook or not messages:
         return
+    webhook = validate_webhook_url(webhook)
     is_test = len(messages) == 1 and messages[0].startswith("TEST ONLY")
     body = json.dumps(render(messages, test=is_test)).encode("utf-8")
     request = urllib.request.Request(
@@ -382,6 +384,8 @@ def notify_discord(webhook, messages):
         except (ValueError, OSError):
             payload = {}
         if isinstance(payload, dict):
+            if "webhook_id" in payload:
+                details.append("invalid webhook ID")
             code = payload.get("code")
             if isinstance(code, int) and not isinstance(code, bool):
                 details.append(f"Discord code {code}")
@@ -539,7 +543,7 @@ def main():
                 notify_discord(webhook, snapshot["pending_discord_events"])
                 snapshot["pending_discord_events"] = []
                 save_state(args.state_dir, snapshot)
-        except RuntimeError as error:
+        except (RuntimeError, ValueError) as error:
             print(f"WARNING: Discord delivery deferred: {error}", file=sys.stderr)
         except (OSError, urllib.error.URLError):
             print(
