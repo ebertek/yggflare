@@ -49,7 +49,7 @@ def main():
             print(f"  - {step}")
         print(f"Approval fingerprint: {fingerprint}")
         print(
-            "To apply: docker compose exec -T yggflare"
+            "To apply: docker exec yggflare"
             f" yggflare cloudflare orphan-apply {args.hostname} {fingerprint}"
         )
         print("No changes made to Cloudflare.")

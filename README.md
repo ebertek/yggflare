@@ -80,12 +80,12 @@ Container mount destinations are fixed: `/config`, `/data`, `/backup`, and
 `/compose-source`. Change the host-side bind sources as needed; the former
 `YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP`, and `YGGFLARE_SOURCE`
 overrides are no longer read. `PYTHONPATH` is owned by the image, not Compose.
-`YGGFLARE_CONTAINER_NAME` is no longer read: approval commands use the Compose
-service `yggflare`, and Docker self-event filtering uses that service's label.
-Run printed `docker compose exec -T yggflare ...` commands from the directory
-containing the deployment Compose file (or supply its `-f` path). This works
-when `container_name` is changed. Upgrade the image before removing the old
-Compose `PYTHONPATH` entry.
+`YGGFLARE_CONTAINER_NAME` is no longer read. Printed approval commands use
+`docker exec yggflare ...` and work from any directory on the Docker host.
+If you customize `container_name`, substitute that name in the printed command.
+Docker self-event filtering uses the Compose service label, independent of the
+container name. Upgrade the image before removing the old Compose `PYTHONPATH`
+entry.
 
 ### Secrets and data
 
@@ -252,10 +252,10 @@ docker exec yggflare yggflare cloudflare plan --max-operations 1
 ```
 
 If a plan proposes only the intended operation, it prints an approval
-fingerprint and a **host command to run from the deployment Compose directory**, for example:
+fingerprint and a **host command that works from any directory**, for example:
 
 ```sh
-docker compose exec -T yggflare yggflare cloudflare apply <approval-fingerprint> --max-operations 1
+docker exec yggflare yggflare cloudflare apply <approval-fingerprint> --max-operations 1
 ```
 
 The CLI preserves the plan's `--max-operations` limit in the suggested
@@ -348,7 +348,7 @@ docker exec yggflare yggflare cloudflare orphan-plan example.ebi.nu
 
 Only a previously claimed, now-absent hostname can produce a retirement
 plan. If the plan contains exactly the resources you intend to retire,
-copy the printed `docker compose exec -T yggflare yggflare cloudflare orphan-apply ...`
+copy the printed `docker exec yggflare yggflare cloudflare orphan-apply ...`
 command using the **actual** fingerprint.
 
 Manual cleanup strictly orders operations as **external DNS CNAME first,

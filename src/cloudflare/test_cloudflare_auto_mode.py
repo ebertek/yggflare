@@ -39,7 +39,7 @@ class AutoOptInTests(unittest.TestCase):
         command = MANAGE.approval_command("da8fce91d8119265", 1)
         self.assertEqual(
             command,
-            "docker compose exec -T yggflare yggflare cloudflare apply "
+            "docker exec yggflare yggflare cloudflare apply "
             "da8fce91d8119265 --max-operations 1",
         )
         self.assertNotIn("Scripts/cloudflare/", command)

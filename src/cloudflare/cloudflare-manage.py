@@ -98,7 +98,7 @@ def require_auto_opt_in():
 def approval_command(token, maximum):
     """Print a host-side command that can reconstruct the required private snapshot."""
     return (
-        f"docker compose exec -T yggflare yggflare cloudflare apply {token} "
+        f"docker exec yggflare yggflare cloudflare apply {token} "
         f"--max-operations {maximum}"
     )
 
