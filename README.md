@@ -61,6 +61,7 @@ Defaults below describe the application or supplied Compose file. Set booleans t
 | `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP` | `false` | Retire eligible owned orphans; also requires auto-apply |
 | `YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS` | `24` | Required orphan absence period; 24–720 hours |
 | `YGGFLARE_WEB_ENABLED` | `false` | Start the read-only HTTP UI |
+| `YGGFLARE_METRICS_ENABLED` | `false` | Enable aggregate `/metrics` exposition on the existing web listener; requires the web UI enabled |
 | `YGGFLARE_WEB_BIND` | `127.0.0.1` | Listener address: `127.0.0.1`, `::1` or `0.0.0.0` |
 | `YGGFLARE_WEB_PORT` | `8787` | HTTP port; 1–65535 |
 | `YGGFLARE_LOG_FORMAT` | `text` | Timestamped component logs; `json` emits newline-delimited JSON |
@@ -143,6 +144,48 @@ Docker rows combine Compose and cached Docker metadata: hostnames, LAN IPv4/IPv6
 Bounded Nmap scans and light service detection provide observed ports and service evidence; detailed scans exclude detected running Docker container addresses; DNS-SD advertisements remain separate evidence. Shared-address observations do not identify the owning process. Initial discovery establishes a baseline without Discord alerts; later changes can notify Discord. Incomplete DNS-SD runs preserve previous announcements. Network observations never change DNS or inventory declarations.
 
 HTTP requests read local snapshots only: no scans, Cloudflare calls or mutation endpoints. Docker metadata is cached for 30 seconds. Cloudflare snapshots refresh after controller reconciliation attempts; failed refreshes retain the last complete snapshot and snapshots older than eight hours are marked stale. Credentials and raw environment/inspection data are excluded.
+
+## Prometheus monitoring
+
+Enable `YGGFLARE_WEB_ENABLED=true` and `YGGFLARE_METRICS_ENABLED=true`
+to serve a read-only Prometheus 0.0.4 text exposition at `/metrics` on
+the **existing** web HTTP port. There is no extra listener or active scan:
+each scrape reads bounded JSON snapshots from the mounted `/config` and
+persisted `/data`. The exporter does not query Docker or Cloudflare, reveal
+device identifiers or credentials, or alter any state.
+
+Prometheus should scrape this endpoint directly on a trusted private
+network, not through the Cloudflare Access login flow. When using host networking,
+**restrict the web listener (including `/metrics`) to trusted clients by
+firewall**; Access protection on a public hostname does not secure direct LAN
+TCP access. A corrupt or oversized metrics input yields HTTP 503, not misleading
+zero metrics. Missing snapshots expose presence gauges and omit unknown
+timestamps/durations.
+
+The gauges include current discovered IPv4 hosts, unknown hosts from persisted
+non-Docker drift state, active network findings, DNS-SD services, optional
+collector warnings, pending Discord deliveries, declared inventory hosts,
+Cloudflare orphan hosts and snapshot staleness. They also expose the last
+successful scan/Cloudflare audit timestamps and the latest **saved scan
+duration** (not including Discord delivery). Metrics have no device labels.
+
+A simple scrape job:
+
+```yaml
+- job_name: yggflare
+  scrape_interval: 30s
+  metrics_path: /metrics
+  static_configs:
+    - targets: ["YOUR_HOST_REACHABLE_IP:8787"]
+```
+
+For freshness alerts prefer PromQL timestamps, such as
+`time() - yggflare_network_scan_last_success_timestamp_seconds` and
+`yggflare_cloudflare_snapshot_stale == 1`. Network scans run daily; do
+not treat absence of new devices as an error. See
+[the monitoring dashboard](dashboards/yggflare.json) for optional Grafana
+import. The host-mounted Prometheus configuration must be updated separately
+where it is not automatically synchronized from the Compose source.
 
 ## Cloudflare operations
 
