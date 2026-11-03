@@ -365,7 +365,7 @@ def notify_discord(webhook, messages):
         data=body,
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "Yggflare/0 (https://github.com/ebertek/yggflare)",
+            "User-Agent": "DiscordBot (https://github.com/ebertek/yggflare, 1.0)",
         },
         method="POST",
     )
