@@ -289,7 +289,11 @@ def collect(network, run=None, seeds=()):
                 # Older offline single-target fixtures omit the address tag.
                 if not reported and len(addresses) == 1:
                     reported = addresses
-                for ip in reported:
+                for raw_ip in reported:
+                    try:
+                        ip = str(ipaddress.ip_address(raw_ip))
+                    except ValueError:
+                        continue
                     if ip not in scoped:
                         continue
                     for port in host.findall("./ports/port"):
