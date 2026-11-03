@@ -201,4 +201,4 @@ def render(config, data, now=None):
     output = "".join(
         metric(name, description, value) for name, description, value in values
     )
-    return (output + "# EOF\n").encode("utf-8")
+    return output.encode("utf-8")
