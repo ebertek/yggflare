@@ -137,7 +137,10 @@ class NetworkAuditTests(unittest.TestCase):
         """Show useful Discord error details without printing credentials."""
         from urllib.error import HTTPError
 
-        secret = "https://discord.com/api/webhooks/1234567890123456789/SECRET_DO_NOT_LOG"
+        secret = (
+            "https://discord.com/api/webhooks/1234567890123456789/"
+            "SECRET_DO_NOT_LOG"
+        )
         response = io.BytesIO(
             b'{"message":"Invalid Form Body","code":50035,"errors":{"name":"secret"}}'
         )
@@ -161,7 +164,8 @@ class NetworkAuditTests(unittest.TestCase):
             inventory.write_text('{"version":1,"hosts":[]}', encoding="utf-8")
             webhook = root / "webhook"
             webhook.write_text(
-                "https://discord.com/api/webhooks/1234567890123456789/token", encoding="utf-8"
+                "https://discord.com/api/webhooks/1234567890123456789/token",
+                encoding="utf-8",
             )
             args = [
                 "audit",
