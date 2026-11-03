@@ -54,7 +54,7 @@ def collect(network, run=None, seeds=()):
     def note(message):
         print(f"[discovery] {message}", file=sys.stderr, flush=True)
 
-    def command(args, timeout=30):
+    def command(args, timeout=30, *, no_reply_codes=()):
         try:
             if run:
                 return run(args)
@@ -81,6 +81,13 @@ def collect(network, run=None, seeds=()):
                 if len(stdout) > 2 * 1024 * 1024:
                     raise ValueError("Oversize discovery output")
                 return stdout
+        except subprocess.CalledProcessError as error:
+            # ndisc6 returns 2 for an unanswered neighbour solicitation,
+            # distinct from exit 1 for an execution/protocol error.
+            if error.returncode in no_reply_codes:
+                return ""
+            result["warnings"].append(args[0] + ": unavailable, failed or timed out")
+            return ""
         except (OSError, ValueError, subprocess.SubprocessError):
             result["warnings"].append(args[0] + ": unavailable, failed or timed out")
             return ""
@@ -208,20 +215,53 @@ def collect(network, run=None, seeds=()):
                 )
         except (ValueError, TypeError, KeyError, AttributeError):
             result["warnings"].append("Candidate route unavailable")
-    # Separate family caps avoid starving IPv6 behind a full IPv4 inventory.
+    # Preserve every observation, but probe each address once per family.
+    # A host/macvlan pair may see the same address on both interfaces; route
+    # selection prevents double Nmap probes and wasted slots in the 64-IP cap.
     targets = []
     for version in (4, 6):
-        selected = sorted(
-            {
-                (r["ip"], r["interface"])
-                for r in result["records"]
-                if ipaddress.ip_address(r["ip"]).version == version
-            },
-            key=lambda item: (int(ipaddress.ip_address(item[0])), item[1]),
-        )
+        by_ip = defaultdict(set)
+        for record in result["records"]:
+            if (
+                ipaddress.ip_address(record["ip"]).version == version
+                and record["interface"] in interfaces
+            ):
+                by_ip[record["ip"]].add(record["interface"])
+        selected = []
+        for ip in sorted(by_ip, key=lambda value: int(ipaddress.ip_address(value))):
+            observed_interfaces = by_ip[ip]
+            preferred = next(
+                iface for iface in interfaces if iface in observed_interfaces
+            )
+            if len(observed_interfaces) > 1:
+                # For overlapping interfaces prefer the kernel's real egress
+                # route; if absent/unusable, keep the first configured source.
+                try:
+                    routes = json.loads(
+                        command(
+                            [
+                                "ip",
+                                "-j",
+                                "-6" if version == 6 else "-4",
+                                "route",
+                                "get",
+                                ip,
+                            ]
+                        )
+                    )
+                    routed_interface = (
+                        routes[0].get("dev", "")
+                        if isinstance(routes, list) and routes
+                        else ""
+                    )
+                    if routed_interface in observed_interfaces:
+                        preferred = routed_interface
+                except (TypeError, ValueError, AttributeError):
+                    pass
+            selected.append((ip, preferred))
         if len(selected) > 64:
             result["warnings"].append(
-                f"IPv{version} probe targets limited to 64 address/interface pairs"
+                f"IPv{version} probe targets limited to 64 unique addresses"
             )
         targets.extend(selected[:64])
     # NDP probes are still interface-specific; keep their bounded target cap.
@@ -233,7 +273,10 @@ def collect(network, run=None, seeds=()):
     if ndp_targets:
         note(f"NDP probes: {len(ndp_targets)} addresses")
     for index, (ip, interface) in enumerate(ndp_targets, 1):
-        raw = command(["ndisc6", "-q", "-r", "1", "-w", "500", ip, interface])
+        raw = command(
+            ["ndisc6", "-q", "-r", "1", "-w", "500", ip, interface],
+            no_reply_codes=(2,),
+        )
         for line in raw.splitlines():
             if re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", line.strip()):
                 add(ip, interface, "NDP reply", line.strip().lower())
