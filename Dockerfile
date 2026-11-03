@@ -3,8 +3,10 @@ FROM docker:29-cli AS docker-cli
 FROM python:3.15-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC PYTHONPATH=/app:/app/cloudflare
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nmap arp-scan ndisc6 avahi-utils lldpd p0f smbclient snmp util-linux iproute2 ca-certificates tzdata \
+    nmap arp-scan ndisc6 avahi-utils lldpd p0f smbclient samba-common-bin snmp util-linux iproute2 ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
+# nmblookup is provided by samba-common-bin, not smbclient.
+RUN command -v nmblookup && command -v smbclient
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 RUN docker --version
 WORKDIR /app
