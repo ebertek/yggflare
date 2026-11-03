@@ -138,8 +138,7 @@ class NetworkAuditTests(unittest.TestCase):
         from urllib.error import HTTPError
 
         secret = (
-            "https://discord.com/api/webhooks/1234567890123456789/"
-            "SECRET_DO_NOT_LOG"
+            "https://discord.com/api/webhooks/1234567890123456789/" "SECRET_DO_NOT_LOG"
         )
         response = io.BytesIO(
             b'{"message":"Invalid Form Body","code":50035,"errors":{"name":"secret"}}'
