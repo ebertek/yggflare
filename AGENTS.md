@@ -91,6 +91,8 @@ Use separate commits for separate logical changes, even when they share a PR. Ke
 
 The owner welcomes questions when requirements, tradeoffs or missing evidence materially affect the result. Ask for input in those cases while continuing independent work; use repository evidence and judgment for routine choices. Keep this guide up to date proactively as durable preferences and project conventions evolve.
 
+The project currently has a single user; breaking changes are acceptable when needed. Do not add compatibility aliases or migration scaffolding solely for hypothetical external users. Keep the README concise and focused on current setup, supported functionality and configuration, not rename history or upgrade warnings. Still describe concrete deployment dependencies and keep image/config changes coordinated.
+
 Keep this guide evergreen. Update it when architecture or safety invariants change, but avoid embedding secrets, personal identifying information, ephemeral audit fingerprints or long status logs.
 
 ## Inventory presentation invariants
