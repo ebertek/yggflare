@@ -106,6 +106,7 @@ When enabled, browse `http://127.0.0.1:8787/inventory` **from the Docker host**.
 
 - `/inventory`: searchable, sortable inventory tables grouped by /27, with declared and observed status
 - `/ports`: one row per endpoint/protocol/port, open-port evidence, detected services, declaration sources and DNS-SD announcements
+- `/diff`: static inventory versus observed MACs, ports and presence
 - `/drift`: current device/port drift plus the latest 200 findings (new device/port/DNS-SD, changed MAC/IP)
 - `/cloudflare`: saved live-audit classification, claimed resources and lifecycle state
 - `/api/inventory.json` and `/api/inventory.csv`: read-only exports
@@ -162,6 +163,43 @@ ownership. Claimed Access/DNS IDs and route hostnames are displayed alongside li
 resource IDs/counts. Scope-matched orphan first/last absence observations are
 shown as timestamps, never as cleanup eligibility or a deletion countdown. There
 are no claim, apply or delete buttons; the snapshot is never used by write paths.
+
+### Inventory review controls
+
+Hostnames, IPv4/IPv6 addresses, MACs, aliases, subnet names, descriptions,
+DNS-SD details and Cloudflare resource IDs remain visible in the read-only UI
+and applicable exports. No opt-in flag is needed for existing inventory details.
+`YGGFLARE_WEB_SHOW_SECRETS` is not implemented; setting it has no effect.
+Tokens, passwords, webhook URLs, raw environment values and secret files remain
+excluded. Protect the UI with authentication as described above.
+
+Each /27 group can be collapsed independently, with Expand all / Collapse all
+controls. Search opens matching groups and restores their prior state when cleared.
+Class and finding filters combine with text search. Color plus text badges mark
+missing hostname/MAC information, confirmed drift, explicit retirement and newly
+discovered devices. IPv6 and port information are optional, so their absence is
+not automatically flagged. On narrow screens, rows become labelled cards and
+sorting controls remain available.
+
+The Last seen column records the last successful scan observation of an address;
+it survives later scans where that address is absent. It is not a live heartbeat.
+`/diff` compares static declarations with observed MACs, ports and presence.
+Accepted `observed_macs` do not trigger drift. Unobserved declared ports are
+labelled unknown, not closed; an offline device is never inferred to be retired.
+
+Optional static-host metadata:
+
+```json
+{"hostname":"printer.home.example.net","ipv4":"192.168.40.35","device_class":"printer","retired":false}
+```
+
+`device_class` accepts `network`, `server`, `computer`, `mobile`, `iot`, `media`,
+`printer`, `sensor` or `other`. Unclassified static hosts show Device; Compose/Docker
+services show Docker and unrecognised scan rows show Unknown. `retired` must be a
+boolean and is **presentation-only**: it does not stop scans, remove DNS or authorize
+cleanup. A retired-labelled address still responding is highlighted as drift.
+Do not add these metadata fields to deployment inventories before upgrading the
+image, because older strict validators reject unknown fields.
 
 The UI intentionally omits Cloudflare credentials, Discord URLs, and private config files. It does not replace `yggflare cloudflare audit` for current live results. **There is no built-in authentication.** Keep it on loopback, use an authenticated tunnel or reverse proxy for remote access, and never expose the HTTP port directly to the public Internet. To serve on the host network instead, explicitly set `YGGFLARE_WEB_BIND=0.0.0.0` and enforce firewall/authentication upstream.
 

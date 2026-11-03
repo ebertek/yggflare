@@ -97,3 +97,7 @@ Keep this guide evergreen. Update it when architecture or safety invariants chan
 
 - With web enabled, controller refreshes the GET-only Cloudflare presentation snapshot after reconciliation attempts. Preserve last-good data and show failed/stale refreshes; never call Cloudflare on HTTP requests.
 - Network state retains service detection metadata, resolved DNS-SD addresses (no TXT data), and at most 200 recent events. Keep scan-confirmed ports, probed identities, port-name hints and advertisements distinct.
+
+- Existing inventory details (including hostnames, IPs and MACs) remain visible by default in pages and exports. `YGGFLARE_WEB_SHOW_SECRETS` is not implemented; do not use it to mask existing fields. Credentials and raw environment remain excluded.
+- `inventory_view.py` derives review flags and static/observed diffs. Optional `device_class` and boolean `retired` are presentation metadata only: never change DNS/scanning/cleanup semantics based on them. Offline is not retired; unobserved ports are unknown, not closed.
+- Scan state retains first/last-seen timestamps by LAN address. Display them as scan observations, not a live device heartbeat.
