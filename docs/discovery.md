@@ -31,6 +31,11 @@ SSDP records only service type, USN and server identity. Advertised URLs are not
 fetched. This implements the discovery protocol directly; no gssdp subprocess is
 needed. IPv6 SSDP is not implemented. NetBIOS and SMB have ten-second command
 bounds; anonymous SMB denial is normal and does not trigger password attempts.
+NetBIOS requires `nmblookup` from the Debian `samba-common-bin` package, which
+the image installs and verifies at build time. Unanswered NetBIOS requests are
+normal for devices that do not implement the protocol and do not count as
+collector errors. A missing executable produces a single warning instead of
+one warning per device; timeouts and unexpected failures remain warnings.
 No SMB file content is read. Cached target addresses need not still be reachable.
 
 ## Scan runtime and progress

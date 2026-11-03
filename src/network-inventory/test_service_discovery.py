@@ -28,6 +28,7 @@ class ServiceTests(unittest.TestCase):
                 },
                 clear=True,
             ),
+            patch("service_discovery.shutil.which", return_value="/usr/bin/nmblookup"),
             patch(
                 "service_discovery.execute",
                 side_effect=[
@@ -47,6 +48,49 @@ class ServiceTests(unittest.TestCase):
             output, [("10.0.0.2", "", "SMB anonymous share listing", "media")]
         )
         self.assertNotIn("private", str(warnings))
+
+    def test_netbios_missing_executable_warns_once(self):
+        rows = [{"ip": f"10.0.0.{i}"} for i in range(1, 17)]
+        warnings = []
+        with (
+            patch.dict(
+                "os.environ", {"YGGFLARE_DISCOVERY_NETBIOS": "true"}, clear=True
+            ),
+            patch("service_discovery.shutil.which", return_value=None),
+            patch("service_discovery.execute") as execute,
+        ):
+            collect(["eth0"], lambda a: True, rows, lambda *a: None, warnings)
+        execute.assert_not_called()
+        self.assertEqual(warnings, ["NetBIOS: nmblookup executable unavailable"])
+
+    def test_netbios_no_response_is_not_warning(self):
+        rows = [{"ip": "10.0.0.2"}]
+        warnings = []
+        with (
+            patch.dict(
+                "os.environ", {"YGGFLARE_DISCOVERY_NETBIOS": "true"}, clear=True
+            ),
+            patch("service_discovery.shutil.which", return_value="/usr/bin/nmblookup"),
+            patch("service_discovery.execute", return_value="") as execute,
+        ):
+            collect(["eth0"], lambda a: True, rows, lambda *a: None, warnings)
+        execute.assert_called_once_with(
+            ["nmblookup", "-A", "10.0.0.2"], allow_no_reply=True
+        )
+        self.assertEqual(warnings, [])
+
+    def test_netbios_no_reply_exit_code_is_handled_without_masking_failures(self):
+        import sys
+
+        from service_discovery import execute
+
+        silent = [sys.executable, "-c", "print('No reply'); raise SystemExit(1)"]
+        with self.assertRaises(ValueError):
+            execute(silent)
+        self.assertIn("No reply", execute(silent, allow_no_reply=True))
+        invalid = [sys.executable, "-c", "raise SystemExit(2)"]
+        with self.assertRaises(ValueError):
+            execute(invalid, allow_no_reply=True)
 
     def test_snmp_missing_targets_never_queries(self):
         warnings = []
