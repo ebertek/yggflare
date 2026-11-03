@@ -46,14 +46,22 @@ subprocesses are captured. This makes host discovery, focused/top-100 TCP scans,
 DNS-SD and supplemental discovery distinguishable without logging packet data,
 secrets or raw scan output.
 
-Supplemental Nmap targets remain bounded to 64 address/interface pairs per
-family, but are scanned in batches **by address family and selected interface**
-instead of starting one Nmap process per target. Each batch has a 90-second
-process limit and each host retains the existing 15-second Nmap host limit.
-Parsed XML is attributed only to the explicit scoped addresses in that batch.
-NDP probes remain interface-specific, while up to 16 NetBIOS targets are
-queried using at most four concurrent workers. These are best-effort
-observations; individual collector failures remain warnings, not DNS changes.
+Supplemental Nmap targets remain bounded to 64 **unique addresses**
+per family and are scanned in batches **by address family and selected interface**
+instead of starting one Nmap process per target. When two configured interfaces
+observe the same IP, all passive/ARP/NDP evidence is retained, but active Nmap
+and NDP use just one interface, preferring the kernel's egress route where it
+matches an observing interface. This avoids redundant scans and wasted target
+slots; failures to resolve a preferred route fall back to the first configured
+observing interface. Each batch has a 90-second process limit and each host
+retains the existing 15-second Nmap host limit. Parsed XML is attributed only
+to the explicit scoped addresses in that batch.
+
+An unanswered `ndisc6` solicitation (documented exit code 2) is not an
+execution failure or evidence that the device disappeared. Exit code 1,
+missing utilities and timeouts remain warnings. Up to 16 NetBIOS targets are
+queried using at most four concurrent workers. Supplemental observations
+are best-effort, not authoritative DNS changes.
 
 The regular IPv4 scan still makes distinct host-discovery, focused-port/service
 and top-100-port passes. The new phase timings distinguish whether those
