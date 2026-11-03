@@ -19,8 +19,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from discord_format import render
-from discord_webhook import validate_webhook_url
 from link_discovery import collect as collect_links
+
+from discord_webhook import validate_webhook_url
 
 NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
 DEFAULT_PORTS = (
