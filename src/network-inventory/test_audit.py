@@ -112,7 +112,7 @@ class NetworkAuditTests(unittest.TestCase):
             response.status = 204
             send.return_value.__enter__.return_value = response
             audit.notify_discord(
-                "https://discord.com/api/webhooks/test-token/example",
+                "https://discord.com/api/webhooks/1234567890123456789/example",
                 ["TEST ONLY"],
             )
         request = send.call_args.args[0]
@@ -124,11 +124,20 @@ class NetworkAuditTests(unittest.TestCase):
         )
         self.assertIn(b"TEST ONLY", request.data)
 
+    def test_invalid_discord_id_prevents_http_request(self):
+        """Malformed secrets are rejected locally without leaking the token."""
+        invalid = "https://discord.com/api/webhooks/123456789012345678X/secret"
+        with patch.object(audit.urllib.request, "urlopen") as post:
+            with self.assertRaisesRegex(ValueError, "ASCII digits") as raised:
+                audit.notify_discord(invalid, ["TEST ONLY"])
+        post.assert_not_called()
+        self.assertNotIn("secret", str(raised.exception))
+
     def test_discord_http_error_exposes_code_without_webhook(self):
         """Show useful Discord error details without printing credentials."""
         from urllib.error import HTTPError
 
-        secret = "https://discord.com/api/webhooks/id/SECRET_DO_NOT_LOG"
+        secret = "https://discord.com/api/webhooks/1234567890123456789/SECRET_DO_NOT_LOG"
         response = io.BytesIO(
             b'{"message":"Invalid Form Body","code":50035,"errors":{"name":"secret"}}'
         )
@@ -152,7 +161,7 @@ class NetworkAuditTests(unittest.TestCase):
             inventory.write_text('{"version":1,"hosts":[]}', encoding="utf-8")
             webhook = root / "webhook"
             webhook.write_text(
-                "https://discord.com/api/webhooks/id/token", encoding="utf-8"
+                "https://discord.com/api/webhooks/1234567890123456789/token", encoding="utf-8"
             )
             args = [
                 "audit",
@@ -186,7 +195,7 @@ class NetworkAuditTests(unittest.TestCase):
                 send.reset_mock(side_effect=True)
                 audit.main()  # No new observations; retry queued ones.
                 send.assert_called_once_with(
-                    "https://discord.com/api/webhooks/id/token",
+                    "https://discord.com/api/webhooks/1234567890123456789/token",
                     failed["pending_discord_events"],
                 )
                 recovered = json.loads((root / "state.json").read_text())
