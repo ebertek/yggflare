@@ -517,9 +517,7 @@ def main():
     ):
         raise ValueError("Invalid pending Discord notification state")
     snapshot["pending_discord_events"] = (
-        list(dict.fromkeys([*prior_pending, *events]))[-200:]
-        if not bootstrap
-        else []
+        list(dict.fromkeys([*prior_pending, *events]))[-200:] if not bootstrap else []
     )
     save_state(args.state_dir, snapshot)
     print(
