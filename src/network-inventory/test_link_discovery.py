@@ -63,3 +63,27 @@ class LinkDiscoveryTests(unittest.TestCase):
                 self.assertRaises(ValueError),
             ):
                 discovery.collect(ipaddress.ip_network("10.0.0.0/24"))
+
+    def test_ipv4_os_detection_and_estimate(self):
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[0] == "ip":
+                return '[{"dst":"10.4.20.9","state":["REACHABLE"]}]'
+            return '<nmaprun><host><os><osmatch name="Linux" accuracy="95"/></os></host></nmaprun>'
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_OS_DETECTION": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.4.20.0/23"), run)
+        self.assertIn("-O", calls[1])
+        self.assertNotIn("-6", calls[1])
+        self.assertIn("--osscan-limit", calls[1])
+        self.assertEqual(result["records"][-1]["source"], "Nmap OS estimate")
+        self.assertIn("95%", result["records"][-1]["detail"])

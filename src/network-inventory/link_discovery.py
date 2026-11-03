@@ -120,19 +120,22 @@ def collect(network, run=None):
         {
             (r["ip"], r["interface"])
             for r in result["records"]
-            if ipaddress.ip_address(r["ip"]).version == 6
+            if ipaddress.ip_address(r["ip"]).version == 6 or config.get("os_detection")
         }
     )[:64]
     for ip, interface in targets:
-        if config.get("ndp_probe"):
+        ipv6 = ipaddress.ip_address(ip).version == 6
+        if ipv6 and config.get("ndp_probe"):
             raw = command(["ndisc6", "-q", "-r", "1", "-w", "500", ip, interface])
             for line in raw.splitlines():
                 if re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", line.strip()):
                     add(ip, interface, "NDP reply", line.strip().lower())
-        if config.get("ipv6_scan"):
+        if (ipv6 and config.get("ipv6_scan")) or (
+            not ipv6 and config.get("os_detection")
+        ):
             args = [
                 "nmap",
-                "-6",
+                *(["-6"] if ipv6 else []),
                 "-n",
                 "-Pn",
                 "-sV",
@@ -163,7 +166,7 @@ def collect(network, run=None):
                         add(
                             ip,
                             interface,
-                            "Nmap IPv6",
+                            "Nmap IPv6" if ipv6 else "Nmap IPv4",
                             f"{port.get('protocol')}/{port.get('portid')} {label}",
                         )
                 for match in root.findall(".//host/os/osmatch"):
