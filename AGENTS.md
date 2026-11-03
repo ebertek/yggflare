@@ -6,8 +6,8 @@ This file is repository-local context for developers and coding assistants. Read
 
 Yggflare is a Python 3.15 containerized controller for Cloudflare Access applications, Tunnel ingress and DNS reconciliation driven by merged Docker Compose and private JSON inventories. It also performs LAN Nmap/DNS-SD observations, Discord notifications, backups and health checks. Keep its default posture **read-only and fail-closed**.
 
-- Public source repository: `ebertek/yggflare`. Main deployment configuration lives separately in **`ebertek/ebertek-compose`**, with private material in **`ebertek/ebertek-compose-secrets`**.
-- **Do not edit the deployed `~/ygg-compose` checkout.** It is the merged runtime output; durable changes belong in the appropriate source repository and are synchronized by Komodo.
+- Public source repository: `ebertek/yggflare`. Main deployment Compose lives in **`ebertek/ebertek-compose`**. Private device inventories and retained DNS now live on the **mounted Yggflare `/config` volume**, not in `ebertek-compose-secrets` commits. Treat `/config` as the private source of truth; the container mounts it read-only.
+- **Do not edit the deployed `~/ygg-compose` checkout.** It is the merged runtime output; durable public code and Compose changes belong in their respective source repositories. Private inventory edits belong on the host-mounted `/config` volume and must never be committed or mirrored into a public repository.
 - The deployment host is commonly called Pleiades. Runtime paths inside Yggflare: `/compose-source` (read-only merged Compose), `/config` (read-only private inventories), `/data` (persistent state), `/backup` (archives) and `/run/secrets` (credentials). Do not put secrets in commits, PR descriptions, logs, fixtures or generated public artifacts.
 - Licensing: Apache-2.0; preserve `LICENSE` and `NOTICE`.
 
@@ -40,7 +40,7 @@ The inventory UI and automatic cleanup modules have landed on `main`. Check actu
 3. `YGGFLARE_CLOUDFLARE_AUTO_APPLY` enables guarded, bounded reconciliation. `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP` is an independent deletion opt-in (default off; **enabled in the current `ebertek-compose` deployment source**) with `YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS=24`. Never treat an unmanaged Cloudflare resource as Yggflare-owned.
 4. Ownership must be proven and persisted before any cleanup. Manual retirement uses a plan fingerprint and deletes **external DNS → Tunnel route → Access app**; leave Access protection until its route and DNS are gone. Preserve unrelated ingress routes. Recover safely after partial errors.
 5. Never enable new external-facing listeners by default. A web UI must remain read-only and loopback-only unless protected by an authenticated reverse proxy/Access policy. Do not expose secret contents or unauthenticated operational actions.
-6. Network scanning is bounded by configured LAN CIDRs. Avoid turning scan results into authoritative DNS changes automatically.
+6. Network scanning is bounded by configured LAN CIDRs. Avoid turning scan results into authoritative DNS changes automatically. Future inventory adoption should propose reviewed changes for the host-mounted `/config`, never mutate the read-only container mount or write to the merged Compose checkout.
 7. Discord webhook URLs and Cloudflare tokens are secrets. No credential values in exceptions, test output or logs. Validate Discord webhook URL structure offline in `doctor` and before delivery using the shared `discord_webhook.py` helper; never print webhook IDs/tokens or turn malformed secret data into external HTTP requests.
 8. Archive restoration tests operate only on private temporary storage; never overwrite production config, state or secrets. Block traversal, symlinks, hardlinks and extraction bombs.
 
@@ -87,6 +87,10 @@ docker exec yggflare yggflare network discord-test
 - Environment configuration has **two namespaces only**: `YGGFLARE_*` for Yggflare app features and Cloudflare behavior, and `CLOUDFLARE_*` for connection/account/zone/tunnel settings. Old `YGG_*` and `CF_*` names are unsupported. The companion Compose migration pins a matching image digest to prevent mixed-version deployments.
 - Deployment source enables `YGGFLARE_WEB_ENABLED=true`, `YGGFLARE_WEB_BIND=0.0.0.0`, and `YGGFLARE_WEB_PORT=8787`. Docker `network_mode: host` uses Traefik's explicit backend `http://10.4.21.1:8787`; `Scripts/startup/30-macvlan-host.sh` in `ebertek-compose` creates the Pleiades host-side macvlan shim `macvlan1-host` at `10.4.21.1/32`, enabling Traefik on `10.4.21.44` to reach the host. Cloudflare Access protects `yggflare.ebi.nu` but **does not protect direct LAN TCP/8787**: validate host firewall restrictions separately.
 - Follow-up enhancements should prioritize correctness and security (state validation, preservation of the LAN /27 organization, graceful handling of malformed or absent observations, and authenticated exposure), not additional web-server complexity.
+
+## Metrics and monitoring
+
+Prometheus `/metrics` is opt-in via `YGGFLARE_METRICS_ENABLED=true` and is served on the existing read-only web HTTP listener. It reads bounded, persisted snapshots only; never trigger scanners, Docker inspection, Cloudflare API calls or mutation from a scrape. Keep metric series aggregate and low-cardinality: no hostname, IP, MAC, account, resource ID, token or user-controlled labels. The host-networked listener must be restricted to trusted scrape clients at the network/firewall layer; a Cloudflare Access policy does not protect direct LAN access.
 
 ## Working style for future sessions
 
