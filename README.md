@@ -8,7 +8,7 @@ Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and
 
 Yggflare uses exactly two application-owned environment namespaces:
 
-- `YGGFLARE_*`: controller, network inventory, watches, paths, web UI, and Cloudflare reconciliation/cleanup behavior. For example, `YGGFLARE_LAN_CIDR`, `YGGFLARE_WATCH_COMPOSE`, `YGGFLARE_CLOUDFLARE_AUTO_APPLY`, and `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`.
+- `YGGFLARE_*`: controller, network inventory, watches, web UI, and Cloudflare reconciliation/cleanup behavior. For example, `YGGFLARE_LAN_CIDR`, `YGGFLARE_WATCH_COMPOSE`, `YGGFLARE_CLOUDFLARE_AUTO_APPLY`, and `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`.
 - `CLOUDFLARE_*`: Cloudflare connection and resource settings (account, token, zones and tunnel).
 
 This is a **breaking rename**. The former `YGG_*` and `CF_*` names are not recognized. Update deployment environment values in the same release as the image to avoid losing configuration, especially the Cloudflare write/cleanup opt-ins.
@@ -76,7 +76,16 @@ The example domains and ranges are not built-in defaults. Yggflare validates the
 | `YGGFLARE_WATCH_COOLDOWN_SECONDS` | Minimum delay after an audit before another event-driven audit; default `60` seconds |
 | `TZ` | UTC in the supplied Compose definition |
 
-Compose also sets in-container paths for `YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP` and `YGGFLARE_SOURCE`.
+Container mount destinations are fixed: `/config`, `/data`, `/backup`, and
+`/compose-source`. Change the host-side bind sources as needed; the former
+`YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP`, and `YGGFLARE_SOURCE`
+overrides are no longer read. `PYTHONPATH` is owned by the image, not Compose.
+`YGGFLARE_CONTAINER_NAME` is no longer read. Printed approval commands use
+`docker exec yggflare ...` and work from any directory on the Docker host.
+If you customize `container_name`, substitute that name in the printed command.
+Docker self-event filtering uses the Compose service label, independent of the
+container name. Upgrade the image before removing the old Compose `PYTHONPATH`
+entry.
 
 ### Secrets and data
 
@@ -105,6 +114,7 @@ environment:
 When enabled, browse `http://127.0.0.1:8787/inventory` **from the Docker host**. The default bind is loopback and the container uses host networking. The interface provides:
 
 - `/inventory`: searchable, sortable inventory tables grouped by /27, with declared and observed status
+- `/reserved` and `/retired`: planned allocations and historical devices from optional `/config/static-hosts-reserved.json` and `/config/retired-devices.json`
 - `/ports`: one row per endpoint/protocol/port, open-port evidence, detected services, declaration sources and DNS-SD announcements
 - `/diff`: static inventory versus observed MACs, ports and presence
 - `/drift`: current device/port drift plus the latest 200 findings (new device/port/DNS-SD, changed MAC/IP)
@@ -116,9 +126,14 @@ IPv4/IPv6 addresses, MACs, network aliases and Traefik router names. Compose
 provides declarations even when Docker is unavailable; running-container metadata
 supplies current addresses and image `EXPOSE` ports. Status distinguishes
 `docker declared`, `docker running` and `docker stopped`; it does not imply
-Cloudflare ownership or a successful port probe. Host-network and other services
-without a LAN IPv4 allocation appear under **Unassigned**, without guessing the
-host's IP or attaching their ports to another device.
+Cloudflare ownership or a successful port probe. Only services with a LAN IPv4 endpoint appear. Host-network, bridge-only and
+other unallocated services are omitted. Services using `network_mode: service:…`
+or `container:…` inherit a uniquely resolved parent's LAN endpoint and are labelled
+**shared network**; their own hostname and port evidence remain distinct.
+Compose service references are project-scoped; cycles/missing/ambiguous parents
+are omitted. Parent Traefik routers/backends named for the child can provide
+that child's aliases/ports. Shared address scan results describe the endpoint,
+not proof that a particular child process owns a listening socket.
 
 Port evidence combines Compose `ports` (container target, not published host port),
 `expose`, Docker exposed/bound ports, Traefik backend ports/URLs and narrowly
@@ -187,6 +202,18 @@ it survives later scans where that address is absent. It is not a live heartbeat
 Accepted `observed_macs` do not trigger drift. Unobserved declared ports are
 labelled unknown, not closed; an offline device is never inferred to be retired.
 
+Drift cells highlight the affected MAC, IP, port or presence field and show
+both declared and observed values. The full comparison remains under `/diff`.
+Badges stay on one line at desktop and mobile widths.
+
+Reserved and retired catalogs are read-only and separate from the active /27
+inventory. Each file accepts a JSON record list, or an object with a `hosts` or
+`devices` list. Records may include `hostname`, `name`, `ipv4`, `ipv6`, `mac`,
+`aliases` (list), `description`, `notes`, `device_class`, `reason`, and `retired_at`.
+Other fields are not exported. Missing files show an empty tab; unsupported or
+malformed files show a warning without disabling the active inventory. These
+catalogs never feed DNS reconciliation, scanning or Cloudflare ownership.
+
 Optional static-host metadata:
 
 ```json
@@ -225,7 +252,7 @@ docker exec yggflare yggflare cloudflare plan --max-operations 1
 ```
 
 If a plan proposes only the intended operation, it prints an approval
-fingerprint and a **ready-to-run host command**, for example:
+fingerprint and a **host command that works from any directory**, for example:
 
 ```sh
 docker exec yggflare yggflare cloudflare apply <approval-fingerprint> --max-operations 1

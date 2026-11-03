@@ -80,6 +80,11 @@ class ChangeTests(unittest.TestCase):
         self.assertEqual(event_reason(event, "yggflare"), "docker_topology")
         event["Actor"]["Attributes"]["name"] = "yggflare"
         self.assertIsNone(event_reason(event, "yggflare"))
+        event["Actor"]["Attributes"] = {
+            "name": "custom-name",
+            "com.docker.compose.service": "yggflare",
+        }
+        self.assertIsNone(event_reason(event, None))
         event["Action"] = "health_status: healthy"
         self.assertIsNone(event_reason(event, "yggflare"))
         self.assertEqual(

@@ -13,13 +13,15 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from docker_inventory import address_key, snapshot
+from inventory_catalog import records as catalog_records
+from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
 from web_views import cloudflare_view, drift_view, ports_view
 
-CONFIG = Path(os.environ.get("YGGFLARE_CONFIG", "/config"))
-DATA = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+CONFIG = Path("/config")
+DATA = Path("/data")
 NETWORK = ipaddress.ip_network(os.environ.get("YGGFLARE_LAN_CIDR", "10.4.20.0/23"))
-SOURCE = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
+SOURCE = Path("/compose-source")
 MAX_BYTES = 4 * 1024 * 1024
 
 CSS = """
@@ -34,13 +36,14 @@ input{background:var(--panel);color:var(--fg);border:1px solid var(--border);bor
 .scroll{overflow:auto}table{border-collapse:collapse;width:100%;min-width:940px}th,td{padding:9px 11px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 th{position:sticky;top:0;background:#253548;font-size:12px;color:var(--muted);cursor:pointer}
 td code{color:#b5e4ff}tr:hover td{background:#233244}.group{background:#29394d;font-weight:700}
-.pill{display:inline-block;border:1px solid #4b6175;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px}
+.pill{white-space:nowrap;overflow-wrap:normal;word-break:normal;display:inline-block;border:1px solid #4b6175;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px}
 button,select{font:inherit;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:7px;padding:10px;min-height:44px}
 summary{font-weight:700;cursor:pointer;padding:8px;min-height:44px}details:not([open]){padding-bottom:8px}
 tr[data-flags~="missing"] td,.pill.missing{background:#493d1b}
 tr[data-flags~="retired"] td,.pill.retired{background:#333b46;color:#c0c8d1}
 tr[data-flags~="new"] td,.pill.new{background:#123f36}
 tr[data-flags~="drift"] td,.pill.drift{background:#4a2531}
+.field-drift{color:#ffb6c4!important;font-weight:700}.difference{display:block;margin-top:5px;font-size:12px}
 [hidden]{display:none!important}td{overflow-wrap:anywhere}summary:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--accent)}
 @media(max-width:700px){
 .scroll{overflow:visible}table{min-width:0}thead{display:block}thead tr{display:flex;flex-wrap:wrap;gap:4px}th{position:static;border:1px solid var(--border);border-radius:5px;padding:8px;min-height:44px}
@@ -187,8 +190,25 @@ def model():
                 "status": "unmanaged",
             }
         )
+    catalogs = {}
+    for kind, filename in [
+        ("reserved", "static-hosts-reserved.json"),
+        ("retired", "retired-devices.json"),
+    ]:
+        try:
+            catalogs[kind] = (
+                catalog_records(read_json(CONFIG / filename))
+                if (CONFIG / filename).is_file()
+                else []
+            )
+        except (OSError, ValueError, TypeError):
+            catalogs[kind] = []
+            warnings.append(
+                f"{filename} could not be read: expected a list of records or an object with a hosts/devices list."
+            )
     diffs = decorate(hosts, inventory, state)
     return {
+        **catalogs,
         "diffs": diffs,
         "hosts": sorted(hosts, key=lambda h: (address_key(h["ipv4"]), h["hostname"])),
         "warnings": warnings,
@@ -208,6 +228,8 @@ def page(tab, content):
         f'<a class="{"active" if name == tab else ""}" href="/{name}">{label}</a>'
         for name, label in (
             ("inventory", "Inventory"),
+            ("reserved", "Reserved"),
+            ("retired", "Retired"),
             ("ports", "Ports & DNS-SD"),
             ("drift", "Recent drift"),
             ("diff", "Inventory diff"),
@@ -229,6 +251,7 @@ def table(headers, rows, row_meta=None):
     body = []
     for row_index, values in enumerate(rows):
         cells = ""
+        meta = row_meta[row_index] if row_meta else {}
         for header, value in zip(headers, values):
             attribute = ""
             if header in ("IP", "IPv6"):
@@ -240,9 +263,29 @@ def table(headers, rows, row_meta=None):
                     f'<span class="pill">{escape(v.strip())}</span>'
                     for v in str(value).split(",")
                 )
+            field = {
+                "IP": "IPv4",
+                "MAC": "MAC",
+                "Ports": "Port",
+                "Status": "Presence",
+            }.get(header)
+            changes = [
+                d
+                for d in meta.get("differences", [])
+                if d["field"] == field and d["severity"] == "drift"
+            ]
+            if changes:
+                attribute += ' class="field-drift"'
+                display += "".join(
+                    '<small class="difference">'
+                    + escape(
+                        f"{d['field']} drift: declared {d['expected']}; observed {d['observed']}"
+                    )
+                    + "</small>"
+                    for d in changes
+                )
             cells += f'<td{attribute} data-label="{escape(header, quote=True)}"><span>{display}</span></td>'
         search = escape(" ".join(str(v) for v in values).lower(), quote=True)
-        meta = (row_meta or [{} for _ in rows])[row_index]
         flags = escape(" ".join(meta.get("flags", [])), quote=True)
         kind = escape(meta.get("device_class", ""), quote=True)
         body.append(
@@ -316,6 +359,8 @@ def render(tab, data):
             + controls
             + "".join(blocks)
         )
+    elif tab in ("reserved", "retired"):
+        content = search + catalog_view(tab, data, table)
     elif tab == "ports":
         content = search + ports_view(data, table)
     elif tab == "diff":
@@ -340,6 +385,8 @@ class Handler(BaseHTTPRequestHandler):
             uri = "/inventory"
         if uri not in (
             "/inventory",
+            "/reserved",
+            "/retired",
             "/ports",
             "/drift",
             "/diff",

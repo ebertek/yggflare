@@ -52,8 +52,8 @@ def main():
         settings.get("tunnel_id") or client.tunnel_id(account, settings["tunnel_name"])
     )
     bound = scope(account, zone, tunnel)
-    source = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
-    data = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+    source = Path("/compose-source")
+    data = Path("/data")
     if not source.is_dir():
         raise OwnershipError("Mounted Compose source is missing")
 

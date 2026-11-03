@@ -18,6 +18,7 @@ from cloudflare_desired import HOST, compose_inventory, discover
 from cloudflare_live_diff import ordered_policy_ids, validate_ingress
 from cloudflare_write_api import validate_tunnel_config
 
+LIVE_SOURCE = Path("/compose-source")
 REGISTRY_FILE = "managed-hosts.json"
 VERSION = 1
 MAX_REGISTRY_BYTES = 1024 * 1024
@@ -318,7 +319,7 @@ def review_orphan(client, root, data, bound, hostname):
 
 def require_absent_in_mounted_source(client, bound, hostname):
     """Refuse deletion if the live merged Compose source is missing or redeclared."""
-    live_source = Path(os.environ.get("YGGFLARE_SOURCE", "/compose-source"))
+    live_source = LIVE_SOURCE
     if not live_source.is_dir():
         raise OwnershipError("Cannot verify currently mounted Compose source")
     if hostname in desired_hosts(client, live_source, bound["account"]):

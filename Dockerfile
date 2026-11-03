@@ -1,7 +1,7 @@
 FROM docker:29-cli AS docker-cli
 
 FROM python:3.15-slim
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC PYTHONPATH=/app/cloudflare
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap avahi-utils util-linux iproute2 ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
@@ -10,7 +10,7 @@ RUN docker --version
 WORKDIR /app
 COPY src/cloudflare/ /app/cloudflare/
 COPY src/network-inventory/ /app/network-inventory/
-COPY controller.py backup.py backup_verify.py doctor.py watchers.py web.py web_views.py inventory_view.py docker_inventory.py /app/
+COPY controller.py backup.py backup_verify.py doctor.py watchers.py web.py web_views.py inventory_view.py inventory_catalog.py docker_inventory.py /app/
 COPY --chmod=755 cli.py /usr/local/bin/yggflare
 RUN pip install --no-cache-dir -r /app/cloudflare/requirements.txt
 HEALTHCHECK --interval=60s --timeout=5s --start-period=90s --retries=3 \

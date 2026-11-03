@@ -86,7 +86,8 @@ class DockerInventoryTests(unittest.TestCase):
             inventory, "inspect_containers", side_effect=OSError("never-export-this")
         ):
             hosts, warnings = inventory.collect(self.root, NETWORK, "home.example")
-        dns, host = hosts
+        self.assertEqual(len(hosts), 1)
+        dns = hosts[0]
         self.assertEqual(dns["hostname"], "resolver.home.example")
         self.assertEqual(dns["ipv6"], "fd00::34")
         self.assertEqual(dns["mac"], "0e:be:00:da:00:34")
@@ -96,8 +97,6 @@ class DockerInventoryTests(unittest.TestCase):
             {"udp/53", "tcp/80", "tcp/443", "tcp/5380", "tcp/9000", "tcp/9001"},
         )
         self.assertEqual(dns["status"], "docker declared")
-        self.assertEqual(host["ipv4"], "")
-        self.assertEqual(host["ports"], ["tcp/9999"])
         self.assertTrue(warnings)
         self.assertNotIn("never-export-this", json.dumps([hosts, warnings]))
 
@@ -105,7 +104,7 @@ class DockerInventoryTests(unittest.TestCase):
         with patch.object(inventory, "inspect_containers", return_value=[live()]):
             hosts, warnings = inventory.collect(self.root, NETWORK, "home.example")
         self.assertFalse(warnings)
-        self.assertEqual(len(hosts), 2)
+        self.assertEqual(len(hosts), 1)
         dns = hosts[0]
         self.assertEqual(dns["status"], "docker running")
         self.assertEqual(dns["ipv6"], "fd00::35")
@@ -163,9 +162,69 @@ class DockerInventoryTests(unittest.TestCase):
         (broken / "compose.yaml").write_text("secret: [never-export-this")
         with patch.object(inventory, "inspect_containers", return_value=[]):
             hosts, warnings = inventory.collect(self.root, NETWORK, "")
-        self.assertEqual(len(hosts), 2)
+        self.assertEqual(len(hosts), 1)
         self.assertEqual(len(warnings), 1)
         self.assertNotIn("never-export-this", str(warnings))
+
+    def test_shared_network_resolves_scoped_parent_and_ports(self):
+        (self.root / "compose.yaml").write_text(
+            """
+name: downloads
+services:
+  gluetun:
+    networks:
+      lan: {ipv4_address: 10.4.21.39, ipv6_address: 'fd00::39'}
+    labels:
+      traefik.http.routers.mousehole.rule: 'Host(`mousehole.example.net`)'
+      traefik.http.services.mousehole.loadbalancer.server.port: '5010'
+      traefik.http.services.other.loadbalancer.server.port: '1234'
+  mousehole:
+    network_mode: service:gluetun
+  download:
+    network_mode: service:gluetun
+    environment: {QBT_WEBUI_PORT: '8080'}
+  unrelated:
+    network_mode: host
+  cycle1:
+    network_mode: service:cycle2
+  cycle2:
+    network_mode: service:cycle1
+  missing:
+    network_mode: service:absent
+"""
+        )
+        other = self.root / "other"
+        other.mkdir()
+        (other / "compose.yaml").write_text(
+            "name: other\nservices:\n  gluetun:\n    network_mode: host\n"
+        )
+        with patch.object(inventory, "inspect_containers", return_value=[]):
+            hosts, _ = inventory.collect(self.root, NETWORK, "home.example")
+        self.assertEqual(len(hosts), 3)
+        mouse = next(h for h in hosts if h["hostname"].startswith("mousehole."))
+        self.assertEqual(mouse["ipv4"], "10.4.21.39")
+        self.assertEqual(mouse["ipv6"], "fd00::39")
+        self.assertEqual(mouse["shared_network"], "gluetun")
+        self.assertEqual(mouse["ports"], ["tcp/5010"])
+        self.assertIn("mousehole.example.net", mouse["aliases"])
+
+    def test_runtime_shared_container_id_and_bridge_exclusion(self):
+        (self.root / "compose.yaml").unlink()
+        parent = live()
+        parent["Id"] = "a" * 64
+        child = {
+            "Name": "/child",
+            "HostConfig": {"NetworkMode": "container:" + "a" * 64},
+        }
+        bridge = live("172.17.0.2")
+        bridge["Name"] = "/bridge"
+        with patch.object(
+            inventory, "inspect_containers", return_value=[child, parent, bridge]
+        ):
+            hosts, _ = inventory.collect(self.root, NETWORK, "home.example")
+        self.assertEqual(len(hosts), 2)
+        self.assertEqual(hosts[0]["shared_network"], "dns")
+        self.assertEqual(hosts[0]["ipv4"], "10.4.21.34")
 
     def test_port_syntax_and_limits(self):
         result = inventory.ports(

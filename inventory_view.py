@@ -26,6 +26,7 @@ def decorate(hosts, inventory, state):
             ip, host.get("last_seen", "")
         )
         flags = []
+        host["differences"] = []
         missing = [
             label
             for key, label in [("hostname", "hostname"), ("mac", "MAC")]
@@ -73,6 +74,7 @@ def decorate(hosts, inventory, state):
                         "severity": severity,
                     }
                 )
+                host["differences"].append(diffs[-1])
                 if severity == "drift" and "drift" not in flags:
                     flags.append("drift")
 
@@ -120,6 +122,7 @@ def decorate(hosts, inventory, state):
                         "severity": "drift",
                     }
                 )
+                host["differences"].append(diffs[-1])
                 flags.append("drift")
         host["flags"] = flags
     return diffs

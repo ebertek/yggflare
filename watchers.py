@@ -126,7 +126,9 @@ def event_reason(event, own_container):
     if kind == "container":
         if action not in ("start", "die", "destroy", "rename"):
             return None
-        if attributes.get("name", "").lstrip("/") == own_container:
+        if (
+            own_container and attributes.get("name", "").lstrip("/") == own_container
+        ) or attributes.get("com.docker.compose.service") == "yggflare":
             return None
     elif action not in ("connect", "disconnect"):
         return None
@@ -148,7 +150,6 @@ def watch_docker(changes, log):
     command = ["docker", "events", "--format", "{{json .}}"]
     for item in filters:
         command.extend(["--filter", item])
-    own_container = os.getenv("YGGFLARE_CONTAINER_NAME", "yggflare")
     while True:
         try:
             with subprocess.Popen(
@@ -161,7 +162,7 @@ def watch_docker(changes, log):
                 assert process.stdout is not None
                 for line in process.stdout:
                     try:
-                        reason = event_reason(json.loads(line), own_container)
+                        reason = event_reason(json.loads(line), None)
                     except (ValueError, TypeError, AttributeError):
                         continue
                     if reason:

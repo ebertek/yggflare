@@ -14,10 +14,10 @@ from pathlib import Path
 from backup import create_snapshot, prune_snapshots
 from watchers import start as start_watchers
 
-CONFIG = Path(os.getenv("YGGFLARE_CONFIG", "/config"))
-DATA = Path(os.getenv("YGGFLARE_DATA", "/data"))
-SOURCE = Path(os.getenv("YGGFLARE_SOURCE", "/compose-source"))
-BACKUP = Path(os.getenv("YGGFLARE_BACKUP", "/backup"))
+CONFIG = Path("/config")
+DATA = Path("/data")
+SOURCE = Path("/compose-source")
+BACKUP = Path("/backup")
 LOG_FORMAT = os.getenv("YGGFLARE_LOG_FORMAT", "text").lower()
 if LOG_FORMAT not in ("text", "json"):
     raise ValueError("YGGFLARE_LOG_FORMAT must be text or json")

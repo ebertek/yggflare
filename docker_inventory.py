@@ -192,6 +192,7 @@ def compose_records(root, network, domain):
                         "status": "docker declared",
                         "source": "Compose",
                         "mode": str(config.get("network_mode") or ""),
+                        "labels": mapping(config.get("labels")),
                     }
                 )
         except (OSError, ValueError, TypeError, AttributeError, YAMLError):
@@ -286,6 +287,11 @@ def collect(root, network, domain):
             record["aliases"] = names(record["aliases"] + live["aliases"])
             for port, sources in live["port_sources"].items():
                 record["port_sources"].setdefault(port, set()).update(sources)
+        record["id"] = str(container.get("Id") or "")
+        record["mode"] = str(
+            (container.get("HostConfig") or {}).get("NetworkMode") or record["mode"]
+        )
+        record["labels"] = {**record.get("labels", {}), **labels}
         # Live addresses replace declarations only when running; stopped services
         # retain their declared allocation, explicitly marked as not running.
         running = (container.get("State") or {}).get("Running") is True
@@ -298,8 +304,54 @@ def collect(root, network, domain):
                 for key in ("ipv6", "mac"):
                     item[key] = item[key] or prior.get(key, "")
             record["endpoints"] = endpoints
+
+    def resolve(record, visited):
+        if id(record) in visited:
+            return [], ""
+        mode = record["mode"]
+        if not mode.startswith(("service:", "container:")):
+            return record["endpoints"], ""
+        kind, target = mode.split(":", 1)
+        if kind == "service":
+            candidates = [
+                r
+                for r in records
+                if r.get("project") == record.get("project")
+                and r.get("project")
+                and r.get("service") == target
+            ]
+        else:
+            candidates = [
+                r
+                for r in records
+                if r["name"] == target
+                or (len(target) >= 12 and r.get("id", "").startswith(target))
+            ]
+        if len(candidates) != 1:
+            return [], ""
+        parent = candidates[0]
+        endpoints, _ = resolve(parent, visited | {id(record)})
+        # Router/service names explicitly matching the child supply its own
+        # declarations; do not assign every VPN-side port to every child.
+        service = record.get("service", record["name"])
+        labels = parent.get("labels", {})
+        selected = {
+            k: v
+            for k, v in labels.items()
+            if k.startswith(f"traefik.http.routers.{service}.")
+            or k.startswith(f"traefik.http.services.{service}.")
+        }
+        extra = metadata({"labels": selected}, record["name"], domain)
+        record["aliases"] = names(record["aliases"] + extra["aliases"])
+        for port, sources in extra["port_sources"].items():
+            record["port_sources"].setdefault(port, set()).update(sources)
+        return endpoints, parent["name"]
+
     hosts = []
     for record in records:
+        endpoints, shared = resolve(record, set())
+        if not endpoints:
+            continue
         evidence = {
             p: sorted(s)
             for p, s in sorted(
@@ -307,20 +359,19 @@ def collect(root, network, domain):
                 key=lambda v: (v[0].split("/")[0], int(v[0].split("/")[1])),
             )
         }
-        for item in record["endpoints"] or [
-            {"ipv4": "", "ipv6": "", "mac": "", "aliases": []}
-        ]:
+        for item in endpoints:
             hosts.append(
                 {
                     **item,
                     "hostname": record["hostname"],
+                    "shared_network": shared,
                     "aliases": names(record["aliases"] + item["aliases"]),
                     "ports": list(evidence),
                     "port_sources": evidence,
                     "source": record["source"],
                     "description": "Docker service "
                     + record["name"]
-                    + (" (" + record["mode"] + ")" if record["mode"] else ""),
+                    + (" (shared network: " + shared + ")" if shared else ""),
                     "status": record["status"],
                 }
             )
