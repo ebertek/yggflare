@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
@@ -368,9 +369,29 @@ def notify_discord(webhook, messages):
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        if response.status not in {200, 204}:
-            raise RuntimeError("Discord notification rejected")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status not in {200, 204}:
+                raise RuntimeError("Discord notification rejected")
+    except urllib.error.HTTPError as error:
+        # Report Discord's numeric code and safe summary, never the webhook URL
+        # or the unfiltered response body.
+        details = []
+        try:
+            payload = json.loads(error.read(4096))
+        except (ValueError, OSError):
+            payload = {}
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            if isinstance(code, int) and not isinstance(code, bool):
+                details.append(f"Discord code {code}")
+            message = payload.get("message")
+            if isinstance(message, str) and re.fullmatch(
+                r"[A-Za-z0-9 _.,:()'-]{1,120}", message
+            ):
+                details.append(message)
+        suffix = f" ({'; '.join(details)})" if details else ""
+        raise RuntimeError(f"Discord webhook rejected: HTTP {error.code}{suffix}") from None
 
 
 # pylint: disable=too-many-locals
@@ -485,6 +506,20 @@ def main():
             ]
         )[-200:],
     }
+    # Observations must be committed even when a remote notification fails.
+    # Save pending alerts with the scan so a subsequent run can retry them
+    # without generating duplicate discovery events.
+    prior_pending = previous.get("pending_discord_events", [])
+    if not isinstance(prior_pending, list) or any(
+        not isinstance(event, str) for event in prior_pending
+    ):
+        raise ValueError("Invalid pending Discord notification state")
+    snapshot["pending_discord_events"] = (
+        list(dict.fromkeys([*prior_pending, *events]))[-200:]
+        if not bootstrap
+        else []
+    )
+    save_state(args.state_dir, snapshot)
     print(
         f"Network inventory: {len(hosts)} responsive IPv4 hosts; {len(advertised)} DNS-SD services"
     )
@@ -492,15 +527,25 @@ def main():
         print("  ! " + event)
     if bootstrap:
         print("First observation saved; suppressing initial Discord notification.")
-    if not bootstrap:
-        webhook_file = os.environ.get("YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE")
-        webhook = (
-            Path(webhook_file).read_text(encoding="utf-8").strip()
-            if webhook_file and Path(webhook_file).is_file()
-            else ""
-        )
-        notify_discord(webhook, events)
-    save_state(args.state_dir, snapshot)
+    if snapshot["pending_discord_events"]:
+        try:
+            webhook_file = os.environ.get("YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE")
+            webhook = (
+                Path(webhook_file).read_text(encoding="utf-8").strip()
+                if webhook_file and Path(webhook_file).is_file()
+                else ""
+            )
+            if webhook:
+                notify_discord(webhook, snapshot["pending_discord_events"])
+                snapshot["pending_discord_events"] = []
+                save_state(args.state_dir, snapshot)
+        except RuntimeError as error:
+            print(f"WARNING: Discord delivery deferred: {error}", file=sys.stderr)
+        except (OSError, urllib.error.URLError):
+            print(
+                "WARNING: Discord delivery deferred: transport or secret error",
+                file=sys.stderr,
+            )
     print(f"New observations: {len(events)}; inventory and Cloudflare unchanged.")
 
 
