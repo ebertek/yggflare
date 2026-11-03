@@ -111,7 +111,11 @@ class LinkDiscoveryTests(unittest.TestCase):
         self.assertEqual(nmap[0][nmap[0].index("-e") + 1], "eth1")
         self.assertEqual(nmap[0][-2:], ["10.0.0.2", "10.0.0.3"])
         self.assertEqual(
-            {(r["ip"], r["interface"]) for r in result["records"] if r["source"] == "Neighbor cache"},
+            {
+                (r["ip"], r["interface"])
+                for r in result["records"]
+                if r["source"] == "Neighbor cache"
+            },
             {
                 ("10.0.0.2", "eth0"),
                 ("10.0.0.2", "eth1"),
@@ -120,8 +124,10 @@ class LinkDiscoveryTests(unittest.TestCase):
             },
         )
         self.assertTrue(
-            any(r["source"] == "Nmap OS estimate" and r["ip"] == "10.0.0.2"
-                for r in result["records"])
+            any(
+                r["source"] == "Nmap OS estimate" and r["ip"] == "10.0.0.2"
+                for r in result["records"]
+            )
         )
 
     def test_cap_counts_unique_ips_not_address_interface_pairs(self):
