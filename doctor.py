@@ -15,6 +15,7 @@ from pathlib import Path
 
 import controller
 from backup import verify_archive
+from discord_webhook import read_webhook
 
 DAY = dt.timedelta(days=1)
 
@@ -25,6 +26,15 @@ def age_ok(path, max_hours):
         return False
     age = dt.datetime.now(dt.timezone.utc).timestamp() - path.stat().st_mtime
     return 0 <= age <= max_hours * 3600
+
+
+def discord_config_check():
+    """Validate the mounted secret locally; never contact Discord."""
+    try:
+        read_webhook()
+    except ValueError as error:
+        return False, str(error)
+    return True, ""
 
 
 def checks():
@@ -91,17 +101,8 @@ def checks():
         shutil.which("avahi-browse") is not None,
         "avahi-browse executable missing",
     )
-    webhook = Path(
-        os.environ.get(
-            "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE",
-            "/run/secrets/network_discord_webhook",
-        )
-    )
-    add(
-        "Discord configured",
-        webhook.is_file() and webhook.stat().st_size > 0,
-        "webhook secret empty or unavailable; Discord alerting is disabled",
-    )
+    discord_ok, discord_reason = discord_config_check()
+    add("Discord configured", discord_ok, discord_reason)
     add(
         "network observations",
         (data / "network-inventory/state.json").is_file(),

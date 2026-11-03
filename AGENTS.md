@@ -41,7 +41,7 @@ The inventory UI and automatic cleanup modules have landed on `main`. Check actu
 4. Ownership must be proven and persisted before any cleanup. Manual retirement uses a plan fingerprint and deletes **external DNS → Tunnel route → Access app**; leave Access protection until its route and DNS are gone. Preserve unrelated ingress routes. Recover safely after partial errors.
 5. Never enable new external-facing listeners by default. A web UI must remain read-only and loopback-only unless protected by an authenticated reverse proxy/Access policy. Do not expose secret contents or unauthenticated operational actions.
 6. Network scanning is bounded by configured LAN CIDRs. Avoid turning scan results into authoritative DNS changes automatically.
-7. Discord webhook URLs and Cloudflare tokens are secrets. No credential values in exceptions, test output or logs.
+7. Discord webhook URLs and Cloudflare tokens are secrets. No credential values in exceptions, test output or logs. Validate Discord webhook URL structure offline in `doctor` and before delivery using the shared `discord_webhook.py` helper; never print webhook IDs/tokens or turn malformed secret data into external HTTP requests.
 8. Archive restoration tests operate only on private temporary storage; never overwrite production config, state or secrets. Block traversal, symlinks, hardlinks and extraction bombs.
 
 ## Environment variable convention
