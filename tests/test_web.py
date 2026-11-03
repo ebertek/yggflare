@@ -177,6 +177,118 @@ click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.100','
             self.assertEqual(data["hosts"][0]["status"], "unmanaged")
             self.assertIn("10.4.21.192/27", web.render("inventory", data))
 
+    def test_discovery_groups_ipv4_ipv6_and_multiple_interfaces_by_mac(self):
+        data = {
+            "hosts": [],
+            "discovery_devices": [
+                {
+                    "hostname": "printer.ygg.nu",
+                    "ipv4": "10.4.20.34",
+                    "mac": "aa:bb:cc:dd:ee:ff",
+                }
+            ],
+            "network_state": {
+                "supplemental": {
+                    "observed_at": "2026-11-03T19:00:00Z",
+                    "records": [
+                        {
+                            "ip": "10.4.20.34",
+                            "interface": "enp86s0",
+                            "source": "ARP reply",
+                            "detail": "aa:bb:cc:dd:ee:ff",
+                        },
+                        {
+                            "ip": "10.4.20.34",
+                            "interface": "macvlan1-host",
+                            "source": "Neighbor cache",
+                            "detail": "aa:bb:cc:dd:ee:ff (STALE)",
+                        },
+                        {
+                            "ip": "fd0e:be00:da00:20::34",
+                            "interface": "enp86s0",
+                            "source": "NDP reply",
+                            "detail": "aa:bb:cc:dd:ee:ff",
+                        },
+                        {
+                            "ip": "fd0e:be00:da00:20::34",
+                            "interface": "enp86s0",
+                            "source": "Nmap IPv6",
+                            "detail": "tcp/443 https",
+                        },
+                    ],
+                }
+            },
+        }
+        html = web.render("discovery", data)
+        self.assertEqual(html.count('data-group="1"'), 1)
+        self.assertIn("printer.ygg.nu · 4 evidence records", html)
+        self.assertIn("fd0e:be00:da00:20::34", html)
+        self.assertIn("macvlan1-host", html)
+        self.assertIn("tcp/443 https", html)
+
+    def test_discovery_keeps_competing_macs_and_uncorrelated_ipv6_separate(self):
+        data = {
+            "hosts": [],
+            "discovery_devices": [
+                {
+                    "hostname": "router.ygg.nu",
+                    "ipv4": "10.4.20.1",
+                    "mac": "aa:aa:aa:aa:aa:aa",
+                }
+            ],
+            "network_state": {
+                "supplemental": {
+                    "records": [
+                        {
+                            "ip": "10.4.20.1",
+                            "interface": "enp86s0",
+                            "source": "Neighbor cache",
+                            "detail": "aa:aa:aa:aa:aa:aa (STALE)",
+                        },
+                        {
+                            "ip": "10.4.20.1",
+                            "interface": "macvlan1-host",
+                            "source": "ARP reply",
+                            "detail": "bb:bb:bb:bb:bb:bb",
+                        },
+                        {
+                            "ip": "fd0e:be00:da00:20::8888",
+                            "interface": "enp86s0",
+                            "source": "Nmap IPv6",
+                            "detail": "tcp/80 http",
+                        },
+                    ]
+                }
+            },
+        }
+        html = web.render("discovery", data)
+        self.assertEqual(html.count('data-group="1"'), 2)
+        self.assertIn("Conflicting identity: 10.4.20.1", html)
+        self.assertIn("aa:aa:aa:aa:aa:aa", html)
+        self.assertIn("bb:bb:bb:bb:bb:bb", html)
+        self.assertIn("Unassigned address: fd0e:be00:da00:20::8888", html)
+
+    def test_discovery_preserves_link_only_evidence_and_escapes_it(self):
+        data = {
+            "discovery_devices": [],
+            "network_state": {
+                "supplemental": {
+                    "records": [
+                        {
+                            "ip": "",
+                            "interface": "enp86s0",
+                            "source": "LLDP",
+                            "detail": "<script>neighbor</script>",
+                        }
+                    ]
+                }
+            },
+        }
+        html = web.render("discovery", data)
+        self.assertIn("Link neighbour: enp86s0", html)
+        self.assertIn("&lt;script&gt;neighbor&lt;/script&gt;", html)
+        self.assertNotIn("<script>neighbor</script>", html)
+
 
 if __name__ == "__main__":
     unittest.main()
