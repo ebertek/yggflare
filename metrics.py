@@ -106,31 +106,99 @@ def render(config, data, now=None):
     )
     cloudflare_ok = view_status.get("ok") is True
     cloudflare_stale = (
-        view_at is None
-        or not cloudflare_ok
-        or now - view_at > STALE_CLOUDFLARE_SECONDS
+        view_at is None or not cloudflare_ok or now - view_at > STALE_CLOUDFLARE_SECONDS
     )
     unknown_count = sum(key.startswith("unknown-device:") for key in reported)
     findings_count = len(reported)
 
     values = [
-        ("yggflare_inventory_state_present", "Static inventory file exists", int((Path(config) / "static-hosts.json").is_file())),
-        ("yggflare_inventory_declared_hosts", "Declared static inventory entries", len(entries)),
-        ("yggflare_network_state_present", "Successful network snapshot exists", int((Path(data) / "network-inventory" / "state.json").is_file())),
-        ("yggflare_network_discovered_ipv4_hosts", "Responsive IPv4 hosts in the most recent saved scan", len(observed)),
-        ("yggflare_network_unknown_ipv4_hosts", "Current unidentified non-Docker IPv4 hosts in drift state", unknown_count),
-        ("yggflare_network_active_findings", "Current network findings including new hosts IP changes and ports", findings_count),
-        ("yggflare_network_dns_sd_services", "DNS SD service identities from the most recent available browse", len(advertisements)),
-        ("yggflare_network_supplemental_warnings", "Supplemental discovery warnings in the most recent scan", len(warnings)),
-        ("yggflare_network_pending_discord_events", "Queued network notifications awaiting delivery", len(pending)),
-        ("yggflare_network_scan_last_success_timestamp_seconds", "Timestamp of most recent saved successful network scan", seen_at),
-        ("yggflare_network_dns_sd_last_success_timestamp_seconds", "Timestamp of most recent complete DNS SD browse", dns_sd_at),
-        ("yggflare_network_scan_duration_seconds", "Duration of most recent saved scan excluding notification delivery", duration),
-        ("yggflare_cloudflare_snapshot_present", "Cloudflare presentation snapshot exists", int((Path(data) / "cloudflare-view.json").is_file())),
-        ("yggflare_cloudflare_last_audit_timestamp_seconds", "Timestamp of last saved Cloudflare presentation snapshot", view_at),
-        ("yggflare_cloudflare_last_refresh_success", "Whether the latest Cloudflare presentation refresh succeeded", int(cloudflare_ok)),
-        ("yggflare_cloudflare_snapshot_stale", "Cloudflare view is older than eight hours or latest refresh failed", int(cloudflare_stale)),
-        ("yggflare_cloudflare_orphan_hosts", "Owned Cloudflare hosts absent from desired configuration in last view", orphan_count),
+        (
+            "yggflare_inventory_state_present",
+            "Static inventory file exists",
+            int((Path(config) / "static-hosts.json").is_file()),
+        ),
+        (
+            "yggflare_inventory_declared_hosts",
+            "Declared static inventory entries",
+            len(entries),
+        ),
+        (
+            "yggflare_network_state_present",
+            "Successful network snapshot exists",
+            int((Path(data) / "network-inventory" / "state.json").is_file()),
+        ),
+        (
+            "yggflare_network_discovered_ipv4_hosts",
+            "Responsive IPv4 hosts in the most recent saved scan",
+            len(observed),
+        ),
+        (
+            "yggflare_network_unknown_ipv4_hosts",
+            "Current unidentified non-Docker IPv4 hosts in drift state",
+            unknown_count,
+        ),
+        (
+            "yggflare_network_active_findings",
+            "Current network findings including new hosts IP changes and ports",
+            findings_count,
+        ),
+        (
+            "yggflare_network_dns_sd_services",
+            "DNS SD service identities from the most recent available browse",
+            len(advertisements),
+        ),
+        (
+            "yggflare_network_supplemental_warnings",
+            "Supplemental discovery warnings in the most recent scan",
+            len(warnings),
+        ),
+        (
+            "yggflare_network_pending_discord_events",
+            "Queued network notifications awaiting delivery",
+            len(pending),
+        ),
+        (
+            "yggflare_network_scan_last_success_timestamp_seconds",
+            "Timestamp of most recent saved successful network scan",
+            seen_at,
+        ),
+        (
+            "yggflare_network_dns_sd_last_success_timestamp_seconds",
+            "Timestamp of most recent complete DNS SD browse",
+            dns_sd_at,
+        ),
+        (
+            "yggflare_network_scan_duration_seconds",
+            "Duration of most recent saved scan excluding notification delivery",
+            duration,
+        ),
+        (
+            "yggflare_cloudflare_snapshot_present",
+            "Cloudflare presentation snapshot exists",
+            int((Path(data) / "cloudflare-view.json").is_file()),
+        ),
+        (
+            "yggflare_cloudflare_last_audit_timestamp_seconds",
+            "Timestamp of last saved Cloudflare presentation snapshot",
+            view_at,
+        ),
+        (
+            "yggflare_cloudflare_last_refresh_success",
+            "Whether the latest Cloudflare presentation refresh succeeded",
+            int(cloudflare_ok),
+        ),
+        (
+            "yggflare_cloudflare_snapshot_stale",
+            "Cloudflare view is older than eight hours or latest refresh failed",
+            int(cloudflare_stale),
+        ),
+        (
+            "yggflare_cloudflare_orphan_hosts",
+            "Owned Cloudflare hosts absent from desired configuration in last view",
+            orphan_count,
+        ),
     ]
-    output = "".join(metric(name, description, value) for name, description, value in values)
+    output = "".join(
+        metric(name, description, value) for name, description, value in values
+    )
     return (output + "# EOF\n").encode("utf-8")
