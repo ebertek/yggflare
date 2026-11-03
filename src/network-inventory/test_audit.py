@@ -33,6 +33,15 @@ XML = """<?xml version="1.0"?>
 class NetworkAuditTests(unittest.TestCase):
     """Scanners must not infer open services from uncertainty."""
 
+    def test_scan_phase_writes_unbuffered_start_and_end(self):
+        """Operators should see which stage is running before it finishes."""
+        output = io.StringIO()
+        with patch("sys.stderr", output):
+            with audit.phase("IPv4 test probe"):
+                pass
+        self.assertIn("START IPv4 test probe", output.getvalue())
+        self.assertIn("END IPv4 test probe:", output.getvalue())
+
     def test_docker_inspection_failure_aborts_instead_of_reporting_containers(self):
         """Do not mistake running containers for unexpected LAN devices."""
         with patch.object(
