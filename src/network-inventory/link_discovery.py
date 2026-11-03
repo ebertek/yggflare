@@ -8,6 +8,8 @@ import subprocess
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 
+from service_discovery import collect as collect_services
+
 
 def collect(network, run=None):
     """Explicit interfaces and prefixes gate every active probe."""
@@ -173,4 +175,5 @@ def collect(network, run=None):
                     )
             except ET.ParseError:
                 result["warnings"].append("nmap: invalid XML response")
+    collect_services(interfaces, allowed, result["records"], add, result["warnings"])
     return result
