@@ -210,21 +210,24 @@ Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
 
 ### Supplemental ARP/NDP and IPv6 discovery
 
-Optional `/config/discovery.json` enables a separate `/discovery` view with source,
-interface, collection timestamp and evidence. Example for Pleiades:
+Set these variables in the container environment. Example for Pleiades:
 
-```json
-{
-  "interfaces": ["enp86s0", "macvlan1-host"],
-  "ipv6_prefixes": ["fd0e:be00:da00:20::/64"],
-  "arp_scan": true,
-  "ndp_probe": true,
-  "ipv6_scan": true,
-  "os_detection": true
-}
+```yaml
+YGGFLARE_DISCOVERY_INTERFACES: "enp86s0,macvlan1-host"
+YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd0e:be00:da00:20::/64"
+YGGFLARE_DISCOVERY_ARP_SCAN: "true"
+YGGFLARE_DISCOVERY_NDP_PROBE: "true"
+YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
+YGGFLARE_DISCOVERY_OS_DETECTION: "true"
 ```
 
-Without this file supplemental discovery is disabled. It runs with scheduled/manual
+Interfaces and IPv6 CIDRs are comma-separated lists, empty by default. An empty
+interface list disables supplemental discovery. IPv6 probing requires explicit
+IPv6 CIDRs. All four probe switches default to `false` and accept only `true` or
+`false`. The supplied Compose file passes these variables into the container.
+The `/discovery` view shows source, interface, collection timestamp and evidence.
+
+It runs with scheduled/manual
 network scans. Neighbour-cache entries are historical hints, not proof of current
 reachability. Failed/incomplete entries are excluded. Active ARP uses the configured
 IPv4 LAN range (maximum 4096 addresses). NDP and IPv6 Nmap probe at most 64 unique

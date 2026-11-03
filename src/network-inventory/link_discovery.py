@@ -2,21 +2,31 @@
 
 import ipaddress
 import json
+import os
 import re
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
-from pathlib import Path
-
-CONFIG = Path("/config/discovery.json")
 
 
 def collect(network, run=None):
     """Explicit interfaces and prefixes gate every active probe."""
-    if not CONFIG.exists():
+    raw_interfaces = os.environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").strip()
+    if not raw_interfaces:
         return {}
-    config = json.loads(CONFIG.read_text())
-    interfaces = config.get("interfaces", [])
+    interfaces = [v.strip() for v in raw_interfaces.split(",")]
+    raw_prefixes = os.environ.get("YGGFLARE_DISCOVERY_IPV6_CIDRS", "").strip()
+    config = {
+        "ipv6_prefixes": (
+            [v.strip() for v in raw_prefixes.split(",")] if raw_prefixes else []
+        )
+    }
+    for flag in ("arp_scan", "ndp_probe", "ipv6_scan", "os_detection"):
+        name = "YGGFLARE_DISCOVERY_" + flag.upper()
+        value = os.environ.get(name, "false")
+        if value not in ("true", "false"):
+            raise ValueError(f"{name} must be true or false")
+        config[flag] = value == "true"
     if (
         not isinstance(interfaces, list)
         or not 1 <= len(interfaces) <= 4
@@ -30,9 +40,6 @@ def collect(network, run=None):
     prefixes = [ipaddress.IPv6Network(p) for p in config.get("ipv6_prefixes", [])]
     if any(p.prefixlen < 64 or p.is_multicast or p.is_link_local for p in prefixes):
         raise ValueError("Use explicit unicast IPv6 prefixes of /64 or narrower")
-    for flag in ("arp_scan", "ndp_probe", "ipv6_scan", "os_detection"):
-        if not isinstance(config.get(flag, False), bool):
-            raise ValueError("Discovery switches must be boolean")
     result = {
         "observed_at": datetime.now(UTC).isoformat(),
         "records": [],
