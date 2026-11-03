@@ -118,7 +118,10 @@ class NetworkAuditTests(unittest.TestCase):
         request = send.call_args.args[0]
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(request.get_header("Content-type"), "application/json")
-        self.assertTrue(request.get_header("User-agent").startswith("Yggflare/"))
+        self.assertEqual(
+            request.get_header("User-agent"),
+            "DiscordBot (https://github.com/ebertek/yggflare, 1.0)",
+        )
         self.assertIn(b"TEST ONLY", request.data)
 
     def test_discord_http_error_exposes_code_without_webhook(self):
