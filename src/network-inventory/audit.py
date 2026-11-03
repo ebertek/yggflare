@@ -65,7 +65,10 @@ def phase(label):
     progress(f"START {label}")
     try:
         yield
-    finally:
+    except BaseException:
+        progress(f"FAILED {label}: {time.monotonic() - started:.1f}s")
+        raise
+    else:
         progress(f"END {label}: {time.monotonic() - started:.1f}s")
 
 
