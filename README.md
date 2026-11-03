@@ -1,446 +1,209 @@
 # Yggflare
 
-Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and DNS**, driven by Docker Compose, alongside **LAN device/service inventory, Discord alerts and recovery tooling**. It keeps your Compose source read-only and treats destructive Cloudflare actions as explicit, separately approved operations.
+Yggflare reconciles **Cloudflare Access, Tunnel routes and DNS** against Docker Compose and private device inventories. It also discovers LAN devices and services, reports drift to Discord, serves a read-only inventory UI, and backs up configuration and state.
 
-[Quick start](#deployment) · [Operations](#release-readiness-diagnostics) · [Cloudflare safety](#managed-host-lifecycle-and-safe-retirement) · [License](#license)
+| Task | Schedule |
+|---|---|
+| Cloudflare audit and optional reconciliation | Startup, Compose/inventory changes, Docker topology changes, and every six hours |
+| LAN inventory: Nmap and DNS-SD | Daily at 05:15 UTC |
+| Backup of configuration, state and mounted secrets | Daily at 04:00 UTC; retain 14 snapshots |
 
-## Environment-variable naming
+Cloudflare writes, automatic orphan cleanup and the web UI are disabled by default. Source Compose files and inventory declarations remain read-only; observations and ownership records live under `/data`.
 
-Yggflare uses exactly two application-owned environment namespaces:
+## Setup
 
-- `YGGFLARE_*`: controller, network inventory, watches, web UI, and Cloudflare reconciliation/cleanup behavior. For example, `YGGFLARE_LAN_CIDR`, `YGGFLARE_WATCH_COMPOSE`, `YGGFLARE_CLOUDFLARE_AUTO_APPLY`, and `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`.
-- `CLOUDFLARE_*`: Cloudflare connection and resource settings (account, token, zones and tunnel).
+Use the supplied [compose.yaml](compose.yaml) on a Linux Docker host. It uses host networking, the Docker socket and the host D-Bus socket for discovery. Docker socket access effectively grants host-root access; Nmap requires permission to perform SYN scans.
 
-This is a **breaking rename**. The former `YGG_*` and `CF_*` names are not recognized. Update deployment environment values in the same release as the image to avoid losing configuration, especially the Cloudflare write/cleanup opt-ins.
-
-## How it works
-
-- Audits Cloudflare on startup, when Compose/inventory inputs or Docker topology change, and every six hours as a fallback. Writes are disabled by default (`YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`).
-- Audits LAN devices and services daily at **05:15 UTC**.
-- Creates a local backup daily at **04:00 UTC**, retaining 14 snapshots.
-- Uses **UTC** for scheduling and log timestamps.
-- Provides a Docker health check based on an independently refreshed heartbeat.
-- Reads Compose definitions from `/compose-source` without modifying them. Private device inventories are supplied through `/config`. All mutable state stays in `/data`, and archives in `/backup`.
-
-Yggflare runs on a host network and accesses Docker through `/var/run/docker.sock` for container inventory. **Docker socket access is effectively host-root access.** Nmap and Avahi access may require elevated privileges. Restrict who can configure or run this container.
-
-## Deployment
-
-The [Compose file](compose.yaml) pulls the prebuilt image from GHCR. Set Compose interpolation variables in your deployment environment, and create the two secret files under `${YGGFLARE_HOME}/secrets/`.
-
-Example shell setup, using illustrative network addresses and domains:
+1. Set the required variables below in your Compose deployment environment. Use your own domains and private IPv4 CIDRs.
+2. Create `config`, `data`, `backup` and `secrets` directories under `YGGFLARE_HOME`. Add `config/static-hosts.json` using the format below.
+3. Put the Cloudflare API token in `secrets/cloudflare_api_token`. Give it access to the configured account's Access applications/policies, Tunnel and DNS zones, including edits if enabling writes. Put the optional Discord webhook in `secrets/network_discord_webhook`; create an empty file to disable notifications.
+4. From the directory containing the Compose file, start the service:
 
 ```sh
-export YGGFLARE_HOME=/srv/yggflare
-export YGGFLARE_MERGED_ROOT=/srv/compose
-export YGGFLARE_LAN_CIDR=192.168.40.0/23
-export YGGFLARE_DEVICES_CIDR=192.168.40.0/24
-export YGGFLARE_DOCKER_CIDR=192.168.41.0/24
-export YGGFLARE_INTERNAL_DOMAIN=home.example.net
-export YGGFLARE_EXTERNAL_DOMAIN=services.example.net
-export CLOUDFLARE_ACCOUNT_ID=YOUR_ACCOUNT_ID
-export CLOUDFLARE_TUNNEL_NAME=YOUR_TUNNEL_NAME
-export YGGFLARE_CLOUDFLARE_AUTO_APPLY=false
-export YGGFLARE_VERSION=main
-
 docker compose config --quiet
 docker compose pull
 docker compose up -d
+docker exec yggflare yggflare doctor run
+docker exec yggflare yggflare cloudflare audit
 ```
 
-The example domains and ranges are not built-in defaults. Yggflare validates the configured domains and network ranges.
+Keep automatic writes off until the audit matches your intended configuration. Runtime commands use `docker exec` and work from any directory; substitute your container name if it differs from `yggflare`.
 
-### Environment variables
+### Required configuration
 
-| Variable | Purpose |
+`YGGFLARE_*` configures the application; `CLOUDFLARE_*` selects Cloudflare resources and credentials. The first two variables below configure host bind mounts, not container paths.
+
+| Variable | Value to supply |
 |---|---|
-| `YGGFLARE_VERSION` | GHCR tag to pull; use `v1.0.0` for the first stable release or `main` for development |
-| `YGGFLARE_HOME` | Host directory for config, state, backups and secrets |
-| `YGGFLARE_MERGED_ROOT` | Read-only host directory containing Compose source files |
-| `YGGFLARE_LAN_CIDR` | Network inventory scan scope |
-| `YGGFLARE_DEVICES_CIDR` | IPv4 subnet allowed for static device DNS |
-| `YGGFLARE_DOCKER_CIDR` | IPv4 subnet used to identify Docker services |
-| `YGGFLARE_INTERNAL_DOMAIN` | Internal DNS zone |
-| `YGGFLARE_EXTERNAL_DOMAIN` | External Cloudflare Access/Tunnel DNS zone |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
-| `CLOUDFLARE_TUNNEL_NAME` / `CLOUDFLARE_TUNNEL_ID` | Select Tunnel by name or ID |
-| `CLOUDFLARE_INTERNAL_ZONE_ID` / `CLOUDFLARE_EXTERNAL_ZONE_ID` | Optional zone IDs; otherwise resolved by DNS name |
-| `CLOUDFLARE_STATIC_DNS_REQUIRED` | Require the static-host inventory; default `true` |
-| `CLOUDFLARE_STATIC_DNS_SYNC` | Include static DNS actions in reconciliation planning; default `false` |
-| `YGGFLARE_CLOUDFLARE_AUTO_APPLY` | Enable unattended Cloudflare writes; default `false` |
-| `YGGFLARE_LOG_FORMAT` | `text` (default) or newline-delimited `json` |
-| `YGGFLARE_WATCH_COMPOSE` | Poll Compose YAML and inventory fingerprints for changes; default `true` |
-| `YGGFLARE_WATCH_DOCKER` | Subscribe to Docker container/network events; default `true` |
-| `YGGFLARE_WATCH_POLL_SECONDS` | Compose/inventory content check interval; default `15` seconds |
-| `YGGFLARE_WATCH_DEBOUNCE_SECONDS` | Wait for changes to settle; default `20` seconds |
-| `YGGFLARE_WATCH_COOLDOWN_SECONDS` | Minimum delay after an audit before another event-driven audit; default `60` seconds |
-| `TZ` | UTC in the supplied Compose definition |
+| `YGGFLARE_HOME` | Host directory holding `config/`, `data/`, `backup/`, `secrets/`; e.g. `/srv/yggflare` |
+| `YGGFLARE_MERGED_ROOT` | Host directory containing the Compose stacks to audit; e.g. `/srv/compose` |
+| `YGGFLARE_LAN_CIDR` | LAN discovery range; e.g. `192.168.40.0/23` |
+| `YGGFLARE_DEVICES_CIDR` | Static device address range; e.g. `192.168.40.0/24` |
+| `YGGFLARE_DOCKER_CIDR` | Docker service address range; e.g. `192.168.41.0/24` |
+| `YGGFLARE_INTERNAL_DOMAIN` | Internal DNS zone; e.g. `home.example.net` |
+| `YGGFLARE_EXTERNAL_DOMAIN` | Access/Tunnel DNS zone; e.g. `services.example.net` |
+| `CLOUDFLARE_ACCOUNT_ID` | Account containing the managed resources |
+| `CLOUDFLARE_TUNNEL_NAME` / `CLOUDFLARE_TUNNEL_ID` | Supply a Tunnel name or ID; ID takes precedence |
 
-Container mount destinations are fixed: `/config`, `/data`, `/backup`, and
-`/compose-source`. Change the host-side bind sources as needed; the former
-`YGGFLARE_CONFIG`, `YGGFLARE_DATA`, `YGGFLARE_BACKUP`, and `YGGFLARE_SOURCE`
-overrides are no longer read. `PYTHONPATH` is owned by the image, not Compose.
-`YGGFLARE_CONTAINER_NAME` is no longer read. Printed approval commands use
-`docker exec yggflare ...` and work from any directory on the Docker host.
-If you customize `container_name`, substitute that name in the printed command.
-Docker self-event filtering uses the Compose service label, independent of the
-container name. Upgrade the image before removing the old Compose `PYTHONPATH`
-entry.
+### Optional configuration
 
-### Secrets and data
+Defaults below describe the application or supplied Compose file. Set booleans to `true` or `false`. **Variables must reach the container's `environment:` section**: exporting a variable alone only works when the Compose file references it. In particular, add web and automatic-cleanup settings to `environment:` when enabling those features.
 
-| Path | Purpose |
+| Variable | Default | Purpose |
+|---|---|---|
+| `YGGFLARE_VERSION` | `main` | Image tag in the supplied Compose file; version and commit tags are described below |
+| `CLOUDFLARE_EXTERNAL_ZONE_ID` | Resolve by domain | External DNS zone ID |
+| `CLOUDFLARE_INTERNAL_ZONE_ID` | Resolve by domain | Internal DNS zone ID |
+| `CLOUDFLARE_API_TOKEN_FILE` | `/run/secrets/cloudflare_api_token` | Token file; supplied Compose mounts it automatically |
+| `CLOUDFLARE_STATIC_DNS_REQUIRED` | `true` | Fail the Cloudflare audit if the static inventory is absent |
+| `CLOUDFLARE_STATIC_DNS_SYNC` | `false` | Include static A/CNAME changes in reconciliation plans |
+| `YGGFLARE_CLOUDFLARE_AUTO_APPLY` | `false` | Enable guarded, bounded automatic reconciliation |
+| `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP` | `false` | Retire eligible owned orphans; also requires auto-apply |
+| `YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS` | `24` | Required orphan absence period; 24–720 hours |
+| `YGGFLARE_WEB_ENABLED` | `false` | Start the read-only HTTP UI |
+| `YGGFLARE_WEB_BIND` | `127.0.0.1` | Listener address: `127.0.0.1`, `::1` or `0.0.0.0` |
+| `YGGFLARE_WEB_PORT` | `8787` | HTTP port; 1–65535 |
+| `YGGFLARE_LOG_FORMAT` | `text` | Timestamped component logs; `json` emits newline-delimited JSON |
+| `YGGFLARE_WATCH_COMPOSE` | `true` | Watch Compose files and active/retained inventory content |
+| `YGGFLARE_WATCH_DOCKER` | `true` | Watch container/network topology; ignore health-status noise and self-events |
+| `YGGFLARE_WATCH_POLL_SECONDS` | `15` | File polling interval; 5–300 seconds |
+| `YGGFLARE_WATCH_DEBOUNCE_SECONDS` | `20` | Wait for changes to settle; 5–300 seconds |
+| `YGGFLARE_WATCH_COOLDOWN_SECONDS` | `60` | Minimum gap between reactive audits; 0–3600 seconds |
+| `YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE` | `/run/secrets/network_discord_webhook` in Compose | Webhook file; empty disables notifications |
+| `YGGFLARE_STATIC_INVENTORY` | `/config/static-hosts.json` | Inventory default for direct network-audit invocation |
+| `YGGFLARE_NETWORK_STATE_DIR` | `/data/network-inventory` | State default for direct network-audit invocation |
+| `TZ` | `UTC` | Container timezone; scheduler and log timestamps use UTC |
+
+The scheduler explicitly supplies the standard inventory/state paths to network scans. The two scan-specific overrides do not relocate the web UI or Cloudflare inputs. Container mount destinations are fixed at `/compose-source`, `/config`, `/data`, `/backup` and `/run/secrets`; change host bind sources as needed. The image configures its own Python import path.
+
+## Inventory files
+
+Files below live in `/config`. Keep private inventory, state, credentials and archives out of public repositories.
+
+| File | Purpose |
 |---|---|
-| `secrets/cloudflare_api_token` | Cloudflare API credential, mounted as a Compose secret |
-| `secrets/network_discord_webhook` | Optional Discord webhook; an empty file disables notifications |
-| `config/static-hosts.json` | Private device inventory and DNS declaration |
-| `config/retained-dns.json` | DNS entries intentionally retained outside normal inventory |
-| `data/` | Audit observations, scheduling markers and heartbeat |
-| `backup/` | Daily backup archives |
+| `static-hosts.json` | Active devices, static DNS declarations and expected ports |
+| `retained-dns.json` | Optional, audit-only exceptions for intentionally retained DNS records; never authorizes writes |
+| `static-hosts-reserved.json` | Optional planned allocations, shown in Reserved |
+| `retired-devices.json` | Optional historical devices, shown in Retired |
 
-Do not publish secret files, `/data`, or backup archives. Backups can contain **plaintext credentials**; protect them, replicate them off-host and periodically test restoration. The `ports` inventory field uses structured entries such as `{"protocol":"tcp","port":443,"description":"HTTPS"}`.
-
-## Read-only inventory web interface
-
-Yggflare includes an optional, **disabled-by-default** inventory interface inspired by a spreadsheet-style LAN /27 worksheet. It reads the existing private JSON inventory, the last saved Nmap/DNS-SD scan, mounted Compose definitions and read-only Docker metadata; it does **not** initiate scans, call Cloudflare, or offer mutation endpoints.
-
-```yaml
-environment:
-  YGGFLARE_WEB_ENABLED: "true"
-  YGGFLARE_WEB_BIND: "127.0.0.1"
-  YGGFLARE_WEB_PORT: "8787"
-```
-
-When enabled, browse `http://127.0.0.1:8787/inventory` **from the Docker host**. The default bind is loopback and the container uses host networking. The interface provides:
-
-- `/inventory`: searchable, sortable inventory tables grouped by /27, with declared and observed status
-- `/reserved` and `/retired`: planned allocations and historical devices from optional `/config/static-hosts-reserved.json` and `/config/retired-devices.json`
-- `/ports`: one row per endpoint/protocol/port, open-port evidence, detected services, declaration sources and DNS-SD announcements
-- `/diff`: static inventory versus observed MACs, ports and presence
-- `/drift`: current device/port drift plus the latest 200 findings (new device/port/DNS-SD, changed MAC/IP)
-- `/cloudflare`: saved live-audit classification, claimed resources and lifecycle state
-- `/api/inventory.json` and `/api/inventory.csv`: read-only exports
-
-Docker rows include hostnames (qualified with `YGGFLARE_INTERNAL_DOMAIN`), LAN
-IPv4/IPv6 addresses, MACs, network aliases and Traefik router names. Compose
-provides declarations even when Docker is unavailable; running-container metadata
-supplies current addresses and image `EXPOSE` ports. Status distinguishes
-`docker declared`, `docker running` and `docker stopped`; it does not imply
-Cloudflare ownership or a successful port probe. Only services with a LAN IPv4 endpoint appear. Host-network, bridge-only and
-other unallocated services are omitted. Services using `network_mode: service:…`
-or `container:…` inherit a uniquely resolved parent's LAN endpoint and are labelled
-**shared network**; their own hostname and port evidence remain distinct.
-Compose service references are project-scoped; cycles/missing/ambiguous parents
-are omitted. Parent Traefik routers/backends named for the child can provide
-that child's aliases/ports. Shared address scan results describe the endpoint,
-not proof that a particular child process owns a listening socket.
-
-Port evidence combines Compose `ports` (container target, not published host port),
-`expose`, Docker exposed/bound ports, Traefik backend ports/URLs and narrowly
-recognized port/listen-address environment hints. These are candidates, **not
-proof of listening sockets**; confirmed scan results remain in the separate
-Observed column. Arbitrary environment values, secret files and raw Docker
-inspection output are never served. Compose interpolation and `env_file` are not
-executed/read by the UI; Docker supplies resolved runtime metadata when available.
-No images are pulled or built, and Docker port scanning remains unchanged.
-
-Metadata is cached for 30 seconds, with a visible fallback notice when Docker or
-a Compose file cannot be read. IPv4, IPv6 and /27 groups sort numerically;
-column clicks toggle ascending/descending order. JSON and CSV exports use the
-same numerically ordered inventory; CSV includes aliases and ports.
-
-The normal targeted TCP scan now uses bounded Nmap light service detection
-(`-sV --version-light`, retaining the existing host/command timeouts). The view
-labels probed service identities separately from Nmap's port-name guesses;
-unknown services remain unknown. Docker scan exclusions are unchanged. DNS-SD
-retains resolved addresses without TXT payloads and is matched by exact address,
-port and protocol; advertisements alone do not prove a port is open. Older state
-files remain readable, with unavailable metadata shown explicitly.
-
-Drift history begins with scans after this upgrade, is capped at 200 findings,
-and distinguishes initial-baseline findings (not notified) from later changes.
-Active device/port drift comes from the existing `reported` state. The history
-records observations, not proof of Discord delivery. Failed/incomplete DNS-SD
-collection retains the previous announcements with their previous timestamp.
-
-When the web UI is enabled, the controller runs a separate **GET-only** Cloudflare
-audit after each scheduled/reactive reconciliation attempt, including cleanup.
-It saves only host classification, resource identifiers, scope and timestamp to
-`/data/cloudflare-view.json`, with a completion marker in
-`cloudflare-view-status.json`. HTTP requests never call the Cloudflare API.
-A failed refresh preserves the last complete snapshot and displays a warning;
-snapshots older than eight hours are marked stale. Before the first successful
-audit, only local claims are shown, without guessing lifecycle state.
-
-Lifecycle distinguishes **managed**, **orphaned**, **unmanaged**, and **declared /
-unclaimed** services. The last category avoids treating a Compose declaration as
-ownership. Claimed Access/DNS IDs and route hostnames are displayed alongside live
-resource IDs/counts. Scope-matched orphan first/last absence observations are
-shown as timestamps, never as cleanup eligibility or a deletion countdown. There
-are no claim, apply or delete buttons; the snapshot is never used by write paths.
-
-### Inventory review controls
-
-Hostnames, IPv4/IPv6 addresses, MACs, aliases, subnet names, descriptions,
-DNS-SD details and Cloudflare resource IDs remain visible in the read-only UI
-and applicable exports. No opt-in flag is needed for existing inventory details.
-`YGGFLARE_WEB_SHOW_SECRETS` is not implemented; setting it has no effect.
-Tokens, passwords, webhook URLs, raw environment values and secret files remain
-excluded. Protect the UI with authentication as described above.
-
-Each /27 group can be collapsed independently, with Expand all / Collapse all
-controls. Search opens matching groups and restores their prior state when cleared.
-Class and finding filters combine with text search. Color plus text badges mark
-missing hostname/MAC information, confirmed drift, explicit retirement and newly
-discovered devices. IPv6 and port information are optional, so their absence is
-not automatically flagged. On narrow screens, rows become labelled cards and
-sorting controls remain available.
-
-The Last seen column records the last successful scan observation of an address;
-it survives later scans where that address is absent. It is not a live heartbeat.
-`/diff` compares static declarations with observed MACs, ports and presence.
-Accepted `observed_macs` do not trigger drift. Unobserved declared ports are
-labelled unknown, not closed; an offline device is never inferred to be retired.
-
-Drift cells highlight the affected MAC, IP, port or presence field and show
-both declared and observed values. The full comparison remains under `/diff`.
-Badges stay on one line at desktop and mobile widths.
-
-Reserved and retired catalogs are read-only and separate from the active /27
-inventory. Each file accepts a JSON record list, or an object with a `hosts` or
-`devices` list. Records may include `hostname`, `name`, `ipv4`, `ipv6`, `mac`,
-`aliases` (list), `description`, `notes`, `device_class`, `reason`, and `retired_at`.
-Other fields are not exported. Missing files show an empty tab; unsupported or
-malformed files show a warning without disabling the active inventory. These
-catalogs never feed DNS reconciliation, scanning or Cloudflare ownership.
-
-Optional static-host metadata:
+A minimal active inventory contains 1–256 hosts:
 
 ```json
-{"hostname":"printer.home.example.net","ipv4":"192.168.40.35","device_class":"printer","retired":false}
+{
+  "version": 1,
+  "hosts": [
+    {
+      "hostname": "printer.home.example.net",
+      "ipv4": "192.168.40.35",
+      "mac": "02:00:00:00:00:35",
+      "description": "Office printer",
+      "ports": [{"protocol": "tcp", "port": 9100, "description": "Printing"}],
+      "aliases": ["print.home.example.net"],
+      "device_class": "printer"
+    }
+  ]
+}
 ```
 
-`device_class` accepts `network`, `server`, `computer`, `mobile`, `iot`, `media`,
-`printer`, `sensor` or `other`. Unclassified static hosts show Device; Compose/Docker
-services show Docker and unrecognised scan rows show Unknown. `retired` must be a
-boolean and is **presentation-only**: it does not stop scans, remove DNS or authorize
-cleanup. A retired-labelled address still responding is highlighted as drift.
-Do not add these metadata fields to deployment inventories before upgrading the
-image, because older strict validators reject unknown fields.
+Hostnames must belong to the internal domain. Static addresses must be within the device range, outside the Docker range, and exclude each /27's network/broadcast addresses. Optional fields include `serial_number`, `purchase_date`, `observed_macs` (accepted alternatives), `interface_macs` (interface-to-MAC mapping), and `additional_ipv4` (explicit companion A records, subject to allocation validation).
 
-The UI intentionally omits Cloudflare credentials, Discord URLs, and private config files. It does not replace `yggflare cloudflare audit` for current live results. **There is no built-in authentication.** Keep it on loopback, use an authenticated tunnel or reverse proxy for remote access, and never expose the HTTP port directly to the public Internet. To serve on the host network instead, explicitly set `YGGFLARE_WEB_BIND=0.0.0.0` and enforce firewall/authentication upstream.
+`device_class` accepts `network`, `server`, `computer`, `mobile`, `iot`, `media`, `printer`, `sensor` or `other`. Boolean `retired` is a presentation label only; it does not remove DNS or stop scanning. See [the inventory validator](src/cloudflare/cloudflare_static_dns.py) for exact field constraints.
 
-## Logging and observability
+Reserved/retired catalogs accept a record list or an object containing a `hosts` or `devices` list. Displayed fields are `hostname`, `name`, `ipv4`, `ipv6`, `mac`, `aliases` (list), `description`, `notes`, `device_class`, `reason` and `retired_at`. They never enter active reconciliation. Invalid optional catalogs show a warning without disabling the UI.
 
-Set `YGGFLARE_LOG_FORMAT=text` for timestamped, component-labelled stdout, or `YGGFLARE_LOG_FORMAT=json` for JSON lines with UTC `timestamp`, `level`, `component` and `message`. JSON lines can be parsed and indexed in Grafana Loki using an agent such as Grafana Alloy. The container writes to stdout and stderr; it does not require a separate log file.
+Retained DNS uses `{"version":1,"records":[...]}` with `hostname`, `type`, optional `description`, and expected `content` (required for A/AAAA/CNAME). Its [validator](src/cloudflare/cloudflare_retained_dns.py) currently restricts names to `ygg.nu`.
 
-Use `docker compose logs -f yggflare` to inspect the controller and `docker inspect yggflare --format '{{.State.Health.Status}}'` to check health.
+## Web UI and observations
 
-## Manual Cloudflare reconciliation
+Add to the service's `environment:`:
 
-Run administrative commands **on the Docker host** against the running
-`yggflare` container. The installed `yggflare` CLI copies the merged
-Compose definitions and private inventory into an isolated temporary snapshot,
-just like the scheduled controller; it never modifies `/compose-source`.
+```yaml
+YGGFLARE_WEB_ENABLED: "true"
+YGGFLARE_WEB_BIND: "127.0.0.1"
+YGGFLARE_WEB_PORT: "8787"
+```
+
+Open `http://127.0.0.1:8787` on the Docker host. **There is no built-in authentication.** Remote access needs an authenticated reverse proxy/tunnel and appropriate host firewall rules; protecting a proxy hostname does not protect direct LAN access to the port.
+
+| Page | Contents |
+|---|---|
+| `/inventory` | Numeric /27 grouping and sorting; hostname/IP/MAC search, class/flag filters, collapse controls, last seen and mobile cards |
+| `/reserved`, `/retired` | Planned and historical inventory catalogs |
+| `/ports` | Endpoint, protocol, port, detected service and DNS-SD announcements |
+| `/diff` | Declared versus observed MACs, ports, presence and identifiable IP moves |
+| `/drift` | Current findings and the latest 200 observations |
+| `/cloudflare` | Managed/orphaned/unmanaged/declared-unclaimed hosts, resource IDs and lifecycle observations |
+| `/api/inventory.json`, `/api/inventory.csv` | Active inventory exports |
+
+Flags identify missing identity information, drift, retirement and new discoveries; affected drift cells show expected and observed values. Last seen is a saved scan observation, not a heartbeat. Missing ports are unknown, not confirmed closed; offline does not mean retired.
+
+Docker rows combine Compose and cached Docker metadata: hostnames, LAN IPv4/IPv6, MACs, aliases and port declarations. Services without LAN endpoints are omitted. Shared-network services such as download/mousehole inherit gluetun's endpoint while retaining their own identity. Ports come from Compose targets/expose, Docker exposed/bound ports, Traefik backends and recognized environment hints; these are declarations, not proof of listening sockets. The UI does not execute Compose interpolation or read `env_file` contents.
+
+Bounded Nmap scans and light service detection provide observed ports and service evidence; detailed scans exclude detected running Docker container addresses; DNS-SD advertisements remain separate evidence. Shared-address observations do not identify the owning process. Initial discovery establishes a baseline without Discord alerts; later changes can notify Discord. Incomplete DNS-SD runs preserve previous announcements. Network observations never change DNS or inventory declarations.
+
+HTTP requests read local snapshots only: no scans, Cloudflare calls or mutation endpoints. Docker metadata is cached for 30 seconds. Cloudflare snapshots refresh after controller reconciliation attempts; failed refreshes retain the last complete snapshot and snapshots older than eight hours are marked stale. Credentials and raw environment/inspection data are excluded.
+
+## Cloudflare operations
+
+Compose Traefik Host rules, `cf.access: "true"` and ordered `cf.access.policies` labels describe desired Access/Tunnel services. Static inventory supplies internal A records and aliases. Watchers trigger the same guarded reconciliation as scheduled audits; they do not trigger LAN scans or bypass write opt-ins.
+
+Run an audit and review a bounded plan before applying:
 
 ```sh
-# Read-only drift audit
 docker exec yggflare yggflare cloudflare audit
-
-# Review a bounded, read-only approval plan
+docker exec yggflare yggflare cloudflare preflight
 docker exec yggflare yggflare cloudflare plan --max-operations 1
-```
-
-If a plan proposes only the intended operation, it prints an approval
-fingerprint and a **host command that works from any directory**, for example:
-
-```sh
 docker exec yggflare yggflare cloudflare apply <approval-fingerprint> --max-operations 1
 ```
 
-The CLI preserves the plan's `--max-operations` limit in the suggested
-command. Applying requires the same live plan fingerprint and rechecks the
-current Cloudflare state before each guarded write. If the plan changes,
-the approval is rejected and must be reviewed again. Use the actual
-fingerprint returned by your audit, not the example placeholder.
+Use the actual fingerprint printed by the plan. Apply rechecks live state and rejects a changed plan; manual approval works with auto-apply disabled. `preflight` validates live templates without writes.
 
-`YGGFLARE_CLOUDFLARE_AUTO_APPLY=false` can remain set for manually approved changes; the
-unattended writer does not need to be enabled. To validate the Cloudflare
-templates without modifying anything:
+Ownership is recorded privately in `/data/managed-hosts.json`. A verified Yggflare-created service is recorded automatically; existing resources need an explicit claim while still declared and matching live Access policies, DNS and ingress:
 
 ```sh
-docker exec yggflare yggflare cloudflare preflight
+docker exec yggflare yggflare cloudflare claim example.services.example.net
 ```
 
-## Managed host lifecycle and safe retirement
+Claim only services whose lifecycle Yggflare should own. Managed hosts remain declared; orphans are owned hosts removed from Compose. Unmanaged resources have no proven ownership and are never cleanup targets. A declaration alone does not establish ownership.
 
-Yggflare maintains a **private ownership registry** at
-`/data/managed-hosts.json`, included in the regular `/data` backups.
-Missing registry data is treated as **no proven ownership**, never as a
-reason to delete a live Cloudflare resource.
+After removing an owned service from Compose, review and approve retirement:
 
-The read-only audit classifies external hostnames as:
+```sh
+docker exec yggflare yggflare cloudflare orphan-plan example.services.example.net
+docker exec yggflare yggflare cloudflare orphan-apply example.services.example.net <approval-fingerprint>
+```
 
-- **Managed:** explicitly claimed while declared in Compose, or fully
-  created and verified by Yggflare; still present in Compose
-- **Orphaned:** previously claimed but no longer declared in Compose
-- **Unmanaged:** present in Cloudflare but not claimed, regardless of whether
-  it happens to be absent from Compose
-
-Neither the six-hour audit nor `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` deletes resources
-unless the **separate**, disabled-by-default `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP=true`
-opt-in is configured. The normal resource reconciler remains non-destructive.
-
-### Opt-in automatic orphan retirement
-
-The optional cleanup workflow requires both `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` and
-`YGGFLARE_CLOUDFLARE_AUTO_CLEANUP=true`. Its minimum grace period is 24 hours:
+Automatic retirement instead requires all three settings in the container environment:
 
 ```yaml
-environment:
-  YGGFLARE_CLOUDFLARE_AUTO_APPLY: "true"
-  YGGFLARE_CLOUDFLARE_AUTO_CLEANUP: "true"
-  YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS: "24"
+YGGFLARE_CLOUDFLARE_AUTO_APPLY: "true"
+YGGFLARE_CLOUDFLARE_AUTO_CLEANUP: "true"
+YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS: "24"
 ```
 
-Only previously claimed/created managed resources can be retired. Yggflare
-records first/last absence observations in `/data/orphan-observations.json`
-and resets an orphan timer if Compose reintroduces the hostname or the
-interval between successful observations exceeds eight hours. Missing
-history never authorizes immediate removal. The reconciler verifies the
-current mounted Compose, Cloudflare resource identities, ordered policies,
-Tunnel configuration and registry before deleting. It removes at most one
-orphan per successful cycle (DNS → Tunnel → Access), retaining ownership
-on partial failure; completion generates a Discord confirmation when
-configured. **Unmanaged resources are never eligible.** Invalid Compose
-source or API failures block cleanup, and the default is off.
+Cleanup validates ownership, resource identities, scope and current Compose absence, then removes **external DNS → Tunnel route → Access application**. Automatic cleanup processes at most one orphan per successful cycle after the grace period; reappearance or observation gaps over eight hours reset the timer. Missing ownership/history never permits deletion. Partial failures retain ownership for recovery; successful automatic retirement can notify Discord.
 
-The normal manual `orphan-plan`/`orphan-apply` workflow remains available
-regardless of unattended cleanup settings.
-
-### Claiming existing managed services
-
-Existing services migrated from Komodo are **not silently adopted**. While
-a service is still declared in Compose and exactly matches its live Access
-policies, proxied Tunnel DNS CNAME, and ingress route, opt in one hostname:
+## Diagnostics and recovery
 
 ```sh
-docker exec yggflare yggflare cloudflare claim example.ebi.nu
-```
-
-Claims pin the Access application ID, ordered policies, DNS record ID,
-CNAME target, and complete ingress route to a specific account, zone and
-Tunnel. Changing identity or scope blocks subsequent deletion.
-
-An endpoint originally created by Yggflare's guarded reconciler is recorded
-automatically **after** all its requested operations complete and its
-endpoint has been verified. A partial create does not grant ownership.
-
-### Retiring a claimed, removed hostname
-
-After removing its Compose declaration and allowing GitOps to sync,
-inspect the read-only audit:
-
-```sh
-docker exec yggflare yggflare cloudflare audit
-docker exec yggflare yggflare cloudflare orphan-plan example.ebi.nu
-```
-
-Only a previously claimed, now-absent hostname can produce a retirement
-plan. If the plan contains exactly the resources you intend to retire,
-copy the printed `docker exec yggflare yggflare cloudflare orphan-apply ...`
-command using the **actual** fingerprint.
-
-Manual cleanup strictly orders operations as **external DNS CNAME first,
-Tunnel ingress second, Access application last**. It rechecks the live
-record IDs, contents, policy ordering, Tunnel configuration, Compose absence,
-and registry ownership. Failure leaves the registry in place, so a new plan
-can resume any remaining steps without guessing. No other Tunnel routes are
-removed. Unclaimed hostnames cannot be deleted by this workflow.
-
-**Migration:** Resources that disappeared before Yggflare first tracked them remain **unmanaged**. Do not bulk-claim existing Cloudflare records. A claim requires a currently declared and fully verified Compose hostname.
-
-## Reactive reconciliation
-
-The Compose watcher computes a content fingerprint of `compose.yaml`/`compose.yml`
-under `/compose-source` and `static-hosts.json`/`retained-dns.json` under
-`/config` every 15 seconds by default. It detects changes after Git pulls,
-including atomic file replacement, without writing to the source tree.
-Changes to unrelated files do not trigger reconciliation.
-
-The Docker watcher listens on the existing Docker socket for container
-start/stop/destroy/rename events and Docker network connects/disconnects.
-Self-events and container health-status noise are ignored. When Docker events
-are unavailable, the six-hour periodic reconciliation still runs.
-
-Multiple changes are coalesced (20-second debounce); a 60-second cooldown
-prevents a stack restart from producing a burst of Cloudflare API checks.
-These timings can be customized through the `YGGFLARE_WATCH_*` variables above.
-The normal Nmap/DNS-SD inventory scan remains **daily**, not on every Docker
-event. Only the Cloudflare reconciliation is triggered reactively.
-
-**Security:** a change notification merely requests the normal reconciliation
-path. It does not alter the guarded plan, the operation limits, or
-`YGGFLARE_CLOUDFLARE_AUTO_APPLY`. With `YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`, every trigger remains
-read-only. If you enable unattended writes, both scheduled and reactive
-triggers use the same guarded writer, so review its policy and authorization
-before enabling it.
-
-## Image versions and releases
-
-Published images are available at `ghcr.io/ebertek/yggflare`.
-
-- `:main` follows development builds and is **not** a stable release tag.
-- `:sha-<full-commit-sha>` identifies an exact build.
-- `:vMAJOR.MINOR.PATCH` is produced when a matching Git tag is pushed, such as `:v1.0.0`.
-- No `:latest` alias is published by this workflow.
-
-Releases follow [Semantic Versioning](https://semver.org/): use `v1.0.0` for the first verified release, `v1.0.1` for compatible bug fixes and `v1.1.0` for backward-compatible features. The leading `v` denotes the Git/image tag; the semantic version is `1.0.0`. Prefer a pinned release tag (or digest) for deployed services:
-
-```sh
-export YGGFLARE_VERSION=v1.0.0
-docker compose pull
-docker compose up -d --no-build
-```
-
-Versioned release tags are immutable release references; prefer digest pinning in production. Run `docker exec yggflare yggflare doctor run` after upgrading and verify the backup restore-test before depending on recovery.
-
-## Release-readiness diagnostics
-
-Commands run in the deployed container; they never edit GitOps source files.
-
-```sh
-# Read-only checks for mounts, secrets, Docker, tools, scheduler and backup
+docker logs -f yggflare
+docker inspect yggflare --format '{{.State.Health.Status}}'
 docker exec yggflare yggflare doctor run
-
-# Validate an existing backup archive without restoring live files
-docker exec yggflare yggflare backup verify yggflare-YYYYMMDDTHHMMSSZ.tar.gz
-
-# Extract and validate into temporary private /data storage; never replace live files
-docker exec yggflare yggflare backup restore-test yggflare-YYYYMMDDTHHMMSSZ.tar.gz
-
-# Explicitly run the LAN inventory scan (may update /data observations
-# and send real drift notifications if a Discord webhook is configured)
 docker exec yggflare yggflare network run
-
-# Explicitly send ONE Discord delivery test; no network scanning
 docker exec yggflare yggflare network discord-test
+docker exec yggflare yggflare backup verify <archive-name>.tar.gz
+docker exec yggflare yggflare backup restore-test <archive-name>.tar.gz
 ```
 
-The doctor does not call Cloudflare or post messages. A missing/empty
-`network_discord_webhook` is reported as a warning and must be configured
-before delivery can be validated. The test notification is deliberately
-opt-in. Real inventory scans are **not** read-only: they update observation
-state and can deliver detected changes, but never edit DNS/Compose.
+`doctor` checks local dependencies, mounts and health without calling Cloudflare or posting messages. `network run` updates observations and may notify Discord; `discord-test` sends one test message. The Docker health check monitors an independently refreshed controller heartbeat.
 
-`backup verify` validates archive integrity without extraction. `backup restore-test` rehearses extraction in a temporary, restricted directory under `/data` and checks the restored inventory/JSON state, **without replacing live files**. Neither is a substitute for a full disaster-recovery exercise on an independent host.
+Backups contain **plaintext credentials** when secrets are mounted: restrict access and keep an off-host copy. `verify` checks an archive without extraction; `restore-test` validates an isolated temporary extraction without replacing live files. Logs go to stdout/stderr, with optional JSON output for log collectors.
 
-## License
+## Images and development
 
-Licensed under **Apache License 2.0**. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Cloudflare, Discord and other referenced products retain their respective trademarks and terms.
+Image: `ghcr.io/ebertek/yggflare`. Tags are `main` (development), `sha-<full-commit-sha>` and `vMAJOR.MINOR.PATCH`; there is no `latest` tag. Prefer a digest pin for reproducible deployment. Run the doctor and audit after updating.
 
-## Validation
+[AGENTS.md](AGENTS.md) describes contributor workflows, test commands and safety invariants. CI runs unit tests, Ruff, Black and an image build; publishing requires tests and lint to pass.
 
-The repository includes Cloudflare, network-audit and controller unit tests; the CI workflow executes them and builds the image. Ruff and Black enforce Python style. The [publish workflow](.github/workflows/publish.yml) requires tests and lint to pass before uploading images.
-
-Cloudflare auditing can be verified by confirming zero proposed operations and zero unintended static DNS drift with `YGGFLARE_CLOUDFLARE_AUTO_APPLY=false`. Before enabling unattended writes, independently validate write-path safeguards, network inventory alerts, persistence and backup recovery. Avoid running multiple automatic Cloudflare writers at the same time.
+Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
