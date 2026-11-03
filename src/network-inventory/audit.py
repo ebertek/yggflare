@@ -391,7 +391,9 @@ def notify_discord(webhook, messages):
             ):
                 details.append(message)
         suffix = f" ({'; '.join(details)})" if details else ""
-        raise RuntimeError(f"Discord webhook rejected: HTTP {error.code}{suffix}") from None
+        raise RuntimeError(
+            f"Discord webhook rejected: HTTP {error.code}{suffix}"
+        ) from None
 
 
 # pylint: disable=too-many-locals
