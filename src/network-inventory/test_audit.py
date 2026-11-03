@@ -170,6 +170,14 @@ class NetworkAuditTests(unittest.TestCase):
                 updated = json.loads((root / "state.json").read_text())
                 self.assertEqual(len(updated["recent_events"]), 200)
                 self.assertFalse(updated["recent_events"][-1]["baseline"])
+                last = updated["last_seen"]["10.4.20.33"]
+                first = updated["first_seen"]["10.4.20.33"]
+                source.write_text("<nmaprun></nmaprun>")
+                audit.main()
+                absent = json.loads((root / "state.json").read_text())
+                self.assertEqual(absent["last_seen"]["10.4.20.33"], last)
+                self.assertEqual(absent["first_seen"]["10.4.20.33"], first)
+                self.assertEqual(absent["hosts"], {})
 
     def test_avahi_deduplicates_ip_versions_and_interfaces(self):
         """Verify avahi deduplicates ip versions and interfaces."""

@@ -15,7 +15,7 @@ def event_type(message):
         ("CHANGED MAC", "Changed MAC"),
         ("CHANGED IP", "Changed IP"),
     ]:
-        if str(message).startswith(prefix):
+        if str(message).startswith(prefix) or message == label:
             return label
     return "Observation"
 

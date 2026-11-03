@@ -415,6 +415,10 @@ def main():
     now = datetime.now(UTC).isoformat()
     # First run is a reviewable baseline, but will not generate Discord spam.
     bootstrap = not previous.get("initialized")
+    prior_seen = {
+        **{ip: previous.get("scanned_at", "") for ip in previous.get("hosts", {})},
+        **previous.get("last_seen", {}),
+    }
     snapshot = {
         "version": 1,
         "initialized": True,
@@ -423,6 +427,26 @@ def main():
         "advertisements": advertisements,
         "hosts": hosts,
         "discovered_hosts": len(hosts),
+        "first_seen": {
+            ip: previous.get("first_seen", {}).get(
+                ip,
+                (
+                    previous.get("scanned_at") or now
+                    if ip in previous.get("hosts", {})
+                    else now
+                ),
+            )
+            for ip in set(previous.get("first_seen", {})) | set(hosts)
+            if ipaddress.ip_address(ip) in NETWORK
+        },
+        "last_seen": {
+            **{
+                ip: stamp
+                for ip, stamp in prior_seen.items()
+                if ipaddress.ip_address(ip) in NETWORK
+            },
+            **{ip: now for ip in hosts},
+        },
         "dns_sd_complete": dns_sd_complete,
         "dns_sd_scanned_at": (
             now if dns_sd_complete else previous.get("dns_sd_scanned_at", "")

@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from docker_inventory import address_key, snapshot
+from inventory_view import decorate, diff_view, private_projection
 from web_views import cloudflare_view, drift_view, ports_view
 
 CONFIG = Path(os.environ.get("YGGFLARE_CONFIG", "/config"))
@@ -32,15 +33,41 @@ input{background:var(--panel);color:var(--fg);border:1px solid var(--border);bor
 th{position:sticky;top:0;background:#253548;font-size:12px;color:var(--muted);cursor:pointer}
 td code{color:#b5e4ff}tr:hover td{background:#233244}.group{background:#29394d;font-weight:700}
 .pill{display:inline-block;border:1px solid #4b6175;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px}
+button,select{font:inherit;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:7px;padding:10px;min-height:44px}
+summary{font-weight:700;cursor:pointer;padding:8px;min-height:44px}details:not([open]){padding-bottom:8px}
+.privacy{border-left:4px solid var(--accent);padding:12px;background:var(--panel)}
+tr[data-flags~="missing"] td,.pill.missing{background:#493d1b}
+tr[data-flags~="retired"] td,.pill.retired{background:#333b46;color:#c0c8d1}
+tr[data-flags~="new"] td,.pill.new{background:#123f36}
+tr[data-flags~="drift"] td,.pill.drift{background:#4a2531}
+[hidden]{display:none!important}td{overflow-wrap:anywhere}summary:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--accent)}
+@media(max-width:700px){
+.scroll{overflow:visible}table{min-width:0}thead{display:block}thead tr{display:flex;flex-wrap:wrap;gap:4px}th{position:static;border:1px solid var(--border);border-radius:5px;padding:8px;min-height:44px}
+tbody,tr,td{display:block}tbody tr{border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+td{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px}td::before{content:attr(data-label);font-size:12px;font-weight:600;color:var(--muted)}
+.toolbar input{min-width:0;width:100%;flex-basis:100%}.toolbar label{display:flex;gap:8px;align-items:center}nav{width:100%}nav a{flex:1;text-align:center}details.card{padding:8px}
+}
 footer{padding:28px;color:var(--muted)}@media(max-width:700px){main{padding:12px}header{padding:16px}h1{font-size:20px}}
 """
 
 SCRIPT = """
 const filter=document.querySelector('#filter');
 const rows=[...document.querySelectorAll('tr[data-search]')];
-function update(){const q=(filter?.value||'').toLowerCase();for(const row of rows){row.hidden=!row.dataset.search.includes(q);}
-for(const group of document.querySelectorAll('section[data-group]')){group.hidden=!!q&&!group.querySelector('tr[data-search]:not([hidden])');}}
-if(filter){filter.addEventListener('input',update);}
+const statusFilter=document.querySelector('#status-filter');
+const classFilter=document.querySelector('#class-filter');
+function update(){
+const q=(filter?.value||'').toLowerCase(), flag=statusFilter?.value||'', kind=classFilter?.value||'';
+for(const row of rows){row.hidden=!row.dataset.search.includes(q)||(!!flag&&!(row.dataset.flags||'').split(' ').includes(flag))||(!!kind&&row.dataset.kind!==kind);}
+const active=!!(q||flag||kind);
+for(const group of document.querySelectorAll('details[data-group]')){
+if(active&&group.dataset.beforeSearch===undefined)group.dataset.beforeSearch=String(group.open);
+group.hidden=active&&!group.querySelector('tr[data-search]:not([hidden])');
+if(active&&!group.hidden)group.open=true;
+if(!active&&group.dataset.beforeSearch!==undefined){group.open=group.dataset.beforeSearch==='true';delete group.dataset.beforeSearch;}
+}}
+for(const control of [filter,statusFilter,classFilter]){if(control)control.addEventListener('input',update);}
+for(const [id,open] of [['expand-all',true],['collapse-all',false]]){
+const button=document.querySelector('#'+id);if(button)button.addEventListener('click',()=>{for(const group of document.querySelectorAll('details[data-group]')){group.open=open;delete group.dataset.beforeSearch;}});}
 function compareCells(a,b,index){
 const x=a.cells[index],y=b.cells[index];
 if(x.dataset.sort!==undefined&&y.dataset.sort!==undefined){return x.dataset.sort<y.dataset.sort?-1:x.dataset.sort>y.dataset.sort?1:0;}
@@ -100,6 +127,7 @@ def model():
                 "observed_ports": observed.get("ports", []),
                 "last_seen": state.get("scanned_at", "") if observed else "",
                 "status": "seen" if observed else "not observed",
+                "source": "Static inventory",
             }
         )
     docker_hosts, warnings = snapshot(
@@ -158,7 +186,9 @@ def model():
                 "status": "unmanaged",
             }
         )
+    diffs = decorate(hosts, inventory, state)
     return {
+        "diffs": diffs,
         "hosts": sorted(hosts, key=lambda h: (address_key(h["ipv4"]), h["hostname"])),
         "warnings": warnings,
         "network_state": state,
@@ -179,6 +209,7 @@ def page(tab, content):
             ("inventory", "Inventory"),
             ("ports", "Ports & DNS-SD"),
             ("drift", "Recent drift"),
+            ("diff", "Inventory diff"),
             ("cloudflare", "Cloudflare lifecycle"),
         )
     )
@@ -190,21 +221,32 @@ def page(tab, content):
 <script>{SCRIPT}</script></body></html>"""
 
 
-def table(headers, rows):
+def table(headers, rows, row_meta=None):
     head = "".join(
         f'<th data-col="{i}">{escape(h)}</th>' for i, h in enumerate(headers)
     )
     body = []
-    for values in rows:
+    for row_index, values in enumerate(rows):
         cells = ""
         for header, value in zip(headers, values):
             attribute = ""
             if header in ("IP", "IPv6"):
                 version, number, prefix = address_key(value)
                 attribute = f' data-sort="{version}:{number:039d}:{prefix:03d}"'
-            cells += f"<td{attribute}>{escape(str(value))}</td>"
+            display = escape(str(value))
+            if header in ("Class", "Flags") and value:
+                display = " ".join(
+                    f'<span class="pill">{escape(v.strip())}</span>'
+                    for v in str(value).split(",")
+                )
+            cells += f'<td{attribute} data-label="{escape(header, quote=True)}"><span>{display}</span></td>'
         search = escape(" ".join(str(v) for v in values).lower(), quote=True)
-        body.append(f'<tr data-search="{search}">{cells}</tr>')
+        meta = (row_meta or [{} for _ in rows])[row_index]
+        flags = escape(" ".join(meta.get("flags", [])), quote=True)
+        kind = escape(meta.get("device_class", ""), quote=True)
+        body.append(
+            f'<tr data-search="{search}" data-flags="{flags}" data-kind="{kind}">{cells}</tr>'
+        )
     return f'<div class="scroll"><table><thead><tr>{head}</tr></thead><tbody data-sortable="1">{"".join(body)}</tbody></table></div>'
 
 
@@ -229,6 +271,9 @@ def render(tab, data):
                     ),
                     i["ipv6"],
                     ", ".join(i["ports"]),
+                    i.get("device_class", "device"),
+                    i.get("last_seen") or "Never observed",
+                    ", ".join(i.get("flags", [])),
                     i["status"],
                 ]
                 for i in sorted(
@@ -236,7 +281,7 @@ def render(tab, data):
                 )
             ]
             blocks.append(
-                f'<section class="card" data-group="1"><h2>{escape(group)} · {len(rows)} hosts</h2>'
+                f'<details class="card" data-group="1" open><summary>{escape(group)} · {len(rows)} hosts</summary>'
                 + table(
                     [
                         "Host",
@@ -246,19 +291,34 @@ def render(tab, data):
                         "Aliases / router names",
                         "IPv6",
                         "Ports",
+                        "Class",
+                        "Last seen",
+                        "Flags",
                         "Status",
                     ],
                     rows,
+                    sorted(
+                        hosts, key=lambda a: (address_key(a["ipv4"]), a["hostname"])
+                    ),
                 )
-                + "</section>"
+                + "</details>"
             )
+        controls = '<div class="toolbar"><button type="button" id="expand-all">Expand all</button><button type="button" id="collapse-all">Collapse all</button><label>Show <select id="status-filter"><option value="">All flags</option><option value="missing">Missing info</option><option value="drift">Drift</option><option value="retired">Retired</option><option value="new">Newly discovered</option></select></label><label>Class <select id="class-filter"><option value="">All classes</option>'
+        controls += "".join(
+            f"<option>{escape(kind)}</option>"
+            for kind in sorted({h.get("device_class", "device") for h in data["hosts"]})
+        )
+        controls += '</select></label></div><p class="legend"><span class="pill missing">Missing info</span> <span class="pill drift">Drift</span> <span class="pill retired">Retired</span> <span class="pill new">Newly discovered</span></p>'
         content = (
             f'<p class="muted">Latest inventory scan: {escape(data["scanned_at"] or "not available")}</p>'
             + search
+            + controls
             + "".join(blocks)
         )
     elif tab == "ports":
         content = search + ports_view(data, table)
+    elif tab == "diff":
+        content = search + diff_view(data, table)
     elif tab == "drift":
         content = search + drift_view(data, table)
     else:
@@ -267,6 +327,8 @@ def render(tab, data):
         f'<p class="muted">{escape(warning)}</p>'
         for warning in data.get("warnings", [])
     )
+    if data.get("private_metadata") is False:
+        notices += '<p class="privacy">Private device metadata is masked server-side, including exports. Set YGGFLARE_WEB_SHOW_SECRETS=true to reveal it. Credentials are always excluded.</p>'
     return page(tab, notices + content)
 
 
@@ -281,6 +343,7 @@ class Handler(BaseHTTPRequestHandler):
             "/inventory",
             "/ports",
             "/drift",
+            "/diff",
             "/cloudflare",
             "/api/inventory.json",
             "/api/inventory.csv",
@@ -289,6 +352,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             data = model()
+            if os.environ.get("YGGFLARE_WEB_SHOW_SECRETS", "false") != "true":
+                data = private_projection(data)
             if uri == "/api/inventory.json":
                 content = json.dumps(data["hosts"], indent=2).encode()
                 mime = "application/json; charset=utf-8"
@@ -307,6 +372,9 @@ class Handler(BaseHTTPRequestHandler):
                     "observed_ports",
                     "source",
                     "status",
+                    "device_class",
+                    "last_seen",
+                    "flags",
                 )
                 writer.writerow(columns)
                 for host in data["hosts"]:

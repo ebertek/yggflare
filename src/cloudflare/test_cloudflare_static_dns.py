@@ -13,11 +13,31 @@ from cloudflare_static_dns import (
     load_inventory,
     load_inventory_details,
     plan_static_dns,
+    validated_entry,
 )
 
 HOST = "device.ygg.nu"
 ADDRESS = "10.4.20.10"
 MAC = "aa:bb:cc:dd:ee:ff"
+
+
+class PresentationMetadataTests(unittest.TestCase):
+    def test_retirement_label_does_not_remove_dns_declaration(self):
+        base = {"hostname": HOST, "ipv4": ADDRESS, "mac": MAC}
+        self.assertEqual(
+            validated_entry(base, 0),
+            validated_entry({**base, "retired": True, "device_class": "printer"}, 0),
+        )
+
+    def test_invalid_presentation_metadata_rejected(self):
+        for metadata in (
+            {"retired": "true"},
+            {"retired": 1},
+            {"device_class": "secret-value"},
+            {"device_class": []},
+        ):
+            with self.subTest(metadata=metadata), self.assertRaises(ValueError):
+                validated_entry({"hostname": HOST, "ipv4": ADDRESS, **metadata}, 0)
 
 
 def inventory(hosts=None):

@@ -50,6 +50,24 @@ def validate_metadata(entry, hostname):
         except ValueError as error:
             raise ValueError(f"{hostname}: invalid optional purchase_date") from error
 
+    if "retired" in entry and not isinstance(entry["retired"], bool):
+        raise ValueError(f"{hostname}: retired must be boolean")
+    if "device_class" in entry and (
+        not isinstance(entry["device_class"], str)
+        or entry["device_class"]
+        not in {
+            "network",
+            "server",
+            "computer",
+            "mobile",
+            "iot",
+            "media",
+            "printer",
+            "sensor",
+            "other",
+        }
+    ):
+        raise ValueError(f"{hostname}: invalid device_class")
     validate_ports(entry, hostname)
 
 
@@ -157,6 +175,8 @@ def validated_entry(entry, index):
         "additional_ipv4",
         "observed_macs",
         "interface_macs",
+        "device_class",
+        "retired",
     }:
         raise ValueError(f"Static DNS entry {index} has unknown fields")
     hostname = entry["hostname"]
