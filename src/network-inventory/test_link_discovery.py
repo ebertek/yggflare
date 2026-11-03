@@ -71,9 +71,7 @@ class LinkDiscoveryTests(unittest.TestCase):
                 result["warnings"],
                 [] if returncode == 2 else ["ndisc6: unavailable, failed or timed out"],
             )
-            self.assertFalse(
-                any(r["source"] == "NDP reply" for r in result["records"])
-            )
+            self.assertFalse(any(r["source"] == "NDP reply" for r in result["records"]))
 
     def test_multi_interface_ipv4_probe_deduplicates_without_losing_evidence(self):
         """Both ARP/neighbor sightings survive, but an IP is probed once."""
