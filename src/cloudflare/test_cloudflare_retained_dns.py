@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from cloudflare_retained_dns import load_retained_dns
 from cloudflare_unaccounted_dns import audit_unaccounted_dns
@@ -55,6 +56,50 @@ class RetainedDnsTests(unittest.TestCase):
                     path.write_text(json.dumps({"version": 1, "records": records}))
                     with self.assertRaises(ValueError):
                         load_retained_dns(path)
+
+    def test_retained_names_follow_configured_internal_domain(self):
+        """The same inventory format works outside the original example zone."""
+        retained = [
+            {"hostname": "b._dns-sd._udp.home.example.net", "type": "PTR"},
+            {
+                "hostname": "nas.home.example.net",
+                "type": "A",
+                "content": "192.168.40.10",
+            },
+        ]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "retained.json"
+            path.write_text(json.dumps({"version": 1, "records": retained}))
+            with patch.dict(
+                "os.environ",
+                {"YGGFLARE_INTERNAL_DOMAIN": "home.example.net"},
+            ):
+                self.assertEqual(load_retained_dns(path), retained)
+                for invalid in (
+                    "nas.example.net",
+                    "nas.evilhome.example.net",
+                    "nas.ygg.nu",
+                    "home.example.net",
+                ):
+                    with self.subTest(invalid=invalid):
+                        broken = [
+                            {
+                                "hostname": invalid,
+                                "type": "A",
+                                "content": "192.168.40.10",
+                            }
+                        ]
+                        path.write_text(json.dumps({"version": 1, "records": broken}))
+                        with self.assertRaises(ValueError):
+                            load_retained_dns(path)
+
+    def test_retained_names_fail_closed_without_valid_internal_domain(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "retained.json"
+            path.write_text(json.dumps({"version": 1, "records": expected()}))
+            with patch.dict("os.environ", {"YGGFLARE_INTERNAL_DOMAIN": ""}):
+                with self.assertRaisesRegex(ValueError, "YGGFLARE_INTERNAL_DOMAIN"):
+                    load_retained_dns(path)
 
     def test_only_matching_record_shapes_are_retained(self):
         """A record cannot be hidden by a CNAME or mismatched IP."""

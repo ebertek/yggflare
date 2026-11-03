@@ -1,4 +1,4 @@
-"""Private, read-only declarations of intentionally retained ygg.nu records.
+"""Private, read-only declarations of intentionally retained internal DNS records.
 
 These declarations recognize expected live DNS shapes; they never authorize
 creation, modification, or deletion through the Cloudflare reconciler.
@@ -8,8 +8,10 @@ import ipaddress
 import json
 import re
 
+from yggflare_config import domain
+
 RETAINED = "Scripts/cloudflare/retained-dns.json"
-HOST = re.compile(r"^(?:[a-z0-9_][a-z0-9_-]{0,62}\.)+ygg\.nu$")
+HOST_LABELS = r"(?:[a-z0-9_][a-z0-9_-]{0,62}\.)+"
 TYPE = re.compile(r"^[A-Z][A-Z0-9]{0,9}$")
 CONTENT_REQUIRED = frozenset({"A", "AAAA", "CNAME"})
 DOMAIN_TARGETS = frozenset({"CNAME", "PTR", "NS"})
@@ -39,7 +41,8 @@ def validate_identity(record, index):
     kind = record["type"]
     if not isinstance(hostname, str) or len(hostname) > 253:
         raise ValueError(f"Invalid retained DNS hostname at entry {index}")
-    if not HOST.fullmatch(hostname):
+    zone = domain("YGGFLARE_INTERNAL_DOMAIN")
+    if not re.fullmatch(r"^" + HOST_LABELS + re.escape(zone) + r"$", hostname):
         raise ValueError(f"Invalid retained DNS hostname at entry {index}")
     if any(len(label) > 63 for label in hostname.split(".")):
         raise ValueError(f"Invalid retained DNS label at entry {index}")

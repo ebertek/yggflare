@@ -48,6 +48,11 @@ The inventory UI and automatic cleanup modules have landed on `main`. Check actu
 
 Use `YGGFLARE_*` for all Yggflare configuration (inventory, watch, logging, web, Cloudflare apply and orphan cleanup). Reserve `CLOUDFLARE_*` for actual Cloudflare API credentials and identity/resource settings. **Do not reintroduce `YGG_*` or `CF_*` aliases.** Update both `ebertek/yggflare` and `ebertek/ebertek-compose` when configuration changes, with compatible image and Compose released together.
 
+Retained-DNS exceptions and inventory validation must use the validated
+`YGGFLARE_INTERNAL_DOMAIN` rather than hardcoded example domains. Retained
+records are read-only and scoped to that zone; never broaden their scope to
+work around a validation failure. Keep public setup examples host-neutral.
+
 ## Build, test and release
 
 - Image: `ghcr.io/ebertek/yggflare`. `:main` is development; `:vMAJOR.MINOR.PATCH` is stable. Prefer pinning to a digest in Compose so Renovate can update moving tags.

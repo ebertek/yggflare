@@ -112,7 +112,7 @@ Hostnames must belong to the internal domain. Static addresses must be within th
 
 Reserved/retired catalogs accept a record list or an object containing a `hosts` or `devices` list. Displayed fields are `hostname`, `name`, `ipv4`, `ipv6`, `mac`, `aliases` (list), `description`, `notes`, `device_class`, `reason` and `retired_at`. They never enter active reconciliation. Invalid optional catalogs show a warning without disabling the UI.
 
-Retained DNS uses `{"version":1,"records":[...]}` with `hostname`, `type`, optional `description`, and expected `content` (required for A/AAAA/CNAME). Its [validator](src/cloudflare/cloudflare_retained_dns.py) currently restricts names to `ygg.nu`.
+Retained DNS uses `{"version":1,"records":[...]}` with `hostname`, `type`, optional `description`, and expected `content` (required for A/AAAA/CNAME). Its [validator](src/cloudflare/cloudflare_retained_dns.py) restricts exceptions to the configured `YGGFLARE_INTERNAL_DOMAIN`; exceptions are audit-only and never authorize DNS writes.
 
 ## Web UI and observations
 
@@ -210,11 +210,11 @@ Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
 
 ### Supplemental ARP/NDP and IPv6 discovery
 
-Set these variables in the container environment. Example for Pleiades:
+Set these variables in the container environment. Example for a Linux host:
 
 ```yaml
-YGGFLARE_DISCOVERY_INTERFACES: "enp86s0,macvlan1-host"
-YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd0e:be00:da00:20::/64"
+YGGFLARE_DISCOVERY_INTERFACES: "eth0,eth1"
+YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd00:1234:5678::/64"
 YGGFLARE_DISCOVERY_ARP_SCAN: "true"
 YGGFLARE_DISCOVERY_NDP_PROBE: "true"
 YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
@@ -236,15 +236,15 @@ IPv6 /64. Additional candidates must route through a configured interface.
 IPv4 OS probes also accept the normal scan's discovered non-Docker addresses.
 Each family is limited to 64 address/interface pairs, with numeric address order
 and a visible notice when the probe cap is reached.
-Each command has a 30-second timeout. IPv6 Nmap checks the top 20 TCP ports with
+Supplemental Nmap groups targets by family and interface, with a 90-second batch timeout and per-host limits. IPv6 Nmap checks the top 20 TCP ports with
 `-sV --version-light`; `YGGFLARE_DISCOVERY_OS_DETECTION=true` also enables a bounded IPv4 top-20 TCP
 service/OS pass and adds `-O --osscan-limit --max-os-tries 1` to enabled IPv6
 scans. OS matches and Nmap accuracy values appear as estimates in Discovery;
 no match means unknown, not a change of OS. The switch defaults to `false`.
-The normal IPv4 scan remains unchanged.
+The normal IPv4 scan remains separate and reports phase timings.
 These observations never change static inventory, ownership or DNS.
 
 Add a public IPv6 prefix only when you want it scanned; update it if delegation
-changes. Link-local targets are not probed by this collector. The existing IPv4
-scan and Avahi DNS-SD behavior are unchanged. LLDP/CDP, SSDP, SMB, SNMP and p0f
-collectors are not implemented yet; no default SNMP communities are attempted.
+changes. Link-local targets are not probed by this collector. The existing IPv4 scan and Avahi DNS-SD behavior are unchanged.
+Optional LLDP/CDP, SSDP, SMB, SNMP and p0f collectors are documented in
+[Additional discovery sources](docs/discovery.md); no default SNMP communities are attempted.
