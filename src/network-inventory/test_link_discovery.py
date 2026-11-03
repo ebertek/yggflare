@@ -157,6 +157,7 @@ class LinkDiscoveryTests(unittest.TestCase):
         nmap = [x for x in calls if x[0] == "nmap"]
         self.assertEqual(len(nmap), 1)
         self.assertEqual(len(nmap[0][-40:]), 40)
+        self.assertEqual(len(set(nmap[0][-40:])), 40)
         self.assertFalse(any("limited" in w for w in result["warnings"]))
 
     def test_missing_configuration_is_disabled(self):
