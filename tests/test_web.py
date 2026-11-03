@@ -177,7 +177,6 @@ click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.100','
             self.assertEqual(data["hosts"][0]["status"], "unmanaged")
             self.assertIn("10.4.21.192/27", web.render("inventory", data))
 
-
     def test_discovery_groups_ipv4_ipv6_and_multiple_interfaces_by_mac(self):
         data = {
             "hosts": [],
@@ -289,7 +288,6 @@ click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.100','
         self.assertIn("Link neighbour: enp86s0", html)
         self.assertIn("&lt;script&gt;neighbor&lt;/script&gt;", html)
         self.assertNotIn("<script>neighbor</script>", html)
-
 
 
 if __name__ == "__main__":
