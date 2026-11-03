@@ -12,7 +12,6 @@ import argparse
 import fcntl
 import importlib.util
 import os
-import shlex
 import sys
 from pathlib import Path
 
@@ -98,9 +97,8 @@ def require_auto_opt_in():
 
 def approval_command(token, maximum):
     """Print a host-side command that can reconstruct the required private snapshot."""
-    container = shlex.quote(os.environ.get("YGGFLARE_CONTAINER_NAME", "yggflare"))
     return (
-        f"docker exec {container} yggflare cloudflare apply {token} "
+        f"docker compose exec -T yggflare yggflare cloudflare apply {token} "
         f"--max-operations {maximum}"
     )
 
@@ -222,7 +220,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
         )
         if created:
             bound = scope(context["account"], context["ebi"], context["tunnel"])
-            data = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+            data = Path("/data")
             for hostname in created:
                 claim(client, root, data, bound, hostname)
                 print(f"Recorded Yggflare ownership: {hostname}")

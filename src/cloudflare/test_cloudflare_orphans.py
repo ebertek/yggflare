@@ -115,7 +115,7 @@ class LifecycleTests(unittest.TestCase):
         with (
             patch("cloudflare_orphans.desired_hosts", return_value={}),
             patch.object(Path, "home", return_value=self.path),
-            patch.dict("os.environ", {"YGGFLARE_SOURCE": str(self.path)}),
+            patch("cloudflare_orphans.LIVE_SOURCE", self.path),
         ):
             return retire(self.client, self.path, self.path, BOUND, HOST, fingerprint)
 
@@ -276,7 +276,7 @@ class LifecycleTests(unittest.TestCase):
         _, token = self.plan()
         with (
             patch.object(Path, "home", return_value=self.path),
-            patch.dict("os.environ", {"YGGFLARE_SOURCE": str(self.path)}),
+            patch("cloudflare_orphans.LIVE_SOURCE", self.path),
             patch(
                 "cloudflare_orphans.desired_hosts",
                 side_effect=[{}, {HOST: [POLICY]}],

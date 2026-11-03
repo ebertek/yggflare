@@ -1,8 +1,6 @@
 """Manual-only claim, orphan plan and fingerprint-approved retirement."""
 
 import argparse
-import os
-import shlex
 import sys
 from pathlib import Path
 
@@ -39,7 +37,7 @@ def main():
         parser.error("--approval is mandatory for apply and forbidden otherwise")
     client = CloudflareWriter(api_token())
     bound = context(client, cloudflare_settings())
-    data = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+    data = Path("/data")
     if args.action == "claim":
         claim(client, args.root, data, bound, args.hostname)
         print(f"Claimed managed hostname: {args.hostname}")
@@ -51,8 +49,7 @@ def main():
             print(f"  - {step}")
         print(f"Approval fingerprint: {fingerprint}")
         print(
-            "To apply: docker exec "
-            f"{shlex.quote(os.environ.get('YGGFLARE_CONTAINER_NAME', 'yggflare'))}"
+            "To apply: docker compose exec -T yggflare"
             f" yggflare cloudflare orphan-apply {args.hostname} {fingerprint}"
         )
         print("No changes made to Cloudflare.")

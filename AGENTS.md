@@ -46,7 +46,7 @@ The inventory UI and automatic cleanup modules have landed on `main`. Check actu
 
 ## Environment variable convention
 
-Use `YGGFLARE_*` for all Yggflare configuration (inventory, watch, logging, web, controller paths, Cloudflare apply and orphan cleanup). Reserve `CLOUDFLARE_*` for actual Cloudflare API credentials and identity/resource settings. **Do not reintroduce `YGG_*` or `CF_*` aliases.** Update both `ebertek/yggflare` and `ebertek/ebertek-compose` when configuration changes, with compatible image and Compose released together.
+Use `YGGFLARE_*` for all Yggflare configuration (inventory, watch, logging, web, Cloudflare apply and orphan cleanup). Reserve `CLOUDFLARE_*` for actual Cloudflare API credentials and identity/resource settings. **Do not reintroduce `YGG_*` or `CF_*` aliases.** Update both `ebertek/yggflare` and `ebertek/ebertek-compose` when configuration changes, with compatible image and Compose released together.
 
 ## Build, test and release
 
@@ -101,3 +101,7 @@ Keep this guide evergreen. Update it when architecture or safety invariants chan
 - Existing inventory details (including hostnames, IPs and MACs) remain visible by default in pages and exports. `YGGFLARE_WEB_SHOW_SECRETS` is not implemented; do not use it to mask existing fields. Credentials and raw environment remain excluded.
 - `inventory_view.py` derives review flags and static/observed diffs. Optional `device_class` and boolean `retired` are presentation metadata only: never change DNS/scanning/cleanup semantics based on them. Offline is not retired; unobserved ports are unknown, not closed.
 - Scan state retains first/last-seen timestamps by LAN address. Display them as scan observations, not a live device heartbeat.
+
+- Container destinations `/config`, `/data`, `/backup`, `/compose-source` are fixed. Do not reintroduce path or container-name environment knobs. The image owns `PYTHONPATH`; host bind sources remain configurable. Printed approvals use `docker compose exec -T yggflare` from the deployment Compose directory.
+- Docker inventory omits services without LAN endpoints and resolves shared-network parents uniquely (Compose service references within project). Never assign all parent ports to every child or infer process ownership from an endpoint scan.
+- `inventory_catalog.py` projects optional reserved/retired JSON catalogs into separate read-only tabs, never reconciliation inputs. Missing/invalid optional catalogs must not disable the active UI. Private deployment schemas have not been verified from this public repository.

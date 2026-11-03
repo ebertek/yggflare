@@ -10,7 +10,6 @@ GET requests only and does not use legacy state or local source repositories.
 import argparse
 import ipaddress
 import json
-import os
 import re
 import subprocess
 import sys
@@ -146,7 +145,7 @@ def run_audit(
         dns_internal=internal_dns,
     )
     bound = scope(account, ebi, tunnel_id)
-    registered = load_registry(Path(os.environ.get("YGGFLARE_DATA", "/data")), bound)
+    registered = load_registry(Path("/data"), bound)
     report["web_view"] = project(
         registered, desired, apps, public_dns, config["config"]
     )
@@ -225,7 +224,7 @@ def main():
         help="Save sanitized local UI snapshot; Cloudflare remains GET-only",
     )
     args = parser.parse_args()
-    data = Path(os.environ.get("YGGFLARE_DATA", "/data"))
+    data = Path("/data")
     if args.save_view:
         begin(data)
     root = args.root.expanduser().resolve()

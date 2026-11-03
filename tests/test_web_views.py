@@ -100,7 +100,7 @@ class DetailViewsTests(unittest.TestCase):
         self.assertIn("Initial baseline (not notified)", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertNotIn("MAC <script>", html)
-        self.assertLess(html.index("later"), html.index("now"))
+        self.assertLess(html.index(">later</span>"), html.index(">now</span>"))
 
     def test_old_state_has_active_drift_without_fabricated_history(self):
         html = web.render(
