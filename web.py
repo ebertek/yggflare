@@ -16,6 +16,7 @@ from docker_inventory import address_key, snapshot
 from inventory_catalog import records as catalog_records
 from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
+from metrics import render as render_metrics
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
 
 CONFIG = Path("/config")
@@ -398,12 +399,22 @@ class Handler(BaseHTTPRequestHandler):
             "/cloudflare",
             "/api/inventory.json",
             "/api/inventory.csv",
+            "/metrics",
         ):
             self.send_error(404)
             return
+        if uri == "/metrics" and os.environ.get("YGGFLARE_METRICS_ENABLED", "false") != "true":
+            self.send_error(404)
+            return
         try:
-            data = model()
-            if uri == "/api/inventory.json":
+            if uri == "/metrics":
+                content = render_metrics(CONFIG, DATA)
+                mime = "text/plain; version=0.0.4; charset=utf-8"
+            else:
+                data = model()
+            if uri == "/metrics":
+                pass
+            elif uri == "/api/inventory.json":
                 content = json.dumps(data["hosts"], indent=2).encode()
                 mime = "application/json; charset=utf-8"
             elif uri == "/api/inventory.csv":
@@ -486,6 +497,9 @@ def serve():
     port = int(os.environ.get("YGGFLARE_WEB_PORT", "8787"))
     if not 1 <= port <= 65535:
         raise ValueError("Invalid YGGFLARE_WEB_PORT")
+    metrics_enabled = os.environ.get("YGGFLARE_METRICS_ENABLED", "false")
+    if metrics_enabled not in ("true", "false"):
+        raise ValueError("YGGFLARE_METRICS_ENABLED must be true or false")
     host = os.environ.get("YGGFLARE_WEB_BIND", "127.0.0.1")
     if host not in ("127.0.0.1", "::1", "0.0.0.0"):
         raise ValueError("Unsupported web bind address")
