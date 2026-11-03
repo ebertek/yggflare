@@ -207,3 +207,37 @@ Image: `ghcr.io/ebertek/yggflare`. Tags are `main` (development), `sha-<full-com
 [AGENTS.md](AGENTS.md) describes contributor workflows, test commands and safety invariants. CI runs unit tests, Ruff, Black and an image build; publishing requires tests and lint to pass.
 
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
+
+### Supplemental ARP/NDP and IPv6 discovery
+
+Set these variables in the container environment. Example for Pleiades:
+
+```yaml
+YGGFLARE_DISCOVERY_INTERFACES: "enp86s0,macvlan1-host"
+YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd0e:be00:da00:20::/64"
+YGGFLARE_DISCOVERY_ARP_SCAN: "true"
+YGGFLARE_DISCOVERY_NDP_PROBE: "true"
+YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
+YGGFLARE_DISCOVERY_OS_DETECTION: "true"
+```
+
+Interfaces and IPv6 CIDRs are comma-separated lists, empty by default. An empty
+interface list disables supplemental discovery. IPv6 probing requires explicit
+IPv6 CIDRs. All four probe switches default to `false` and accept only `true` or
+`false`. The supplied Compose file passes these variables into the container.
+The `/discovery` view shows source, interface, collection timestamp and evidence.
+
+It runs with scheduled/manual
+network scans. Neighbour-cache entries are historical hints, not proof of current
+reachability. Failed/incomplete entries are excluded. Active ARP uses the configured
+IPv4 LAN range (maximum 4096 addresses). NDP and IPv6 Nmap probe at most 64 unique
+address/interface pairs learned from the selected interfaces' neighbour caches and
+restricted to the configured IPv6 prefixes; they never enumerate an IPv6 /64.
+Each command has a 30-second timeout. IPv6 Nmap checks the top 20 TCP ports with
+`-sV --version-light`; optional `-O --osscan-limit` records OS estimates.
+These observations never change static inventory, ownership or DNS.
+
+Add a public IPv6 prefix only when you want it scanned; update it if delegation
+changes. Link-local targets are not probed by this collector. The existing IPv4
+scan and Avahi DNS-SD behavior are unchanged. LLDP/CDP, SSDP, SMB, SNMP and p0f
+collectors are not implemented yet; no default SNMP communities are attempted.

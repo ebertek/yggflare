@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from discord_format import render
+from link_discovery import collect as collect_links
 
 NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
 DEFAULT_PORTS = (
@@ -419,7 +420,15 @@ def main():
         **{ip: previous.get("scanned_at", "") for ip in previous.get("hosts", {})},
         **previous.get("last_seen", {}),
     }
+    try:
+        supplemental = collect_links(NETWORK) if not args.discovery_xml else {}
+    except (OSError, ValueError, TypeError):
+        supplemental = {
+            "records": [],
+            "warnings": ["Supplemental discovery configuration is invalid"],
+        }
     snapshot = {
+        "supplemental": supplemental,
         "version": 1,
         "initialized": True,
         "scanned_at": now,
