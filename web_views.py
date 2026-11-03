@@ -136,13 +136,17 @@ def discovery_view(data, table):
             + "</summary>"
         )
         if group["addresses"]:
-            content += "<p class=\"muted\">Addresses: " + escape(
-                ", ".join(sorted(group["addresses"], key=address_key))
-            ) + "</p>"
+            content += (
+                '<p class="muted">Addresses: '
+                + escape(", ".join(sorted(group["addresses"], key=address_key)))
+                + "</p>"
+            )
         if group["macs"]:
-            content += "<p class=\"muted\">Observed MACs: " + escape(
-                ", ".join(sorted(group["macs"]))
-            ) + "</p>"
+            content += (
+                '<p class="muted">Observed MACs: '
+                + escape(", ".join(sorted(group["macs"])))
+                + "</p>"
+            )
         if key[0] == "ambiguous":
             content += (
                 "<p>Conflicting or ambiguous identity evidence: no device match "
