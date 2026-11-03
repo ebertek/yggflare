@@ -1,24 +1,13 @@
 """Explicit opt-in Discord delivery probe (one harmless test notification)."""
 
-import os
 import sys
-from pathlib import Path
 
 from audit import notify_discord
+from discord_webhook import read_webhook
 
 
 def main():
-    webhook_path = Path(
-        os.environ.get(
-            "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE",
-            "/run/secrets/network_discord_webhook",
-        )
-    )
-    if not webhook_path.is_file():
-        raise ValueError("Discord webhook secret is not mounted")
-    webhook = webhook_path.read_text(encoding="utf-8").strip()
-    if not webhook.startswith("https://discord.com/api/webhooks/"):
-        raise ValueError("Discord webhook is empty or not a standard Discord URL")
+    webhook = read_webhook()
     notify_discord(
         webhook,
         ["TEST ONLY: Yggflare notification delivery check; no drift detected."],
