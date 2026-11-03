@@ -207,3 +207,34 @@ Image: `ghcr.io/ebertek/yggflare`. Tags are `main` (development), `sha-<full-com
 [AGENTS.md](AGENTS.md) describes contributor workflows, test commands and safety invariants. CI runs unit tests, Ruff, Black and an image build; publishing requires tests and lint to pass.
 
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
+
+### Supplemental ARP/NDP and IPv6 discovery
+
+Optional `/config/discovery.json` enables a separate `/discovery` view with source,
+interface, collection timestamp and evidence. Example for Pleiades:
+
+```json
+{
+  "interfaces": ["enp86s0", "macvlan1-host"],
+  "ipv6_prefixes": ["fd0e:be00:da00:20::/64"],
+  "arp_scan": true,
+  "ndp_probe": true,
+  "ipv6_scan": true,
+  "os_detection": true
+}
+```
+
+Without this file supplemental discovery is disabled. It runs with scheduled/manual
+network scans. Neighbour-cache entries are historical hints, not proof of current
+reachability. Failed/incomplete entries are excluded. Active ARP uses the configured
+IPv4 LAN range (maximum 4096 addresses). NDP and IPv6 Nmap probe at most 64 unique
+address/interface pairs learned from the selected interfaces' neighbour caches and
+restricted to the configured IPv6 prefixes; they never enumerate an IPv6 /64.
+Each command has a 30-second timeout. IPv6 Nmap checks the top 20 TCP ports with
+`-sV --version-light`; optional `-O --osscan-limit` records OS estimates.
+These observations never change static inventory, ownership or DNS.
+
+Add a public IPv6 prefix only when you want it scanned; update it if delegation
+changes. Link-local targets are not probed by this collector. The existing IPv4
+scan and Avahi DNS-SD behavior are unchanged. LLDP/CDP, SSDP, SMB, SNMP and p0f
+collectors are not implemented yet; no default SNMP communities are attempted.

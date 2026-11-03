@@ -231,6 +231,7 @@ def page(tab, content):
             ("reserved", "Reserved"),
             ("retired", "Retired"),
             ("ports", "Ports & DNS-SD"),
+            ("discovery", "Discovery"),
             ("drift", "Recent drift"),
             ("diff", "Inventory diff"),
             ("cloudflare", "Cloudflare lifecycle"),
@@ -361,6 +362,28 @@ def render(tab, data):
         )
     elif tab in ("reserved", "retired"):
         content = search + catalog_view(tab, data, table)
+    elif tab == "discovery":
+        observations = data.get("network_state", {}).get("supplemental", {})
+        content = (
+            search
+            + "<p>Supplemental observations; cache entries do not prove current reachability. OS matches are estimates.</p>"
+        )
+        content += "".join(
+            f"<p>{escape(w)}</p>" for w in observations.get("warnings", [])
+        )
+        content += table(
+            ["IP", "Interface", "Source", "Evidence", "Collected at"],
+            [
+                [
+                    r["ip"],
+                    r["interface"],
+                    r["source"],
+                    r["detail"],
+                    observations.get("observed_at", ""),
+                ]
+                for r in observations.get("records", [])
+            ],
+        )
     elif tab == "ports":
         content = search + ports_view(data, table)
     elif tab == "diff":
@@ -388,6 +411,7 @@ class Handler(BaseHTTPRequestHandler):
             "/reserved",
             "/retired",
             "/ports",
+            "/discovery",
             "/drift",
             "/diff",
             "/cloudflare",
