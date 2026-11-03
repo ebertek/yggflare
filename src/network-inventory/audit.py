@@ -12,9 +12,11 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -51,16 +53,44 @@ def syn_scan_options(host_timeout="90s"):
     ]
 
 
+def progress(message):
+    """Give interactive and scheduled scans unbuffered, credential-free progress."""
+    print(f"[network] {message}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def phase(label):
+    """Measure individual scan phases even when a subprocess fails."""
+    started = time.monotonic()
+    progress(f"START {label}")
+    try:
+        yield
+    finally:
+        progress(f"END {label}: {time.monotonic() - started:.1f}s")
+
+
 def run_command(args, seconds):
-    """Require a successful bounded command, never silently accept partial scans."""
-    result = subprocess.run(
-        args, capture_output=True, text=True, timeout=seconds, check=False
-    )
-    if result.returncode:
-        raise RuntimeError(
-            f"{args[0]} failed (exit {result.returncode}): {result.stderr[-350:]}"
-        )
-    return result.stdout
+    """Bound subprocesses and report heartbeats while their output is captured."""
+    started = time.monotonic()
+    with subprocess.Popen(
+        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    ) as process:
+        while True:
+            remaining = seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                process.kill()
+                process.communicate()
+                raise subprocess.TimeoutExpired(args[0], seconds)
+            try:
+                stdout, stderr = process.communicate(timeout=min(15, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                progress(f"{args[0]} still running ({time.monotonic() - started:.0f}s)")
+        if process.returncode:
+            raise RuntimeError(
+                f"{args[0]} failed (exit {process.returncode}): {stderr[-350:]}"
+            )
+        return stdout
 
 
 def parse_nmap_xml(xml):
@@ -200,14 +230,17 @@ def load_inventory(path):
 
 def scan(inventory, timeout, do_dns_sd=True):
     """Discover the LAN first, then TCP scan responsive and inventory addresses."""
-    discovery = run_command(
-        ["nmap", "-sn", "-PR", "-n", "-oX", "-", str(NETWORK)], timeout
-    )
+    with phase("IPv4 host discovery"):
+        discovery = run_command(
+            ["nmap", "-sn", "-PR", "-n", "-oX", "-", str(NETWORK)], timeout
+        )
     hosts = parse_nmap_xml(discovery)
     # Scan live hosts only; exclude observed Docker containers but not the
     # entire .21 allocation (real appliances may have addresses there).
-    ignored = docker_ips()
+    with phase("Docker address exclusion"):
+        ignored = docker_ips()
     targets = sorted(set(hosts) - ignored, key=ipaddress.ip_address)
+    progress(f"Found {len(hosts)} IPv4 hosts; {len(targets)} targets for TCP probes")
     if targets:
         recorded_tcp = {
             int(item.split("/")[1])
@@ -231,23 +264,25 @@ def scan(inventory, timeout, do_dns_sd=True):
                 "-oX",
                 "-",
             ]
-            checked = parse_nmap_xml(run_command(args, timeout))
+            with phase(f"IPv4 focused TCP scan ({len(targets)} hosts)"):
+                checked = parse_nmap_xml(run_command(args, timeout))
             # A second bounded pass includes popular ports the static inventory
             # and hand-picked IoT list do not yet know about.
-            broad = parse_nmap_xml(
-                run_command(
-                    [
-                        *syn_scan_options(),
-                        "--top-ports",
-                        "100",
-                        "-iL",
-                        targets_file.name,
-                        "-oX",
-                        "-",
-                    ],
-                    timeout,
+            with phase(f"IPv4 top-100 TCP scan ({len(targets)} hosts)"):
+                broad = parse_nmap_xml(
+                    run_command(
+                        [
+                            *syn_scan_options(),
+                            "--top-ports",
+                            "100",
+                            "-iL",
+                            targets_file.name,
+                            "-oX",
+                            "-",
+                        ],
+                        timeout,
+                    )
                 )
-            )
         for ip in targets:
             hosts[ip]["ports"] = sorted(
                 set(checked.get(ip, {}).get("ports", []))
@@ -260,9 +295,10 @@ def scan(inventory, timeout, do_dns_sd=True):
     advertised = []
     if do_dns_sd:
         try:
-            advertised = parse_avahi(
-                run_command(["avahi-browse", "-a", "-r", "-p", "-t"], 90)
-            )
+            with phase("DNS-SD Avahi browse"):
+                advertised = parse_avahi(
+                    run_command(["avahi-browse", "-a", "-r", "-p", "-t"], 90)
+                )
         except (FileNotFoundError, subprocess.TimeoutExpired, RuntimeError):
             # Absence of Avahi must not imply that a service was withdrawn.
             advertised = []
@@ -449,19 +485,21 @@ def main():
         **previous.get("last_seen", {}),
     }
     try:
-        supplemental = (
-            collect_links(
-                NETWORK,
-                seeds=[(ip, "Nmap discovery") for ip in hosts if ip not in ignored]
-                + [
-                    (ip, "DNS-SD address")
-                    for service in advertised
-                    for ip in service.get("addresses", [])
-                ],
-            )
-            if not args.discovery_xml
-            else {}
-        )
+        if args.discovery_xml:
+            supplemental = {}
+        else:
+            with phase("Supplemental ARP/NDP/OS/service discovery"):
+                supplemental = collect_links(
+                    NETWORK,
+                    seeds=[
+                        (ip, "Nmap discovery") for ip in hosts if ip not in ignored
+                    ]
+                    + [
+                        (ip, "DNS-SD address")
+                        for service in advertised
+                        for ip in service.get("addresses", [])
+                    ],
+                )
     except (OSError, ValueError, TypeError):
         supplemental = {
             "records": [],
@@ -525,6 +563,7 @@ def main():
         list(dict.fromkeys([*prior_pending, *events]))[-200:] if not bootstrap else []
     )
     save_state(args.state_dir, snapshot)
+    progress("Saved network observations before notification delivery")
     print(
         f"Network inventory: {len(hosts)} responsive IPv4 hosts; {len(advertised)} DNS-SD services"
     )
