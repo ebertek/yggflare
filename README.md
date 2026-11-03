@@ -230,11 +230,18 @@ The `/discovery` view shows source, interface, collection timestamp and evidence
 It runs with scheduled/manual
 network scans. Neighbour-cache entries are historical hints, not proof of current
 reachability. Failed/incomplete entries are excluded. Active ARP uses the configured
-IPv4 LAN range (maximum 4096 addresses). NDP and IPv6 Nmap probe at most 64 unique
-address/interface pairs learned from the selected interfaces' neighbour caches and
-restricted to the configured IPv6 prefixes; they never enumerate an IPv6 /64.
+IPv4 LAN range (maximum 4096 addresses). NDP and IPv6 Nmap use neighbour-cache, running Docker and resolved DNS-SD
+addresses restricted to the configured IPv6 prefixes; they never enumerate an
+IPv6 /64. Additional candidates must route through a configured interface.
+IPv4 OS probes also accept the normal scan's discovered non-Docker addresses.
+Each family is limited to 64 address/interface pairs, with numeric address order
+and a visible notice when the probe cap is reached.
 Each command has a 30-second timeout. IPv6 Nmap checks the top 20 TCP ports with
-`-sV --version-light`; optional `-O --osscan-limit` records OS estimates.
+`-sV --version-light`; `YGGFLARE_DISCOVERY_OS_DETECTION=true` also enables a bounded IPv4 top-20 TCP
+service/OS pass and adds `-O --osscan-limit --max-os-tries 1` to enabled IPv6
+scans. OS matches and Nmap accuracy values appear as estimates in Discovery;
+no match means unknown, not a change of OS. The switch defaults to `false`.
+The normal IPv4 scan remains unchanged.
 These observations never change static inventory, ownership or DNS.
 
 Add a public IPv6 prefix only when you want it scanned; update it if delegation

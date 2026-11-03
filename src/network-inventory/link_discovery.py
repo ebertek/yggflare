@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from service_discovery import collect as collect_services
 
 
-def collect(network, run=None):
+def collect(network, run=None, seeds=()):
     """Explicit interfaces and prefixes gate every active probe."""
     raw_interfaces = os.environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").strip()
     if not raw_interfaces:
@@ -116,23 +116,104 @@ def collect(network, run=None):
                     r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", fields[1]
                 ):
                     add(fields[0], interface, "ARP reply", fields[1].lower())
-    targets = sorted(
-        {
-            (r["ip"], r["interface"])
-            for r in result["records"]
-            if ipaddress.ip_address(r["ip"]).version == 6
-        }
-    )[:64]
+    # Supplemental sources supply candidates, never a CIDR sweep. Resolve the
+    # actual outgoing interface instead of copying a Docker network name.
+    candidates = list(seeds)[:256]
+    if config.get("ipv6_scan") and prefixes:
+        try:
+            ids = command(["docker", "ps", "-q"]).split()
+            if len(ids) > 512 or any(
+                not re.fullmatch(r"[a-f0-9]{12,64}", value) for value in ids
+            ):
+                raise ValueError("Invalid container list")
+            containers = json.loads(command(["docker", "inspect", *ids])) if ids else []
+            for container in containers:
+                if (container.get("State") or {}).get("Running") is not True:
+                    continue
+                for endpoint in (
+                    (container.get("NetworkSettings") or {}).get("Networks") or {}
+                ).values():
+                    candidates.append(
+                        (endpoint.get("GlobalIPv6Address", ""), "Docker address")
+                    )
+        except (ValueError, TypeError, AttributeError):
+            result["warnings"].append("Docker IPv6 candidates unavailable")
+    known = {r["ip"] for r in result["records"]}
+    routed = set()
+    for raw, source in sorted(set(candidates)):
+        try:
+            address = ipaddress.ip_address(raw)
+        except ValueError:
+            continue
+        if not allowed(address) or str(address) in known or str(address) in routed:
+            continue
+        if (
+            sum(
+                ipaddress.ip_address(value).version == address.version
+                for value in routed
+            )
+            >= 64
+        ):
+            continue
+        if address.version == 4 and not config.get("os_detection"):
+            continue
+        if address.version == 6 and not (
+            config.get("ipv6_scan") or config.get("ndp_probe")
+        ):
+            continue
+        routed.add(str(address))
+        try:
+            routes = json.loads(
+                command(
+                    [
+                        "ip",
+                        "-j",
+                        "-6" if address.version == 6 else "-4",
+                        "route",
+                        "get",
+                        str(address),
+                    ]
+                )
+            )
+            interface = routes[0].get("dev", "") if routes else ""
+            if interface in interfaces:
+                add(
+                    str(address),
+                    interface,
+                    source,
+                    "Candidate address; reachability unverified",
+                )
+        except (ValueError, TypeError, KeyError, AttributeError):
+            result["warnings"].append("Candidate route unavailable")
+    # Separate family caps avoid starving IPv6 behind a full IPv4 inventory.
+    targets = []
+    for version in (4, 6):
+        selected = sorted(
+            {
+                (r["ip"], r["interface"])
+                for r in result["records"]
+                if ipaddress.ip_address(r["ip"]).version == version
+            },
+            key=lambda item: (int(ipaddress.ip_address(item[0])), item[1]),
+        )
+        if len(selected) > 64:
+            result["warnings"].append(
+                f"IPv{version} probe targets limited to 64 address/interface pairs"
+            )
+        targets.extend(selected[:64])
     for ip, interface in targets:
-        if config.get("ndp_probe"):
+        ipv6 = ipaddress.ip_address(ip).version == 6
+        if ipv6 and config.get("ndp_probe"):
             raw = command(["ndisc6", "-q", "-r", "1", "-w", "500", ip, interface])
             for line in raw.splitlines():
                 if re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", line.strip()):
                     add(ip, interface, "NDP reply", line.strip().lower())
-        if config.get("ipv6_scan"):
+        if (ipv6 and config.get("ipv6_scan")) or (
+            not ipv6 and config.get("os_detection")
+        ):
             args = [
                 "nmap",
-                "-6",
+                *(["-6"] if ipv6 else []),
                 "-n",
                 "-Pn",
                 "-sV",
@@ -163,7 +244,7 @@ def collect(network, run=None):
                         add(
                             ip,
                             interface,
-                            "Nmap IPv6",
+                            "Nmap IPv6" if ipv6 else "Nmap IPv4",
                             f"{port.get('protocol')}/{port.get('portid')} {label}",
                         )
                 for match in root.findall(".//host/os/osmatch"):
