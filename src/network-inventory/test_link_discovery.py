@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -42,6 +43,117 @@ class LinkDiscoveryTests(unittest.TestCase):
             self.assertIn("-6", calls[-1])
             self.assertIn("-O", calls[-1])
             self.assertEqual(calls[-1][-1], "fd00::2")
+
+    def test_ndp_no_reply_is_not_a_failure_but_other_errors_warn(self):
+        for returncode in (1, 2):
+            calls = []
+
+            def run(args):
+                calls.append(args)
+                if args[:3] == ["ip", "-j", "neigh"]:
+                    return '[{"dst":"fd00::2","state":["REACHABLE"]}]'
+                if args[0] == "ndisc6":
+                    raise subprocess.CalledProcessError(returncode, "ndisc6")
+                return ""
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                    "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
+                    "YGGFLARE_DISCOVERY_NDP_PROBE": "true",
+                },
+                clear=True,
+            ):
+                result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
+            self.assertEqual(len([x for x in calls if x[0] == "ndisc6"]), 1)
+            self.assertEqual(
+                result["warnings"],
+                [] if returncode == 2 else ["ndisc6: unavailable, failed or timed out"],
+            )
+            self.assertFalse(
+                any(r["source"] == "NDP reply" for r in result["records"])
+            )
+
+    def test_multi_interface_ipv4_probe_deduplicates_without_losing_evidence(self):
+        """Both ARP/neighbor sightings survive, but an IP is probed once."""
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return json.dumps(
+                    [
+                        {"dst": "10.0.0.2", "state": ["REACHABLE"]},
+                        {"dst": "10.0.0.3", "state": ["STALE"]},
+                    ]
+                )
+            if "route" in args:
+                return '[{"dev":"eth1"}]'
+            if args[0] == "nmap":
+                return (
+                    '<nmaprun><host><address addr="10.0.0.2" addrtype="ipv4"/>'
+                    '<os><osmatch name="Linux" accuracy="95"/></os></host></nmaprun>'
+                )
+            return "[]"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0,eth1",
+                "YGGFLARE_DISCOVERY_OS_DETECTION": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
+        nmap = [x for x in calls if x[0] == "nmap"]
+        self.assertEqual(len(nmap), 1)
+        self.assertEqual(nmap[0][nmap[0].index("-e") + 1], "eth1")
+        self.assertEqual(nmap[0][-2:], ["10.0.0.2", "10.0.0.3"])
+        self.assertEqual(
+            {(r["ip"], r["interface"]) for r in result["records"] if r["source"] == "Neighbor cache"},
+            {
+                ("10.0.0.2", "eth0"),
+                ("10.0.0.2", "eth1"),
+                ("10.0.0.3", "eth0"),
+                ("10.0.0.3", "eth1"),
+            },
+        )
+        self.assertTrue(
+            any(r["source"] == "Nmap OS estimate" and r["ip"] == "10.0.0.2"
+                for r in result["records"])
+        )
+
+    def test_cap_counts_unique_ips_not_address_interface_pairs(self):
+        """Forty hosts seen twice should not consume 80 of 64 probe slots."""
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return json.dumps(
+                    [
+                        {"dst": f"10.0.0.{i}", "state": ["REACHABLE"]}
+                        for i in range(1, 41)
+                    ]
+                )
+            if "route" in args:
+                return '[{"dev":"eth0"}]'
+            return "<nmaprun/>" if args[0] == "nmap" else "[]"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0,eth1",
+                "YGGFLARE_DISCOVERY_OS_DETECTION": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
+        nmap = [x for x in calls if x[0] == "nmap"]
+        self.assertEqual(len(nmap), 1)
+        self.assertEqual(len(nmap[0][-40:]), 40)
+        self.assertFalse(any("limited" in w for w in result["warnings"]))
 
     def test_missing_configuration_is_disabled(self):
         with patch.dict("os.environ", {}, clear=True):
