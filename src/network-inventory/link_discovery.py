@@ -5,7 +5,10 @@ import json
 import os
 import re
 import subprocess
+import sys
+import time
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from service_discovery import collect as collect_services
@@ -48,16 +51,36 @@ def collect(network, run=None, seeds=()):
         "warnings": [],
     }
 
-    def command(args):
+    def note(message):
+        print(f"[discovery] {message}", file=sys.stderr, flush=True)
+
+    def command(args, timeout=30):
         try:
             if run:
                 return run(args)
-            value = subprocess.run(
-                args, capture_output=True, text=True, timeout=30, check=True
-            )
-            if len(value.stdout) > 2 * 1024 * 1024:
-                raise ValueError("Oversize discovery output")
-            return value.stdout
+            started = time.monotonic()
+            with subprocess.Popen(
+                args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            ) as process:
+                while True:
+                    remaining = timeout - (time.monotonic() - started)
+                    if remaining <= 0:
+                        process.kill()
+                        process.communicate()
+                        raise subprocess.TimeoutExpired(args[0], timeout)
+                    try:
+                        stdout, _ = process.communicate(timeout=min(15, remaining))
+                        break
+                    except subprocess.TimeoutExpired:
+                        note(
+                            f"{args[0]} still running "
+                            f"({time.monotonic() - started:.0f}s)"
+                        )
+                if process.returncode:
+                    raise subprocess.CalledProcessError(process.returncode, args[0])
+                if len(stdout) > 2 * 1024 * 1024:
+                    raise ValueError("Oversize discovery output")
+                return stdout
         except (OSError, ValueError, subprocess.SubprocessError):
             result["warnings"].append(args[0] + ": unavailable, failed or timed out")
             return ""
@@ -201,60 +224,103 @@ def collect(network, run=None, seeds=()):
                 f"IPv{version} probe targets limited to 64 address/interface pairs"
             )
         targets.extend(selected[:64])
+    # NDP probes are still interface-specific; keep their bounded target cap.
+    ndp_targets = [
+        (ip, interface)
+        for ip, interface in targets
+        if ipaddress.ip_address(ip).version == 6 and config.get("ndp_probe")
+    ]
+    if ndp_targets:
+        note(f"NDP probes: {len(ndp_targets)} addresses")
+    for index, (ip, interface) in enumerate(ndp_targets, 1):
+        raw = command(["ndisc6", "-q", "-r", "1", "-w", "500", ip, interface])
+        for line in raw.splitlines():
+            if re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", line.strip()):
+                add(ip, interface, "NDP reply", line.strip().lower())
+        if index % 8 == 0 or index == len(ndp_targets):
+            note(f"NDP probes completed: {index}/{len(ndp_targets)}")
+
+    # One Nmap invocation per family/interface instead of one per address.
+    # Each group contains only previously validated, explicitly scoped targets.
+    grouped = defaultdict(list)
     for ip, interface in targets:
         ipv6 = ipaddress.ip_address(ip).version == 6
-        if ipv6 and config.get("ndp_probe"):
-            raw = command(["ndisc6", "-q", "-r", "1", "-w", "500", ip, interface])
-            for line in raw.splitlines():
-                if re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", line.strip()):
-                    add(ip, interface, "NDP reply", line.strip().lower())
         if (ipv6 and config.get("ipv6_scan")) or (
             not ipv6 and config.get("os_detection")
         ):
-            args = [
-                "nmap",
-                *(["-6"] if ipv6 else []),
-                "-n",
-                "-Pn",
-                "-sV",
-                "--version-light",
-                "--top-ports",
-                "20",
-                "--max-retries",
-                "1",
-                "--host-timeout",
-                "15s",
-                "-e",
-                interface,
-                "-oX",
-                "-",
-            ]
-            if config.get("os_detection"):
-                args += ["-O", "--osscan-limit", "--max-os-tries", "1"]
-            raw = command([*args, ip])
-            if not raw:
-                continue
-            try:
-                root = ET.fromstring(raw)
-                for port in root.findall(".//host/ports/port"):
-                    state = port.find("state")
-                    if state is not None and state.get("state") == "open":
-                        service = port.find("service")
-                        label = service.get("name", "") if service is not None else ""
+            grouped[(ipv6, interface)].append(ip)
+    for (ipv6, interface), addresses in sorted(grouped.items()):
+        family = "IPv6" if ipv6 else "IPv4"
+        note(f"START {family} Nmap on {interface}: {len(addresses)} targets")
+        started = time.monotonic()
+        args = [
+            "nmap",
+            *(["-6"] if ipv6 else []),
+            "-n",
+            "-Pn",
+            "-sV",
+            "--version-light",
+            "--top-ports",
+            "20",
+            "--max-retries",
+            "1",
+            "--host-timeout",
+            "15s",
+            "-e",
+            interface,
+            "-oX",
+            "-",
+        ]
+        if config.get("os_detection"):
+            args += ["-O", "--osscan-limit", "--max-os-tries", "1"]
+        raw = command([*args, *addresses], timeout=90)
+        note(f"END {family} Nmap on {interface}: {time.monotonic() - started:.1f}s")
+        if not raw:
+            continue
+        try:
+            root = ET.fromstring(raw)
+            scoped = set(addresses)
+            for host in root.findall("host"):
+                reported = [
+                    address.get("addr", "")
+                    for address in host.findall("address")
+                    if address.get("addrtype") == ("ipv6" if ipv6 else "ipv4")
+                ]
+                # Older offline single-target fixtures omit the address tag.
+                if not reported and len(addresses) == 1:
+                    reported = addresses
+                for raw_ip in reported:
+                    try:
+                        ip = str(ipaddress.ip_address(raw_ip))
+                    except ValueError:
+                        continue
+                    if ip not in scoped:
+                        continue
+                    for port in host.findall("./ports/port"):
+                        state = port.find("state")
+                        if state is not None and state.get("state") == "open":
+                            service = port.find("service")
+                            label = (
+                                service.get("name", "") if service is not None else ""
+                            )
+                            add(
+                                ip,
+                                interface,
+                                "Nmap IPv6" if ipv6 else "Nmap IPv4",
+                                f"{port.get('protocol')}/{port.get('portid')} {label}",
+                            )
+                    for match in host.findall("./os/osmatch"):
                         add(
                             ip,
                             interface,
-                            "Nmap IPv6" if ipv6 else "Nmap IPv4",
-                            f"{port.get('protocol')}/{port.get('portid')} {label}",
+                            "Nmap OS estimate",
+                            f"{match.get('name')} (accuracy {match.get('accuracy')}%)",
                         )
-                for match in root.findall(".//host/os/osmatch"):
-                    add(
-                        ip,
-                        interface,
-                        "Nmap OS estimate",
-                        f"{match.get('name')} (accuracy {match.get('accuracy')}%)",
-                    )
-            except ET.ParseError:
-                result["warnings"].append("nmap: invalid XML response")
+        except ET.ParseError:
+            result["warnings"].append("nmap: invalid XML response")
+    note("START optional service discovery")
     collect_services(interfaces, allowed, result["records"], add, result["warnings"])
+    note(
+        f"END supplemental discovery: {len(result['records'])} observations; {len(result['warnings'])} warnings"
+    )
     return result

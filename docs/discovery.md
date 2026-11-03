@@ -33,6 +33,29 @@ needed. IPv6 SSDP is not implemented. NetBIOS and SMB have ten-second command
 bounds; anonymous SMB denial is normal and does not trigger password attempts.
 No SMB file content is read. Cached target addresses need not still be reachable.
 
+## Scan runtime and progress
+
+Manual `yggflare network run` and scheduled scans report unbuffered phase
+start/end timings to stderr/stdout, with 15-second heartbeats while long-running
+subprocesses are captured. This makes host discovery, focused/top-100 TCP scans,
+DNS-SD and supplemental discovery distinguishable without logging packet data,
+secrets or raw scan output.
+
+Supplemental Nmap targets remain bounded to 64 address/interface pairs per
+family, but are scanned in batches **by address family and selected interface**
+instead of starting one Nmap process per target. Each batch has a 90-second
+process limit and each host retains the existing 15-second Nmap host limit.
+Parsed XML is attributed only to the explicit scoped addresses in that batch.
+NDP probes remain interface-specific, while up to 16 NetBIOS targets are
+queried using at most four concurrent workers. These are best-effort
+observations; individual collector failures remain warnings, not DNS changes.
+
+The regular IPv4 scan still makes distinct host-discovery, focused-port/service
+and top-100-port passes. The new phase timings distinguish whether those
+passes or supplemental work dominate a given deployment. Performance depends
+on host reachability and service-response behavior, so no fixed runtime
+guarantee is implied.
+
 ## LLDP/CDP
 
 The image supplies `lldpcli`. Run `lldpd` on the host, configured for receive-only

@@ -134,10 +134,63 @@ class LinkDiscoveryTests(unittest.TestCase):
                     ("2001:db8::1", "DNS-SD address"),
                 ],
             )
-        probes = [args[-1] for args in calls if args[0] == "nmap"]
-        self.assertEqual(probes, ["fd00::2", "fd00::3"])
+        probes = [args for args in calls if args[0] == "nmap"]
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0][-2:], ["fd00::2", "fd00::3"])
         self.assertEqual(
             {r["source"] for r in result["records"]},
             {"Docker address", "DNS-SD address"},
         )
         self.assertFalse(any("2001:db8::1" in args for args in calls))
+
+    def test_batched_nmap_attaches_services_to_correct_host(self):
+        """One interface/family batch must not misattribute another host's ports."""
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return json.dumps(
+                    [
+                        {"dst": "fd00::2", "state": ["REACHABLE"]},
+                        {"dst": "fd00::3", "state": ["REACHABLE"]},
+                    ]
+                )
+            if args[0] == "docker":
+                return ""
+            if args[0] == "nmap":
+                return (
+                    "<nmaprun>"
+                    '<host><address addr="fd00::2" addrtype="ipv6"/>'
+                    '<ports><port protocol="tcp" portid="443">'
+                    '<state state="open"/></port></ports></host>'
+                    '<host><address addr="fd00::3" addrtype="ipv6"/>'
+                    '<os><osmatch name="Linux" accuracy="91"/></os></host>'
+                    '<host><address addr="fd00::99" addrtype="ipv6"/>'
+                    '<ports><port protocol="tcp" portid="8080">'
+                    '<state state="open"/></port></ports></host>'
+                    "</nmaprun>"
+                )
+            return "[]"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
+                "YGGFLARE_DISCOVERY_IPV6_SCAN": "true",
+                "YGGFLARE_DISCOVERY_OS_DETECTION": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.4.20.0/23"), run)
+        nmap_calls = [args for args in calls if args[0] == "nmap"]
+        self.assertEqual(len(nmap_calls), 1)
+        self.assertEqual(nmap_calls[0][-2:], ["fd00::2", "fd00::3"])
+        by_ip = {}
+        for record in result["records"]:
+            by_ip.setdefault(record["ip"], []).append(record["detail"])
+        self.assertIn("tcp/443", " ".join(by_ip["fd00::2"]))
+        self.assertNotIn("tcp/443", " ".join(by_ip["fd00::3"]))
+        self.assertIn("accuracy 91%", " ".join(by_ip["fd00::3"]))
+        self.assertNotIn("fd00::99", by_ip)

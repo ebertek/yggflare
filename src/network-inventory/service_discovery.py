@@ -5,9 +5,11 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from discovery_passive import lldp_records, sample_p0f
@@ -112,16 +114,36 @@ def collect(interfaces, allowed, records, add, warnings):
                 )
 
         attempt("LLDP/CDP", lldp)
-    for ip in targets:
-        if flags["NETBIOS"]:
+    if flags["NETBIOS"] and targets:
+        print(
+            f"[discovery] START NetBIOS: {len(targets)} targets, 4 workers",
+            file=sys.stderr,
+            flush=True,
+        )
 
-            def netbios():
+        def netbios(ip):
+            try:
                 raw = execute(["nmblookup", "-A", ip])
                 names = re.findall(r"^\s*([^\s<>]+)\s+<[0-9A-Fa-f]{2}>", raw, re.M)
-                if names:
-                    add(ip, "", "NetBIOS name", ", ".join(sorted(set(names))))
+                return ip, sorted(set(names)), False
+            except (OSError, ValueError, subprocess.SubprocessError):
+                return ip, [], True
 
-            attempt("NetBIOS", netbios)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for index, (ip, names, failed) in enumerate(
+                executor.map(netbios, targets), start=1
+            ):
+                if failed:
+                    warnings.append("NetBIOS: unavailable, failed or timed out")
+                elif names:
+                    add(ip, "", "NetBIOS name", ", ".join(names))
+                if index % 4 == 0 or index == len(targets):
+                    print(
+                        f"[discovery] NetBIOS completed: {index}/{len(targets)}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+    for ip in targets:
         if flags["SMB"]:
 
             def smb():
