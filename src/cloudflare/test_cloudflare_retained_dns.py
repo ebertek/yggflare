@@ -2,9 +2,9 @@
 
 import json
 import unittest
-from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from cloudflare_retained_dns import load_retained_dns
 from cloudflare_unaccounted_dns import audit_unaccounted_dns
