@@ -7,7 +7,6 @@ services:
     network_mode: host
     environment:
       TZ: UTC
-      YGGFLARE_WEB_SHOW_SECRETS: "${YGGFLARE_WEB_SHOW_SECRETS:-false}"
       YGGFLARE_LOG_FORMAT: "${YGGFLARE_LOG_FORMAT:-text}"
       YGGFLARE_WATCH_COMPOSE: "${YGGFLARE_WATCH_COMPOSE:-true}"
       YGGFLARE_WATCH_DOCKER: "${YGGFLARE_WATCH_DOCKER:-true}"

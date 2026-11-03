@@ -1,6 +1,5 @@
-"""Inventory flags/diff, durable last-seen and HTTP privacy regressions."""
+"""Inventory flags/diff, durable last-seen and HTTP visibility regressions."""
 
-import json
 import shutil
 import subprocess
 import threading
@@ -10,7 +9,7 @@ from unittest.mock import patch
 from urllib.request import urlopen
 
 import web
-from inventory_view import decorate, private_projection
+from inventory_view import decorate
 
 
 def fixture():
@@ -160,27 +159,21 @@ controls['#collapse-all'].listeners.click();assert(groups.every(g=>!g.open));
         )
         subprocess.run([shutil.which("node"), "-e", script], check=True, timeout=10)
 
-    def test_private_projection_does_not_mutate_cached_model(self):
-        data = fixture()
-        before = json.dumps(data)
-        hidden = private_projection(data)
-        self.assertNotIn("private-", json.dumps(hidden))
-        self.assertNotIn("10.4.20.", json.dumps(hidden))
-        self.assertNotIn("aa:bb:", json.dumps(hidden))
-        self.assertEqual(before, json.dumps(data))
-        self.assertEqual(hidden["hosts"][0]["hostname"], "Device 001")
-
-    def test_http_all_views_and_exports_obey_server_side_flag(self):
+    def test_http_existing_details_visible_regardless_of_unused_flag(self):
         data = fixture()
         server = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
-            for value in ("false", "true", "TRUE", ""):
+            for value in (None, "false", "true", "TRUE", ""):
                 with (
                     self.subTest(flag=value),
                     patch.object(web, "model", return_value=data),
-                    patch.dict("os.environ", {"YGGFLARE_WEB_SHOW_SECRETS": value}),
+                    patch.dict(
+                        "os.environ",
+                        {} if value is None else {"YGGFLARE_WEB_SHOW_SECRETS": value},
+                        clear=True,
+                    ),
                 ):
                     for path in (
                         "/inventory",
@@ -196,16 +189,20 @@ controls['#collapse-all'].listeners.click();assert(groups.every(g=>!g.open));
                         ) as response:
                             body = response.read().decode()
                         self.assertNotIn("CREDENTIAL-NEVER-SERVED", body)
-                        if value != "true":
-                            for secret in (
-                                "private-",
-                                "10.4.20.",
-                                "aa:bb:cc:",
+                        self.assertIn("private-device.example", body, path)
+                        self.assertNotIn("metadata is masked", body)
+                        if path in (
+                            "/inventory",
+                            "/api/inventory.json",
+                            "/api/inventory.csv",
+                        ):
+                            for detail in (
+                                "10.4.20.9",
+                                "aa:bb:cc:dd:ee:ff",
                                 "fd00::9",
+                                "private-alias.example",
                             ):
-                                self.assertNotIn(secret, body, path)
-                        else:
-                            self.assertIn("private-device.example", body, path)
+                                self.assertIn(detail, body, path)
         finally:
             server.shutdown()
             server.server_close()

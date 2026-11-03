@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from docker_inventory import address_key, snapshot
-from inventory_view import decorate, diff_view, private_projection
+from inventory_view import decorate, diff_view
 from web_views import cloudflare_view, drift_view, ports_view
 
 CONFIG = Path(os.environ.get("YGGFLARE_CONFIG", "/config"))
@@ -35,7 +35,6 @@ td code{color:#b5e4ff}tr:hover td{background:#233244}.group{background:#29394d;f
 .pill{display:inline-block;border:1px solid #4b6175;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px}
 button,select{font:inherit;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:7px;padding:10px;min-height:44px}
 summary{font-weight:700;cursor:pointer;padding:8px;min-height:44px}details:not([open]){padding-bottom:8px}
-.privacy{border-left:4px solid var(--accent);padding:12px;background:var(--panel)}
 tr[data-flags~="missing"] td,.pill.missing{background:#493d1b}
 tr[data-flags~="retired"] td,.pill.retired{background:#333b46;color:#c0c8d1}
 tr[data-flags~="new"] td,.pill.new{background:#123f36}
@@ -327,8 +326,6 @@ def render(tab, data):
         f'<p class="muted">{escape(warning)}</p>'
         for warning in data.get("warnings", [])
     )
-    if data.get("private_metadata") is False:
-        notices += '<p class="privacy">Private device metadata is masked server-side, including exports. Set YGGFLARE_WEB_SHOW_SECRETS=true to reveal it. Credentials are always excluded.</p>'
     return page(tab, notices + content)
 
 
@@ -352,8 +349,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             data = model()
-            if os.environ.get("YGGFLARE_WEB_SHOW_SECRETS", "false") != "true":
-                data = private_projection(data)
             if uri == "/api/inventory.json":
                 content = json.dumps(data["hosts"], indent=2).encode()
                 mime = "application/json; charset=utf-8"

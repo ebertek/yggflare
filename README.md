@@ -164,20 +164,14 @@ resource IDs/counts. Scope-matched orphan first/last absence observations are
 shown as timestamps, never as cleanup eligibility or a deletion countdown. There
 are no claim, apply or delete buttons; the snapshot is never used by write paths.
 
-### Inventory controls and privacy
+### Inventory review controls
 
-`YGGFLARE_WEB_SHOW_SECRETS` controls **private device metadata only**, never
-credentials. It defaults to `false`; only the literal `true` reveals identifying
-metadata. Masking happens on the server for every page and both exports, including
-search/sort attributes. Hostnames, IPs, MACs, aliases, subnet names, descriptions,
-DNS-SD identities and Cloudflare resource IDs are replaced or omitted. Counts,
-port numbers, timestamps, classes and review flags remain visible. Masked labels
-are request-local display identifiers, not stable device IDs.
-
-Set `YGGFLARE_WEB_SHOW_SECRETS: "true"` in an authenticated private deployment to
-retain full hostname/IP/MAC search and detailed comparisons. Tokens, passwords,
-webhook URLs, raw environment values and secret files are never exposed in either
-mode. The flag does not provide authentication.
+Hostnames, IPv4/IPv6 addresses, MACs, aliases, subnet names, descriptions,
+DNS-SD details and Cloudflare resource IDs remain visible in the read-only UI
+and applicable exports. No opt-in flag is needed for existing inventory details.
+`YGGFLARE_WEB_SHOW_SECRETS` is not implemented; setting it has no effect.
+Tokens, passwords, webhook URLs, raw environment values and secret files remain
+excluded. Protect the UI with authentication as described above.
 
 Each /27 group can be collapsed independently, with Expand all / Collapse all
 controls. Search opens matching groups and restores their prior state when cleared.
