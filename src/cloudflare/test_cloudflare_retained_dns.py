@@ -83,7 +83,11 @@ class RetainedDnsTests(unittest.TestCase):
                 ):
                     with self.subTest(invalid=invalid):
                         broken = [
-                            {"hostname": invalid, "type": "A", "content": "192.168.40.10"}
+                            {
+                                "hostname": invalid,
+                                "type": "A",
+                                "content": "192.168.40.10",
+                            }
                         ]
                         path.write_text(json.dumps({"version": 1, "records": broken}))
                         with self.assertRaises(ValueError):
