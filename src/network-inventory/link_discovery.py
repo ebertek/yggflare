@@ -7,8 +7,8 @@ import re
 import subprocess
 import sys
 import time
-from collections import defaultdict
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from service_discovery import collect as collect_services
@@ -296,7 +296,9 @@ def collect(network, run=None, seeds=()):
                         state = port.find("state")
                         if state is not None and state.get("state") == "open":
                             service = port.find("service")
-                            label = service.get("name", "") if service is not None else ""
+                            label = (
+                                service.get("name", "") if service is not None else ""
+                            )
                             add(
                                 ip,
                                 interface,
@@ -314,5 +316,7 @@ def collect(network, run=None, seeds=()):
             result["warnings"].append("nmap: invalid XML response")
     note("START optional service discovery")
     collect_services(interfaces, allowed, result["records"], add, result["warnings"])
-    note(f"END supplemental discovery: {len(result['records'])} observations; {len(result['warnings'])} warnings")
+    note(
+        f"END supplemental discovery: {len(result['records'])} observations; {len(result['warnings'])} warnings"
+    )
     return result
