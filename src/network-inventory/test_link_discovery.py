@@ -143,7 +143,6 @@ class LinkDiscoveryTests(unittest.TestCase):
         )
         self.assertFalse(any("2001:db8::1" in args for args in calls))
 
-
     def test_batched_nmap_attaches_services_to_correct_host(self):
         """One interface/family batch must not misattribute another host's ports."""
         calls = []
