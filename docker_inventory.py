@@ -244,7 +244,8 @@ def collect(root, network, domain):
             for r in records
             if r["name"] == name
             or (
-                r["project"] == labels.get("com.docker.compose.project")
+                r.get("project")
+                and r["project"] == labels.get("com.docker.compose.project")
                 and r["service"] == labels.get("com.docker.compose.service")
             )
         ]
