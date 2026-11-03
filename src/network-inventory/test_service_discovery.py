@@ -79,6 +79,19 @@ class ServiceTests(unittest.TestCase):
         )
         self.assertEqual(warnings, [])
 
+    def test_netbios_no_reply_exit_code_is_handled_without_masking_failures(self):
+        import sys
+
+        from service_discovery import execute
+
+        silent = [sys.executable, "-c", "print('No reply'); raise SystemExit(1)"]
+        with self.assertRaises(ValueError):
+            execute(silent)
+        self.assertIn("No reply", execute(silent, allow_no_reply=True))
+        invalid = [sys.executable, "-c", "raise SystemExit(2)"]
+        with self.assertRaises(ValueError):
+            execute(invalid, allow_no_reply=True)
+
     def test_snmp_missing_targets_never_queries(self):
         warnings = []
         with (
