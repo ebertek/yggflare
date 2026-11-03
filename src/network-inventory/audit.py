@@ -457,6 +457,7 @@ def main():
     if not 30 <= args.timeout <= 3600:
         parser.error("--timeout must be between 30 and 3600")
     inventory = load_inventory(args.inventory)
+    scan_started = time.monotonic()
     if args.discovery_xml:
         hosts = parse_nmap_xml(args.discovery_xml.read_text(encoding="utf-8"))
         advertised = (
@@ -511,6 +512,7 @@ def main():
         "version": 1,
         "initialized": True,
         "scanned_at": now,
+        "scan_duration_seconds": round(time.monotonic() - scan_started, 3),
         "reported": reported,
         "advertisements": advertisements,
         "hosts": hosts,
