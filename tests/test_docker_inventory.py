@@ -134,6 +134,20 @@ class DockerInventoryTests(unittest.TestCase):
                 hosts[0]["status"], "docker running" if running else "docker stopped"
             )
 
+    def test_multiple_runtime_only_containers_do_not_require_compose_identity(self):
+        (self.root / "compose.yaml").unlink()
+        containers = [live("10.4.21.34"), live("10.4.21.35")]
+        containers[0]["Name"] = "/runtime-a"
+        containers[1]["Name"] = "/runtime-b"
+        for item in containers:
+            item["Config"]["Labels"] = {}
+        with patch.object(inventory, "inspect_containers", return_value=containers):
+            hosts, warnings = inventory.collect(self.root, NETWORK, "home.example")
+        self.assertEqual(len(hosts), 2)
+        self.assertEqual([h["ipv4"] for h in hosts], ["10.4.21.34", "10.4.21.35"])
+        self.assertTrue(all(h["source"] == "Docker" for h in hosts))
+        self.assertFalse(warnings)
+
     def test_runtime_only_and_outside_lan(self):
         (self.root / "compose.yaml").unlink()
         container = live()

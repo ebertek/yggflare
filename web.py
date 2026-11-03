@@ -5,6 +5,8 @@ import io
 import ipaddress
 import json
 import os
+import sys
+import traceback
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -325,7 +327,19 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 content = render(uri.removeprefix("/"), data).encode()
                 mime = "text/html; charset=utf-8"
-        except (OSError, ValueError, TypeError, KeyError):
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            # Log code locations only: exception messages and local values may
+            # contain private inventory, credentials or Docker metadata.
+            frames = traceback.extract_tb(error.__traceback__)
+            location = " -> ".join(
+                f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
+                for frame in frames
+            )
+            print(
+                f"[web] Inventory unavailable: {type(error).__name__} at {location}",
+                file=sys.stderr,
+                flush=True,
+            )
             self.send_error(503, "Inventory unavailable")
             return
         self.send_response(200)
