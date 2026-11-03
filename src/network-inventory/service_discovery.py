@@ -4,6 +4,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,8 +26,8 @@ def enabled(name):
     return value == "true"
 
 
-def execute(args, env=None):
-    """Bound disk output as well as execution; stderr never leaves this module."""
+def execute(args, env=None, *, allow_no_reply=False):
+    """Bound disk output and execution; optionally accept NetBIOS no-reply status."""
     with tempfile.TemporaryFile() as output:
         with subprocess.Popen(
             args, stdout=output, stderr=subprocess.DEVNULL, env=env
@@ -38,7 +39,9 @@ def execute(args, env=None):
                     process.wait()
                     raise ValueError("Collector exceeded bounds")
                 time.sleep(0.05)
-            if process.returncode or output.tell() > LIMIT:
+            if output.tell() > LIMIT or (
+                process.returncode and not (allow_no_reply and process.returncode == 1)
+            ):
                 raise ValueError("Collector failed")
         output.seek(0)
         return output.read(LIMIT).decode("utf-8", errors="replace")
@@ -114,7 +117,10 @@ def collect(interfaces, allowed, records, add, warnings):
                 )
 
         attempt("LLDP/CDP", lldp)
-    if flags["NETBIOS"] and targets:
+    netbios_enabled = flags["NETBIOS"] and bool(targets)
+    if netbios_enabled and shutil.which("nmblookup") is None:
+        warnings.append("NetBIOS: nmblookup executable unavailable")
+    elif netbios_enabled:
         print(
             f"[discovery] START NetBIOS: {len(targets)} targets, 4 workers",
             file=sys.stderr,
@@ -123,7 +129,8 @@ def collect(interfaces, allowed, records, add, warnings):
 
         def netbios(ip):
             try:
-                raw = execute(["nmblookup", "-A", ip])
+                # An unanswered NetBIOS query is normal for non-NetBIOS devices.
+                raw = execute(["nmblookup", "-A", ip], allow_no_reply=True)
                 names = re.findall(r"^\s*([^\s<>]+)\s+<[0-9A-Fa-f]{2}>", raw, re.M)
                 return ip, sorted(set(names)), False
             except (OSError, ValueError, subprocess.SubprocessError):
