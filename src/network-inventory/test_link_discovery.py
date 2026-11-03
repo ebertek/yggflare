@@ -24,6 +24,8 @@ class LinkDiscoveryTests(unittest.TestCase):
 
             def run(args):
                 calls.append(args)
+                if args[0] == "docker":
+                    return ""
                 if args[0] == "ip":
                     return json.dumps(
                         [
@@ -36,10 +38,10 @@ class LinkDiscoveryTests(unittest.TestCase):
 
             result = discovery.collect(ipaddress.ip_network("10.4.20.0/23"), run)
             self.assertEqual({r["ip"] for r in result["records"]}, {"fd00::2"})
-            self.assertEqual(len(calls), 2)
-            self.assertIn("-6", calls[1])
-            self.assertIn("-O", calls[1])
-            self.assertEqual(calls[1][-1], "fd00::2")
+            self.assertEqual(len(calls), 3)
+            self.assertIn("-6", calls[-1])
+            self.assertIn("-O", calls[-1])
+            self.assertEqual(calls[-1][-1], "fd00::2")
 
     def test_missing_configuration_is_disabled(self):
         with patch.dict("os.environ", {}, clear=True):
@@ -82,8 +84,60 @@ class LinkDiscoveryTests(unittest.TestCase):
             clear=True,
         ):
             result = discovery.collect(ipaddress.ip_network("10.4.20.0/23"), run)
-        self.assertIn("-O", calls[1])
-        self.assertNotIn("-6", calls[1])
-        self.assertIn("--osscan-limit", calls[1])
+        self.assertIn("-O", calls[-1])
+        self.assertNotIn("-6", calls[-1])
+        self.assertIn("--osscan-limit", calls[-1])
         self.assertEqual(result["records"][-1]["source"], "Nmap OS estimate")
         self.assertIn("95%", result["records"][-1]["detail"])
+
+    def test_docker_and_dns_sd_candidates_require_scope_and_allowed_route(self):
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return "[]"
+            if args[:2] == ["docker", "ps"]:
+                return "a" * 12
+            if args[:2] == ["docker", "inspect"]:
+                return json.dumps(
+                    [
+                        {
+                            "State": {"Running": True},
+                            "NetworkSettings": {
+                                "Networks": {"lan": {"GlobalIPv6Address": "fd00::2"}}
+                            },
+                        }
+                    ]
+                )
+            if "route" in args:
+                return json.dumps(
+                    [{"dev": "eth0" if args[-1] != "fd00::4" else "docker0"}]
+                )
+            return "<nmaprun/>"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
+                "YGGFLARE_DISCOVERY_IPV6_SCAN": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(
+                ipaddress.ip_network("10.4.20.0/23"),
+                run,
+                seeds=[
+                    ("fd00::3", "DNS-SD address"),
+                    ("fd00::4", "DNS-SD address"),
+                    ("2001:db8::1", "DNS-SD address"),
+                ],
+            )
+        probes = [args[-1] for args in calls if args[0] == "nmap"]
+        self.assertEqual(probes, ["fd00::2", "fd00::3"])
+        self.assertEqual(
+            {r["source"] for r in result["records"]},
+            {"Docker address", "DNS-SD address"},
+        )
+        self.assertFalse(any("2001:db8::1" in args for args in calls))

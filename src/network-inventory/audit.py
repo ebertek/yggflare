@@ -421,7 +421,19 @@ def main():
         **previous.get("last_seen", {}),
     }
     try:
-        supplemental = collect_links(NETWORK) if not args.discovery_xml else {}
+        supplemental = (
+            collect_links(
+                NETWORK,
+                seeds=[(ip, "Nmap discovery") for ip in hosts if ip not in ignored]
+                + [
+                    (ip, "DNS-SD address")
+                    for service in advertised
+                    for ip in service.get("addresses", [])
+                ],
+            )
+            if not args.discovery_xml
+            else {}
+        )
     except (OSError, ValueError, TypeError):
         supplemental = {
             "records": [],
