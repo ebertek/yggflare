@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-
 DEFAULT_WEBHOOK_FILE = "/run/secrets/network_discord_webhook"
 WEBHOOK_FILE_ENV = "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE"
 SNOWFLAKE = re.compile(r"[0-9]{16,20}")
@@ -24,11 +23,7 @@ def validate_webhook_url(value):
         parts = urlsplit(value)
     except ValueError:
         raise ValueError("Discord webhook URL has invalid syntax") from None
-    if (
-        parts.scheme != "https"
-        or parts.netloc != "discord.com"
-        or parts.fragment
-    ):
+    if parts.scheme != "https" or parts.netloc != "discord.com" or parts.fragment:
         raise ValueError("Discord webhook must use https://discord.com")
     path = parts.path.split("/")
     if len(path) != 5 or path[:3] != ["", "api", "webhooks"]:
