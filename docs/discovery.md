@@ -16,7 +16,7 @@ A failed source produces a sanitized warning while other sources continue.
 | `YGGFLARE_DISCOVERY_SNMP_TARGETS` | Comma-separated IPv4 addresses within the LAN scope; empty by default, maximum 16 |
 | `YGGFLARE_DISCOVERY_P0F` | Ten-second passive fingerprint sample per interface |
 
-For Pleiades, a starting configuration is:
+Example first-pass configuration for a host with the selected interfaces and CIDRs:
 
 ```yaml
 YGGFLARE_DISCOVERY_SSDP: "true"
