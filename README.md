@@ -196,7 +196,7 @@ docker exec yggflare yggflare backup verify <archive-name>.tar.gz
 docker exec yggflare yggflare backup restore-test <archive-name>.tar.gz
 ```
 
-`doctor` checks local dependencies, mounts and health without calling Cloudflare or posting messages. `network run` updates observations and may notify Discord; `discord-test` sends one test message. The Docker health check monitors an independently refreshed controller heartbeat.
+`doctor` checks local dependencies, mounts and health without calling Cloudflare or posting messages. `network run` updates observations and may notify Discord; `discord-test` sends one test message. A Discord delivery error does not invalidate a completed network scan: observations are saved first, undelivered alerts remain queued in private state for the next scan, and a sanitized Discord HTTP/error code is printed as a warning. `discord-test` reports the HTTP error but does not alter scan state. The error summary excludes the webhook URL, token and raw Discord response; an HTTP 400 requires verifying the webhook's destination/channel configuration. The Docker health check monitors an independently refreshed controller heartbeat.
 
 Backups contain **plaintext credentials** when secrets are mounted: restrict access and keep an off-host copy. `verify` checks an archive without extraction; `restore-test` validates an isolated temporary extraction without replacing live files. Logs go to stdout/stderr, with optional JSON output for log collectors.
 
