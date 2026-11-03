@@ -1,6 +1,7 @@
 """Offline fixtures for network discovery and repeat-alert suppression."""
 
 import importlib.util
+import io
 import json
 import unittest
 from pathlib import Path
@@ -119,6 +120,75 @@ class NetworkAuditTests(unittest.TestCase):
         self.assertEqual(request.get_header("Content-type"), "application/json")
         self.assertTrue(request.get_header("User-agent").startswith("Yggflare/"))
         self.assertIn(b"TEST ONLY", request.data)
+
+    def test_discord_http_error_exposes_code_without_webhook(self):
+        """Show useful Discord error details without printing credentials."""
+        from urllib.error import HTTPError
+
+        secret = "https://discord.com/api/webhooks/id/SECRET_DO_NOT_LOG"
+        response = io.BytesIO(
+            b'{"message":"Invalid Form Body","code":50035,"errors":{"name":"secret"}}'
+        )
+        error = HTTPError(secret, 400, "Bad Request", None, response)
+        with patch.object(audit.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(RuntimeError) as raised:
+                audit.notify_discord(secret, ["TEST ONLY"])
+        self.assertIn("HTTP 400", str(raised.exception))
+        self.assertIn("Discord code 50035", str(raised.exception))
+        self.assertIn("Invalid Form Body", str(raised.exception))
+        self.assertNotIn("SECRET_DO_NOT_LOG", str(raised.exception))
+        self.assertNotIn("errors", str(raised.exception))
+
+    def test_webhook_failure_preserves_discovery_for_retry(self):
+        """A rejected Discord POST must not roll back an expensive scan."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            xml = root / "scan.xml"
+            xml.write_text(XML, encoding="utf-8")
+            inventory = root / "inventory.json"
+            inventory.write_text('{"version":1,"hosts":[]}', encoding="utf-8")
+            webhook = root / "webhook"
+            webhook.write_text(
+                "https://discord.com/api/webhooks/id/token", encoding="utf-8"
+            )
+            args = [
+                "audit",
+                "--inventory",
+                str(inventory),
+                "--state-dir",
+                str(root),
+                "--discovery-xml",
+                str(xml),
+            ]
+            with (
+                patch("sys.argv", args),
+                patch.dict(
+                    "os.environ",
+                    {"YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE": str(webhook)},
+                ),
+                patch.object(audit, "notify_discord") as send,
+            ):
+                audit.main()  # First scan establishes baseline.
+                send.assert_not_called()
+                state = json.loads((root / "state.json").read_text())
+                state["reported"] = {}  # Trigger a new observation.
+                (root / "state.json").write_text(json.dumps(state))
+                send.side_effect = RuntimeError("Discord webhook rejected: HTTP 400")
+                audit.main()
+                failed = json.loads((root / "state.json").read_text())
+                self.assertTrue(failed["hosts"])
+                self.assertTrue(failed["reported"])
+                self.assertTrue(failed["pending_discord_events"])
+
+                send.reset_mock(side_effect=True)
+                audit.main()  # No new observations; retry queued ones.
+                send.assert_called_once_with(
+                    "https://discord.com/api/webhooks/id/token",
+                    failed["pending_discord_events"],
+                )
+                recovered = json.loads((root / "state.json").read_text())
+                self.assertEqual(recovered["pending_discord_events"], [])
+                self.assertEqual(recovered["recent_events"], failed["recent_events"])
 
     def test_xml_only_counts_confirmed_open(self):
         """Verify xml only counts confirmed open."""
