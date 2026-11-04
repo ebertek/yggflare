@@ -37,10 +37,7 @@ class NetworkAuditTests(unittest.TestCase):
         """One pass must cover Nmap's 100 most popular TCP ports."""
         with TemporaryDirectory() as directory:
             source = Path(directory) / "nmap-services"
-            lines = [
-                f"service{i} {i}/tcp {1 - i / 1000:.3f}"
-                for i in range(1, 102)
-            ]
+            lines = [f"service{i} {i}/tcp {1 - i / 1000:.3f}" for i in range(1, 102)]
             # TCP port 101 shares the cutoff ratio of TCP port 100.
             lines[-1] = "service101 101/tcp 0.900"
             lines.append("udpservice 62078/udp 1.000")
