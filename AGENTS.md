@@ -16,6 +16,8 @@ Yggflare is a Python 3.15 containerized controller for Cloudflare Access applica
 | Component | Responsibility |
 |---|---|
 | `controller.py` | UTC scheduler, Compose snapshot, heartbeat, Cloudflare/scan/backup execution |
+
+The controller is the image's PID 1 by default. It must explicitly handle SIGTERM/SIGINT even without Docker Compose `init: true`, exit promptly during idle loops, and terminate active scheduled subprocess groups on shutdown. Preserve safe state boundaries: scans must not publish a partial successful snapshot; any partially applied Cloudflare operation must be reconciled on restart rather than assumed complete. Test shutdown against a real child process and check bounded TERM/KILL escalation.
 | `watchers.py` | Compose/inventory fingerprint polling and Docker topology change triggers |
 | `cli.py` | Container-facing `docker exec yggflare yggflare …` commands |
 | `src/cloudflare/cloudflare-live.py` | Read-only live Cloudflare audit and drift assessment |

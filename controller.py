@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,42 @@ if LOG_FORMAT not in ("text", "json"):
     raise ValueError("YGGFLARE_LOG_FORMAT must be text or json")
 CLOUD_INTERVAL = dt.timedelta(hours=6)
 NETWORK_HOUR, NETWORK_MINUTE = 5, 15
+SHUTDOWN_GRACE_SECONDS = 3
+
+
+class ShutdownRequested(BaseException):
+    """Container stop signal; bypass routine job failure handlers."""
+
+    def __init__(self, signum):
+        super().__init__(signum)
+        self.signum = signum
+
+
+def on_shutdown(signum, _frame):
+    """Exit even when Python runs as container PID 1."""
+    raise ShutdownRequested(signum)
+
+
+def stop_child_group(process):
+    """Stop a job and its descendants before the container exits.
+
+    Jobs are launched in their own process group so an interrupted Nmap
+    or Cloudflare command cannot retain the stdout pipe and hang shutdown.
+    """
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=SHUTDOWN_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
 
 
 def snapshot(root):
@@ -82,16 +119,21 @@ def run(args, *, env=None):
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        start_new_session=True,
     ) as process:
-        assert process.stdout is not None
-        for line in process.stdout:
-            log("info", component, line.rstrip("\n"))
         try:
-            exit_code = process.wait(timeout=3300)
-        except subprocess.TimeoutExpired as error:
-            process.kill()
-            process.wait()
-            raise RuntimeError(f"Command timed out: {args[1]}") from error
+            assert process.stdout is not None
+            for line in process.stdout:
+                log("info", component, line.rstrip("\n"))
+            try:
+                exit_code = process.wait(timeout=3300)
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError(f"Command timed out: {args[1]}") from error
+        except BaseException:
+            # Includes the SIGTERM exception. Do not leave subprocesses
+            # running or block indefinitely in Popen.__exit__().
+            stop_child_group(process)
+            raise
     log(
         "info" if exit_code == 0 else "error",
         component,
@@ -197,6 +239,9 @@ def heartbeat_loop():
 
 
 def main():
+    # Explicit handlers are required when Python is PID 1 in Docker.
+    signal.signal(signal.SIGTERM, on_shutdown)
+    signal.signal(signal.SIGINT, on_shutdown)
     DATA.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":
@@ -273,4 +318,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ShutdownRequested as error:
+        log(
+            "info",
+            "controller",
+            f"Shutdown requested: {signal.Signals(error.signum).name}",
+        )
