@@ -258,6 +258,7 @@ Set these variables in the container environment. Example for a Linux host:
 ```yaml
 YGGFLARE_DISCOVERY_INTERFACES: "eth0,eth1"
 YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd00:1234:5678::/64"
+YGGFLARE_DISCOVERY_MAX_TARGETS: "512"
 YGGFLARE_DISCOVERY_ARP_SCAN: "true"
 YGGFLARE_DISCOVERY_NDP_PROBE: "true"
 YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
@@ -277,9 +278,12 @@ IPv4 LAN range (maximum 4096 addresses). NDP and IPv6 Nmap use neighbour-cache, 
 addresses restricted to the configured IPv6 prefixes; they never enumerate an
 IPv6 /64. Additional candidates must route through a configured interface.
 IPv4 OS probes also accept the normal scan's discovered non-Docker addresses.
-Each family is limited to 64 address/interface pairs, with numeric address order
-and a visible notice when the probe cap is reached.
-Supplemental Nmap groups targets by family and interface, with a 90-second batch timeout and per-host limits. IPv6 Nmap checks the top 20 TCP ports with
+Supplemental active probing covers up to 512 **unique observed** addresses per
+family by default (configurable from 1 to 4096). There is no implicit IPv6 /64
+sweep. Nmap groups targets by family and interface in batches of at most
+64 addresses per process, with a 90-second batch timeout and per-host limits.
+The batch size is a work limit, **not a discovery cutoff**; an explicit warning
+is emitted if the configured address budget is exceeded. IPv6 Nmap checks the top 20 TCP ports with
 `-sV --version-light`; `YGGFLARE_DISCOVERY_OS_DETECTION=true` also enables a bounded IPv4 top-20 TCP
 service/OS pass and adds `-O --osscan-limit --max-os-tries 1` to enabled IPv6
 scans. OS matches and Nmap accuracy values appear as estimates in Discovery;
