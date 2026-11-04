@@ -30,6 +30,27 @@ class CommandTests(unittest.TestCase):
             snapshot.assert_called_once()
             return result, run.call_args.args[0]
 
+    def test_version_command_requires_no_component_or_service_access(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_BUILD_VERSION": "main",
+                    "YGGFLARE_BUILD_REVISION": "a" * 40,
+                },
+            ),
+            patch.object(cli.controller, "snapshot") as snapshot,
+            contextlib.redirect_stdout(io.StringIO()) as output,
+            self.assertRaises(SystemExit) as result,
+        ):
+            cli.main(["--version"])
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(
+            output.getvalue().strip(),
+            "Yggflare main (revision aaaaaaaaaaaa)",
+        )
+        snapshot.assert_not_called()
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)
