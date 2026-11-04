@@ -127,6 +127,18 @@ def version_string():
     return f"Yggflare {version} (revision {revision[:12]})"
 
 
+def log_startup():
+    """Identify the exact running release before starting any scheduled work."""
+    version, revision = image_identity()
+    log(
+        "info",
+        "startup",
+        version_string(),
+        version=version,
+        revision=revision,
+    )
+
+
 def run(args, *, env=None):
     component = "cloudflare" if "/cloudflare/" in args[1] else "network"
     log("info", component, "Cycle started")
@@ -260,14 +272,7 @@ def main():
     # Explicit handlers are required when Python is PID 1 in Docker.
     signal.signal(signal.SIGTERM, on_shutdown)
     signal.signal(signal.SIGINT, on_shutdown)
-    version, revision = image_identity()
-    log(
-        "info",
-        "startup",
-        version_string(),
-        version=version,
-        revision=revision,
-    )
+    log_startup()
     DATA.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":
