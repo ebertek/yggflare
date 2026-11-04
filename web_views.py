@@ -335,6 +335,12 @@ def drift_view(data, table):
     ]
     content = '<p class="muted">Observed findings, not Discord delivery receipts. History retains the latest 200 findings; active drift is shown separately.</p>'
     content += f'<p class="muted">Latest network scan: {escape(state.get("scanned_at", "") or "not available")}</p>'
+    pending = state.get("alert_pending_confirmations", [])
+    content += "<h2>Awaiting repeat observation</h2>" + (
+        table(["Unconfirmed finding"], [[item] for item in pending[:100]])
+        if isinstance(pending, list) and pending
+        else "<p>No transient findings awaiting confirmation.</p>"
+    )
     content += "<h2>Current device / port drift</h2>" + (
         table(["Type", "Finding"], active)
         if active
