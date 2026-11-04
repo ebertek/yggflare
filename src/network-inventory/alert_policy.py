@@ -62,9 +62,7 @@ def confirmed_alerts(
         raise ValueError("Invalid saved alert confirmation fields")
     previously_enabled = "alert_state" in previous
     active_ports = {
-        key: message
-        for key, message in reported.items()
-        if key.startswith("new-port:")
+        key: message for key, message in reported.items() if key.startswith("new-port:")
     }
     if len(active_ports) > MAX_TRACKED or len(advertisements) > MAX_TRACKED:
         raise ValueError("Too many alert candidates; refusing silent truncation")
@@ -78,8 +76,7 @@ def confirmed_alerts(
         # Existing active observations were already surfaced by legacy policy.
         port_notified.update(active_ports)
     notifications = [
-        event for event in events
-        if not event.startswith(("NEW PORT ", "NEW DNS-SD "))
+        event for event in events if not event.startswith(("NEW PORT ", "NEW DNS-SD "))
     ]
     pending = []
     for key, message in sorted(active_ports.items()):
@@ -95,8 +92,7 @@ def confirmed_alerts(
         for item in sorted(advertisements):
             services.setdefault(dns_identity(item), item)
         dns_counts = {
-            key: min(int(prev_dns_counts.get(key, 0)) + 1, required)
-            for key in services
+            key: min(int(prev_dns_counts.get(key, 0)) + 1, required) for key in services
         }
         dns_notified = set(prev_dns_notified) & set(services)
         if baseline:
@@ -121,9 +117,13 @@ def confirmed_alerts(
     if baseline:
         notifications = []
         pending = []
-    return notifications, {
-        "port_counts": port_counts,
-        "port_notified": sorted(port_notified),
-        "dns_counts": dns_counts,
-        "dns_notified": sorted(dns_notified),
-    }, pending[:MAX_PENDING]
+    return (
+        notifications,
+        {
+            "port_counts": port_counts,
+            "port_notified": sorted(port_notified),
+            "dns_counts": dns_counts,
+            "dns_notified": sorted(dns_notified),
+        },
+        pending[:MAX_PENDING],
+    )
