@@ -27,6 +27,7 @@ The controller is the image's PID 1 by default. It must explicitly handle SIGTER
 | `src/cloudflare/cloudflare_write_api.py` | Narrowly scoped Cloudflare writes; never add unrestricted delete functionality |
 | `src/network-inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
 | `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
+| `src/network-inventory/alert_policy.py` | Confirm volatile TCP/DNS-SD signals before Discord, preserving immediate identity drift |
 | `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
 | `docker_inventory.py` | Sanitized, cached read-only Compose/Docker metadata for the web UI; never a reconciliation input |
 | `web.py`, `web_views.py` | Read-only HTTP inventory, per-port services, drift history and Cloudflare lifecycle views |
@@ -118,6 +119,8 @@ Keep this guide evergreen. Update it when architecture or safety invariants chan
 - Existing inventory details (including hostnames, IPs and MACs) remain visible by default in pages and exports. `YGGFLARE_WEB_SHOW_SECRETS` is not implemented; do not use it to mask existing fields. Credentials and raw environment remain excluded.
 - `inventory_view.py` derives review flags and static/observed diffs. Optional `device_class` and boolean `retired` are presentation metadata only: never change DNS/scanning/cleanup semantics based on them. Offline is not retired; unobserved ports are unknown, not closed.
 - Scan state retains first/last-seen timestamps by LAN address. Display them as scan observations, not a live device heartbeat.
+- New TCP ports and DNS-SD service identities require two consecutive successful observations by default (`YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS`, valid 1-10). Keep raw observations and active drift immediately visible; suppress only the *Discord notification* until confirmed. No reply or incomplete DNS-SD browsing is not evidence of withdrawal. Preserve pending Discord delivery independently from alert confirmations, and prevent replays when migrating old state. Identity changes (new device, MAC/IP drift) must still alert immediately.
+- Scheduled subprocess logs identify reconciliation, managed orphan cleanup, presentation refresh and network scans independently, including wall-clock durations, outcomes and interrupt handling; never log command arguments or secrets.
 
 - Container destinations `/config`, `/data`, `/backup`, `/compose-source` are fixed. Do not reintroduce path or container-name environment knobs. The image owns `PYTHONPATH`; host bind sources remain configurable. Printed approvals and documentation use `docker exec yggflare`, which works from any directory. Do not use Compose exec commands. If the operator changes `container_name`, they substitute that name in the command.
 - Docker inventory omits services without LAN endpoints and resolves shared-network parents uniquely (Compose service references within project). Never assign all parent ports to every child or infer process ownership from an endpoint scan.
