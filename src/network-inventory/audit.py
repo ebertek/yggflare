@@ -36,6 +36,45 @@ DEFAULT_STATE = Path(
 DEFAULT_INVENTORY = Path(
     os.environ.get("YGGFLARE_STATIC_INVENTORY", "/config/static-hosts.json")
 )
+NMAP_SERVICES = Path("/usr/share/nmap/nmap-services")
+MAX_NMAP_SERVICES_BYTES = 8 * 1024 * 1024
+
+
+def top_tcp_ports(database=NMAP_SERVICES, count=100):
+    """Return a coverage-preserving superset of Nmap's top TCP ports.
+
+    Nmap ranks ports using open-frequency values from its installed services
+    database. Include all ties at the cutoff, so a different tie ordering
+    cannot silently exclude any of the --top-ports selection.
+    """
+    try:
+        if database.stat().st_size > MAX_NMAP_SERVICES_BYTES:
+            raise ValueError("Nmap service database exceeds size bound")
+        lines = database.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise RuntimeError("Nmap services database unavailable") from error
+    ratios = {}
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 3 or fields[0].startswith("#"):
+            continue
+        port, separator, protocol = fields[1].partition("/")
+        if not separator or protocol != "tcp" or not port.isdecimal():
+            continue
+        number = int(port)
+        if not 1 <= number <= 65535:
+            continue
+        try:
+            ratio = float(fields[2])
+        except ValueError as error:
+            raise ValueError("Invalid Nmap TCP service frequency") from error
+        if not 0 <= ratio <= 1:
+            raise ValueError("Invalid Nmap TCP service frequency")
+        ratios[number] = max(ratio, ratios.get(number, 0.0))
+    if not 1 <= count <= len(ratios):
+        raise ValueError("Insufficient Nmap TCP service rankings")
+    cutoff = sorted(ratios.values(), reverse=True)[count - 1]
+    return {port for port, ratio in ratios.items() if ratio >= cutoff}
 
 
 def syn_scan_options(host_timeout="90s"):
@@ -251,7 +290,12 @@ def scan(inventory, timeout, do_dns_sd=True):
             for item in entry["ports"]
             if item.startswith("tcp/")
         }
-        ports = sorted(set(map(int, DEFAULT_PORTS.split(","))) | recorded_tcp)
+        # Preserve the *union* of the earlier focused and top-100 passes.
+        # Nmap cannot combine --top-ports with -p on one invocation, so
+        # derive the frequency-ranked top ports from the installed database.
+        ports = sorted(
+            set(map(int, DEFAULT_PORTS.split(","))) | recorded_tcp | top_tcp_ports()
+        )
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as targets_file:
             targets_file.write("\n".join(targets) + "\n")
             targets_file.flush()
@@ -267,34 +311,13 @@ def scan(inventory, timeout, do_dns_sd=True):
                 "-oX",
                 "-",
             ]
-            with phase(f"IPv4 focused TCP scan ({len(targets)} hosts)"):
+            with phase(
+                f"IPv4 combined TCP scan ({len(targets)} hosts; {len(ports)} ports)"
+            ):
                 checked = parse_nmap_xml(run_command(args, timeout))
-            # A second bounded pass includes popular ports the static inventory
-            # and hand-picked IoT list do not yet know about.
-            with phase(f"IPv4 top-100 TCP scan ({len(targets)} hosts)"):
-                broad = parse_nmap_xml(
-                    run_command(
-                        [
-                            *syn_scan_options(),
-                            "--top-ports",
-                            "100",
-                            "-iL",
-                            targets_file.name,
-                            "-oX",
-                            "-",
-                        ],
-                        timeout,
-                    )
-                )
         for ip in targets:
-            hosts[ip]["ports"] = sorted(
-                set(checked.get(ip, {}).get("ports", []))
-                | set(broad.get(ip, {}).get("ports", []))
-            )
-            hosts[ip]["services"] = {
-                **broad.get(ip, {}).get("services", {}),
-                **checked.get(ip, {}).get("services", {}),
-            }
+            hosts[ip]["ports"] = checked.get(ip, {}).get("ports", [])
+            hosts[ip]["services"] = checked.get(ip, {}).get("services", {})
     advertised = []
     if do_dns_sd:
         try:

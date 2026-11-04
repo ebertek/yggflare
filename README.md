@@ -284,7 +284,7 @@ Supplemental Nmap groups targets by family and interface, with a 90-second batch
 service/OS pass and adds `-O --osscan-limit --max-os-tries 1` to enabled IPv6
 scans. OS matches and Nmap accuracy values appear as estimates in Discovery;
 no match means unknown, not a change of OS. The switch defaults to `false`.
-The normal IPv4 scan remains separate and reports phase timings.
+The normal IPv4 scan uses one combined scoped TCP pass over the fixed/declared TCP ports and the installed Nmap database's top 100 TCP ports; phase timing shows its cost separately from supplemental OS/IPv6 discovery. Missing Nmap rankings fail closed rather than silently dropping port coverage.
 These observations never change static inventory, ownership or DNS.
 
 Add a public IPv6 prefix only when you want it scanned; update it if delegation
