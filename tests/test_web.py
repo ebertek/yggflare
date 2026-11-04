@@ -177,6 +177,54 @@ click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.100','
             self.assertEqual(data["hosts"][0]["status"], "unmanaged")
             self.assertIn("10.4.21.192/27", web.render("inventory", data))
 
+    def test_discovery_shows_confidence_and_escaped_history_without_merging(self):
+        history = {
+            "inventory:server.example": {
+                "label": "server.example",
+                "confidence": "high",
+                "status": "observed",
+                "current_addresses": ["10.4.20.10"],
+                "addresses": ["10.4.20.10", "10.4.20.11"],
+                "name_hints": ["<script>hint</script>.local"],
+                "note": "Correlated with declared inventory",
+                "first_seen": "2026-11-01T10:00:00Z",
+                "last_seen": "2026-11-02T10:00:00Z",
+                "seen_scans": 2,
+            }
+        }
+        data = {
+            "discovery_devices": [],
+            "network_state": {
+                "identity_history": history,
+                "identity_conflicts": [
+                    {
+                        "address": "10.4.20.1",
+                        "macs": ["aa:aa:aa:aa:aa:aa", "bb:bb:bb:bb:bb:bb"],
+                        "reasons": ["Multiple MAC claims"],
+                    }
+                ],
+                "identity_changes": [
+                    {
+                        "observed_at": "2026-11-02T10:00:00Z",
+                        "kind": "new-address",
+                        "identity": "inventory:server.example",
+                        "description": "server.example also observed at 10.4.20.11",
+                    }
+                ],
+                "supplemental": {"records": [], "warnings": []},
+            },
+        }
+        html = web.render("discovery", data)
+        self.assertIn("Evidence-based device identities", html)
+        self.assertIn("server.example", html)
+        self.assertIn("10.4.20.11", html)
+        self.assertIn("Unresolved identity conflicts", html)
+        self.assertIn("&lt;script&gt;hint&lt;/script&gt;", html)
+        self.assertNotIn("<script>hint</script>", html)
+        drift = web.render("drift", data)
+        self.assertIn("Device identity timeline", drift)
+        self.assertIn("new-address", drift)
+
     def test_discovery_groups_ipv4_ipv6_and_multiple_interfaces_by_mac(self):
         data = {
             "hosts": [],
