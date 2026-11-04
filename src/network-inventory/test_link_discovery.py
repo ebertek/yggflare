@@ -209,6 +209,7 @@ class LinkDiscoveryTests(unittest.TestCase):
                 self.assertRaises(ValueError),
             ):
                 discovery.collect(ipaddress.ip_network("10.0.0.0/24"))
+
         def run(args):
             if args[:3] == ["ip", "-j", "neigh"]:
                 return json.dumps(
