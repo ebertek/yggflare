@@ -140,7 +140,9 @@ def render_text(status, *, details=False):
 def main(argv=None, *, path=STATE):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--details", action="store_true", help="Include unresolved identity conflict evidence"
+        "--details",
+        action="store_true",
+        help="Include unresolved identity conflict evidence",
     )
     parser.add_argument(
         "--json", action="store_true", help="Output structured saved-state summary"
