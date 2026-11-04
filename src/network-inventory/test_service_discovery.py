@@ -75,7 +75,10 @@ class ServiceTests(unittest.TestCase):
         ):
             collect(["eth0"], lambda a: True, rows, lambda *a: None, warnings)
         execute.assert_called_once_with(
-            ["nmblookup", "-A", "10.0.0.2"], allow_no_reply=True
+            ["nmblookup", "-A", "10.0.0.2"],
+            allow_no_reply=True,
+            timeout_seconds=3,
+            timeout_is_no_reply=True,
         )
         self.assertEqual(warnings, [])
 
@@ -91,6 +94,46 @@ class ServiceTests(unittest.TestCase):
         invalid = [sys.executable, "-c", "raise SystemExit(2)"]
         with self.assertRaises(ValueError):
             execute(invalid, allow_no_reply=True)
+
+    def test_netbios_ordinary_timeout_returns_no_evidence(self):
+        """A silent UDP/137 device must not produce a collector error."""
+        import sys
+
+        from service_discovery import execute
+
+        silent = [sys.executable, "-c", "import time; time.sleep(1)"]
+        self.assertEqual(
+            execute(
+                silent,
+                allow_no_reply=True,
+                timeout_seconds=0.1,
+                timeout_is_no_reply=True,
+            ),
+            "",
+        )
+        with self.assertRaisesRegex(ValueError, "bounds"):
+            execute(silent, timeout_seconds=0.1)
+
+    def test_netbios_queries_beyond_first_sixteen_observed_addresses(self):
+        """Optional NetBIOS scanning covers all scoped observations."""
+        rows = [{"ip": f"10.0.0.{i}"} for i in range(1, 21)]
+        warnings = []
+        with (
+            patch.dict(
+                "os.environ", {"YGGFLARE_DISCOVERY_NETBIOS": "true"}, clear=True
+            ),
+            patch("service_discovery.shutil.which", return_value="/usr/bin/nmblookup"),
+            patch("service_discovery.execute", return_value="") as execute,
+        ):
+            collect(
+                ["eth0"],
+                lambda address: address in ipaddress.ip_network("10.0.0.0/24"),
+                rows,
+                lambda *args: None,
+                warnings,
+            )
+        self.assertEqual(execute.call_count, 20)
+        self.assertEqual(warnings, [])
 
     def test_snmp_missing_targets_never_queries(self):
         warnings = []
