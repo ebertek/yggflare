@@ -3,8 +3,8 @@
 import datetime as dt
 import json
 import os
-import signal
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -321,4 +321,8 @@ if __name__ == "__main__":
     try:
         main()
     except ShutdownRequested as error:
-        log("info", "controller", f"Shutdown requested: {signal.Signals(error.signum).name}")
+        log(
+            "info",
+            "controller",
+            f"Shutdown requested: {signal.Signals(error.signum).name}",
+        )
