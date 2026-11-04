@@ -40,7 +40,9 @@ def main(argv=None):
     parser.add_argument("argument", nargs="?")
     parser.add_argument("approval", nargs="?")
     parser.add_argument(
-        "--max-operations", type=int, default=0,
+        "--max-operations",
+        type=int,
+        default=0,
         help="Manual Cloudflare plan limit; 0 (default) means all validated actions",
     )
     args = parser.parse_args(argv)
