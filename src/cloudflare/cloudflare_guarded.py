@@ -72,7 +72,7 @@ def check_plan(report, maximum=10):
     if report["blocked"]:
         raise UnsafePlan("The live audit contains blocked operations")
     actions = report["actions"]
-    if len(actions) > maximum:
+    if maximum is not None and len(actions) > maximum:
         raise UnsafePlan(f"Plan has {len(actions)} operations (maximum {maximum})")
     if any(action.get("kind") not in SUPPORTED for action in actions):
         raise UnsafePlan("The plan contains unsupported operations")
@@ -149,6 +149,32 @@ def check_unattended_plan(report, maximum=3, reusable=None):
         if action["kind"] in {"create_access_app", "update_access_policies"}:
             check_auto_access_policies(action["policies"], reusable)
     return actions
+
+
+def unattended_batch(actions, budget):
+    """Select bounded, dependency-ordered host groups from a validated plan.
+
+    Input must already pass check_unattended_plan() for the entire live plan.
+    Grouping preserves each hostname's Access -> Tunnel -> DNS ordering.
+    A group larger than the budget makes bounded partial progress rather than
+    leaving the hostname permanently starved.
+    Budget zero is an explicit opt-in to execute all validated operations.
+    """
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget < 0:
+        raise ValueError("Unattended operation budget must be nonnegative")
+    if budget == 0:
+        return list(actions)
+    grouped = {}
+    for action in actions:
+        grouped.setdefault(action["hostname"], []).append(action)
+    batch = []
+    for hostname in sorted(grouped):
+        group = grouped[hostname]
+        if len(batch) + len(group) <= budget:
+            batch.extend(group)
+        elif not batch:
+            batch.extend(group[:budget])
+    return batch
 
 
 def verify_access(client, account, hostname, wanted):
