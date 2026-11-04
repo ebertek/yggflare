@@ -87,6 +87,8 @@ def render(config, data, now=None):
     supplementary = as_object(scan.get("supplemental"))
     warnings = as_list(supplementary.get("warnings"))
     pending = as_list(scan.get("pending_discord_events"))
+    identities = as_object(scan.get("identity_history"))
+    identity_conflicts = as_list(scan.get("identity_conflicts"))
     view_hosts = as_list(view.get("hosts"))
 
     seen_at = epoch(scan.get("scanned_at"))
@@ -110,6 +112,10 @@ def render(config, data, now=None):
     )
     unknown_count = sum(key.startswith("unknown-device:") for key in reported)
     findings_count = len(reported)
+    observed_identities = [
+        entry for entry in identities.values()
+        if isinstance(entry, dict) and entry.get("status") == "observed"
+    ]
 
     values = [
         (
@@ -146,6 +152,21 @@ def render(config, data, now=None):
             "yggflare_network_dns_sd_services",
             "DNS SD service identities from the most recent available browse",
             len(advertisements),
+        ),
+        (
+            "yggflare_network_observed_identities",
+            "Evidence-based identity keys observed in the latest scan",
+            len(observed_identities),
+        ),
+        (
+            "yggflare_network_high_confidence_identities",
+            "Observed identities corroborated by declared and direct MAC evidence",
+            sum(entry.get("confidence") == "high" for entry in observed_identities),
+        ),
+        (
+            "yggflare_network_identity_conflicts",
+            "Addresses with unresolved competing identity evidence",
+            len(identity_conflicts),
         ),
         (
             "yggflare_network_supplemental_warnings",
