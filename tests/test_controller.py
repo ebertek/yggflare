@@ -3,11 +3,10 @@
 import contextlib
 import io
 import json
-import os
 import signal
 import sys
-import time
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -38,9 +37,10 @@ class ControllerTests(unittest.TestCase):
 
     def test_sigterm_and_sigint_request_shutdown(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
-            with self.subTest(sig=sig), self.assertRaises(
-                controller.ShutdownRequested
-            ) as result:
+            with (
+                self.subTest(sig=sig),
+                self.assertRaises(controller.ShutdownRequested) as result,
+            ):
                 controller.on_shutdown(sig, None)
             self.assertEqual(result.exception.signum, sig)
 
