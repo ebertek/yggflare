@@ -17,6 +17,9 @@ from discovery_passive import lldp_records, sample_p0f
 from discovery_ssdp import ssdp
 
 LIMIT = 1024 * 1024
+NETBIOS_TIMEOUT_SECONDS = 3
+NETBIOS_WORKERS = 8
+SMB_TARGET_LIMIT = 16
 
 
 def enabled(name):
@@ -26,17 +29,28 @@ def enabled(name):
     return value == "true"
 
 
-def execute(args, env=None, *, allow_no_reply=False):
-    """Bound disk output and execution; optionally accept NetBIOS no-reply status."""
+def execute(
+    args,
+    env=None,
+    *,
+    allow_no_reply=False,
+    timeout_seconds=10,
+    timeout_is_no_reply=False,
+):
+    """Bound local command work; NetBIOS silence is an ordinary lack of evidence."""
     with tempfile.TemporaryFile() as output:
         with subprocess.Popen(
             args, stdout=output, stderr=subprocess.DEVNULL, env=env
         ) as process:
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + timeout_seconds
             while process.poll() is None:
-                if time.monotonic() >= deadline or output.tell() > LIMIT:
+                timed_out = time.monotonic() >= deadline
+                exceeded_output = output.tell() > LIMIT
+                if timed_out or exceeded_output:
                     process.kill()
                     process.wait()
+                    if timed_out and not exceeded_output and timeout_is_no_reply:
+                        return ""
                     raise ValueError("Collector exceeded bounds")
                 time.sleep(0.05)
             if output.tell() > LIMIT or (
@@ -57,9 +71,15 @@ def collect(interfaces, allowed, records, add, warnings):
         {
             r["ip"]
             for r in records
-            if r["ip"] and ipaddress.ip_address(r["ip"]).version == 4
-        }
-    )[:16]
+            if r["ip"]
+            and ipaddress.ip_address(r["ip"]).version == 4
+            and allowed(ipaddress.ip_address(r["ip"]))
+        },
+        key=ipaddress.ip_address,
+    )
+    # Keep anonymous SMB attempts separately bounded; NetBIOS node-status
+    # probes are light and should not omit hosts after the first 16.
+    smb_targets = targets[:SMB_TARGET_LIMIT]
 
     def attempt(source, operation):
         try:
@@ -122,7 +142,8 @@ def collect(interfaces, allowed, records, add, warnings):
         warnings.append("NetBIOS: nmblookup executable unavailable")
     elif netbios_enabled:
         print(
-            f"[discovery] START NetBIOS: {len(targets)} targets, 4 workers",
+            f"[discovery] START NetBIOS: {len(targets)} targets, "
+            f"{min(NETBIOS_WORKERS, len(targets))} workers",
             file=sys.stderr,
             flush=True,
         )
@@ -130,13 +151,18 @@ def collect(interfaces, allowed, records, add, warnings):
         def netbios(ip):
             try:
                 # An unanswered NetBIOS query is normal for non-NetBIOS devices.
-                raw = execute(["nmblookup", "-A", ip], allow_no_reply=True)
+                raw = execute(
+                    ["nmblookup", "-A", ip],
+                    allow_no_reply=True,
+                    timeout_seconds=NETBIOS_TIMEOUT_SECONDS,
+                    timeout_is_no_reply=True,
+                )
                 names = re.findall(r"^\s*([^\s<>]+)\s+<[0-9A-Fa-f]{2}>", raw, re.M)
                 return ip, sorted(set(names)), False
             except (OSError, ValueError, subprocess.SubprocessError):
                 return ip, [], True
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=NETBIOS_WORKERS) as executor:
             for index, (ip, names, failed) in enumerate(
                 executor.map(netbios, targets), start=1
             ):
@@ -150,7 +176,7 @@ def collect(interfaces, allowed, records, add, warnings):
                         file=sys.stderr,
                         flush=True,
                     )
-    for ip in targets:
+    for ip in smb_targets:
         if flags["SMB"]:
 
             def smb():
