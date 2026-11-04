@@ -42,7 +42,7 @@ class NetworkAuditTests(unittest.TestCase):
             lines[-1] = "service101 101/tcp 0.900"
             lines.append("udpservice 62078/udp 1.000")
             lines.append("duplicate 1/tcp 0.800")
-            source.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+            source.write_text("\n".join(lines) + "\n", encoding="utf-8")
             result = audit.top_tcp_ports(source)
         self.assertEqual(result, set(range(1, 102)))
         self.assertNotIn(62078, result)
@@ -52,10 +52,10 @@ class NetworkAuditTests(unittest.TestCase):
             source = Path(directory) / "nmap-services"
             with self.assertRaisesRegex(RuntimeError, "unavailable"):
                 audit.top_tcp_ports(source)
-            source.write_text("broken 22/tcp not-a-ratio\\n", encoding="utf-8")
+            source.write_text("broken 22/tcp not-a-ratio\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "frequency"):
                 audit.top_tcp_ports(source)
-            source.write_text("http 80/tcp 0.5\\n", encoding="utf-8")
+            source.write_text("http 80/tcp 0.5\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Insufficient"):
                 audit.top_tcp_ports(source)
 
