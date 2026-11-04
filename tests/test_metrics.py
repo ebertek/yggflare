@@ -50,6 +50,19 @@ class MetricsTests(unittest.TestCase):
                         "advertisements": ["private.example|_http._tcp|80"],
                         "supplemental": {"warnings": ["private error", "timeout"]},
                         "pending_discord_events": ["private alert"],
+                        "identity_history": {
+                            "inventory:private.example": {
+                                "confidence": "high",
+                                "status": "observed",
+                            },
+                            "address:10.4.20.41": {
+                                "confidence": "low",
+                                "status": "not observed",
+                            },
+                        },
+                        "identity_conflicts": [
+                            {"address": "10.4.20.42", "reason": "private conflict"}
+                        ],
                     }
                 )
             )
@@ -72,6 +85,9 @@ class MetricsTests(unittest.TestCase):
             "yggflare_network_unknown_ipv4_hosts 1",
             "yggflare_network_active_findings 2",
             "yggflare_network_dns_sd_services 1",
+            "yggflare_network_observed_identities 1",
+            "yggflare_network_high_confidence_identities 1",
+            "yggflare_network_identity_conflicts 1",
             "yggflare_network_supplemental_warnings 2",
             "yggflare_network_scan_duration_seconds 91.25",
             "yggflare_cloudflare_orphan_hosts 1",

@@ -143,6 +143,27 @@ Docker rows combine Compose and cached Docker metadata: hostnames, LAN IPv4/IPv6
 
 Bounded Nmap scans and light service detection provide observed ports and service evidence; detailed scans exclude detected running Docker container addresses; DNS-SD advertisements remain separate evidence. Shared-address observations do not identify the owning process. Initial discovery establishes a baseline without Discord alerts; later changes can notify Discord. Incomplete DNS-SD runs preserve previous announcements. Network observations never change DNS or inventory declarations.
 
+### Evidence-backed device identity history
+
+Yggflare maintains a bounded, read-only `identity_history` alongside each
+successful network snapshot. Declared inventory identity and corroborated MAC
+evidence can associate a device across IPv4/IPv6 and address changes; a
+previously unknown device with one unambiguous observed MAC is tracked by
+that MAC. An IP-only observation remains explicitly **provisional**. A MAC
+shared across unrelated IPv4 addresses and conflicting address/MAC claims
+are kept separate for review; DNS-SD hostnames and Nmap OS estimates are
+hints, **not identity proofs**.
+
+The **Discovery** page shows confidence (high/medium/low), current/previous
+addresses, first/last observed times, evidence sources and unresolved conflicts.
+**Recent drift** includes a separate bounded identity timeline.
+`not observed` does not mean offline; neighbour-cache sightings and
+partial network evidence never constitute reliable presence monitoring.
+History is bounded to 2,048 tracked keys and 200 change entries and is
+stored only under `/data/network-inventory/state.json` (never in private
+inventory or authoritative Cloudflare DNS). Existing state files are
+automatically enriched on the next successful scan.
+
 HTTP requests read local snapshots only: no scans, Cloudflare calls or mutation endpoints. Docker metadata is cached for 30 seconds. Cloudflare snapshots refresh after controller reconciliation attempts; failed refreshes retain the last complete snapshot and snapshots older than eight hours are marked stale. Credentials and raw environment/inspection data are excluded.
 
 ## Prometheus monitoring

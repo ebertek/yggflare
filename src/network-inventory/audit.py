@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from device_identity import update_history
 from discord_format import render
 from link_discovery import collect as collect_links
 
@@ -530,7 +531,17 @@ def main():
             "records": [],
             "warnings": ["Supplemental discovery configuration is invalid"],
         }
+    identity = update_history(
+        inventory,
+        hosts,
+        supplemental,
+        advertised if dns_sd_complete else [],
+        previous,
+        now,
+        ignored,
+    )
     snapshot = {
+        **identity,
         "supplemental": supplemental,
         "version": 1,
         "initialized": True,

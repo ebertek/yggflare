@@ -27,6 +27,80 @@ def _discovery_ip(value):
         return ""
 
 
+def identity_summary(state, table):
+    """Render uncertainty and longitudinal identity evidence without guessing."""
+    history = state.get("identity_history", {})
+    conflicts = state.get("identity_conflicts", [])
+    if not isinstance(history, dict):
+        history = {}
+    if not isinstance(conflicts, list):
+        conflicts = []
+    if not history and not conflicts:
+        return '<p class="muted">Identity history begins with the next successful scan.</p>'
+    entries = sorted(
+        (item for item in history.values() if isinstance(item, dict)),
+        key=lambda item: (
+            item.get("status") != "observed",
+            item.get("confidence") != "high",
+            str(item.get("label", "")).lower(),
+        ),
+    )
+    rows = [
+        [
+            item.get("label", ""),
+            item.get("confidence", "low"),
+            item.get("status", "not observed"),
+            ", ".join(item.get("current_addresses", [])),
+            ", ".join(item.get("addresses", [])),
+            item.get("first_seen", ""),
+            item.get("last_seen", ""),
+            item.get("seen_scans", 0),
+            ", ".join(item.get("name_hints", [])),
+            item.get("note", ""),
+        ]
+        for item in entries[:256]
+    ]
+    content = (
+        "<h2>Evidence-based device identities</h2>"
+        '<p class="muted">High = declared identity corroborated by observed MAC; '
+        "medium = unique observed MAC association; low = provisional address "
+        "or weak evidence. None proves ownership. A missing observation does "
+        "not mean the device is offline. mDNS names are hints only.</p>"
+    )
+    content += table(
+        [
+            "Identity",
+            "Confidence",
+            "Presence",
+            "Current addresses",
+            "Known addresses",
+            "First seen",
+            "Last seen",
+            "Scans",
+            "DNS-SD hints",
+            "Interpretation",
+        ],
+        rows,
+    )
+    if len(entries) > 256:
+        content += '<p class="muted">Showing the first 256 identities; state history is retained.</p>'
+    if conflicts:
+        content += "<h2>Unresolved identity conflicts</h2>"
+        content += table(
+            ["Address", "Competing MACs", "Reason"],
+            [
+                [
+                    record.get("address", ""),
+                    ", ".join(record.get("macs", [])),
+                    "; ".join(record.get("reasons", [])),
+                ]
+                for record in conflicts[:200]
+                if isinstance(record, dict)
+            ],
+        )
+    return content
+
+
 def discovery_view(data, table):
     """Present related evidence together without declaring device ownership.
 
@@ -123,6 +197,8 @@ def discovery_view(data, table):
     content += "".join(
         f"<p>{escape(str(warning))}</p>" for warning in state.get("warnings", [])
     )
+    content += identity_summary(data.get("network_state", {}), table)
+    content += "<h2>Raw discovery evidence</h2>"
     if not groups:
         return content + "<p>No supplemental observations in the saved scan.</p>"
     for key, group in sorted(
@@ -339,6 +415,24 @@ def drift_view(data, table):
         table(["Type", "Finding"], active)
         if active
         else "<p>No active device or port drift in the saved snapshot.</p>"
+    )
+    identity_changes = state.get("identity_changes", [])
+    content += "<h2>Device identity timeline</h2>" + (
+        table(
+            ["Observed at", "Change", "Identity", "Evidence"],
+            [
+                [
+                    item.get("observed_at", ""),
+                    item.get("kind", ""),
+                    item.get("identity", ""),
+                    item.get("description", ""),
+                ]
+                for item in reversed(identity_changes[-100:])
+                if isinstance(item, dict)
+            ],
+        )
+        if identity_changes
+        else "<p>No device identity changes recorded yet.</p>"
     )
     content += "<h2>Recent observations</h2>" + (
         table(["Observed at", "Type", "Finding", "Context"], recent)
