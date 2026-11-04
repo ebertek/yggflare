@@ -895,8 +895,8 @@ class GuardedTests(unittest.TestCase):
 
     def test_more_than_ten_valid_cloudflare_operations_can_be_batched(self):
         """A large valid plan must make progress rather than stall entirely."""
-        allow = "a" * 32
-        deny = "b" * 32
+        allow = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        deny = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
         policies = [
             {"id": allow, "decision": "allow"},
             {"id": deny, "decision": "deny"},
@@ -948,8 +948,8 @@ class GuardedTests(unittest.TestCase):
                 unattended_batch(actions, invalid)
 
     def test_progressive_reconciliation_rejects_unsafe_late_operation(self):
-        allow = "a" * 32
-        deny = "b" * 32
+        allow = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        deny = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
         policies = [
             {"id": allow, "decision": "allow"},
             {"id": deny, "decision": "deny"},
