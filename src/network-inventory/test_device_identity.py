@@ -48,6 +48,7 @@ class IdentityHistoryTests(unittest.TestCase):
         self.assertEqual(identity["addresses"], ["10.4.20.10", "10.4.20.20"])
         self.assertEqual(identity["current_addresses"], ["10.4.20.20"])
         self.assertEqual(identity["seen_scans"], 2)
+        self.assertEqual(identity["status"], "observed")
         self.assertEqual(identity["first_seen"], "2026-11-01T10:00:00Z")
         self.assertEqual(identity["last_seen"], "2026-11-02T10:00:00Z")
         self.assertTrue(
