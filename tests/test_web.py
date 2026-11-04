@@ -17,6 +17,76 @@ class WebTests(unittest.TestCase):
         self.docker = mock.start()
         self.addCleanup(mock.stop)
 
+    def test_web_bind_requires_numeric_ipv4_or_ipv6(self):
+        for address, family in (
+            ("127.0.0.1", 4),
+            ("0.0.0.0", 4),
+            ("10.4.21.1", 4),
+            ("::1", 6),
+            ("::", 6),
+            ("fd00::12", 6),
+        ):
+            with self.subTest(address=address):
+                self.assertEqual(web.validated_bind_address(address).version, family)
+        for bad in (
+            "yggflare.ygg.nu",
+            "localhost",
+            "",
+            "127.0.0.1:8787",
+            "127.0.0.1\nX-Injected: yes",
+            "fe80::1%eth0",
+        ):
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                ValueError, "numeric IPv4/IPv6"
+            ):
+                web.validated_bind_address(bad)
+
+    def test_web_serve_binds_explicit_ipv4_address(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_WEB_BIND": "10.4.21.1",
+                    "YGGFLARE_WEB_PORT": "8787",
+                    "YGGFLARE_METRICS_ENABLED": "true",
+                },
+                clear=True,
+            ),
+            patch.object(web, "ThreadingHTTPServer") as server,
+            patch.object(web, "IPv6ThreadingHTTPServer") as ipv6,
+        ):
+            web.serve()
+        server.assert_called_once_with(("10.4.21.1", 8787), web.Handler)
+        ipv6.assert_not_called()
+
+    def test_web_serve_uses_ipv6_address_family(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_WEB_BIND": "::1",
+                    "YGGFLARE_WEB_PORT": "8787",
+                    "YGGFLARE_METRICS_ENABLED": "false",
+                },
+                clear=True,
+            ),
+            patch.object(web, "ThreadingHTTPServer") as ipv4,
+            patch.object(web, "IPv6ThreadingHTTPServer") as ipv6,
+        ):
+            web.serve()
+        ipv6.assert_called_once_with(("::1", 8787), web.Handler)
+        ipv4.assert_not_called()
+        self.assertEqual(web.IPv6ThreadingHTTPServer.address_family, web.socket.AF_INET6)
+
+    def test_web_rejects_hostname_before_opening_listener(self):
+        with (
+            patch.dict("os.environ", {"YGGFLARE_WEB_BIND": "not-an-ip"}),
+            patch.object(web, "ThreadingHTTPServer") as server,
+            self.assertRaises(ValueError),
+        ):
+            web.serve()
+        server.assert_not_called()
+
     def test_docker_rows_replace_unmanaged_and_sort_all_surfaces(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
