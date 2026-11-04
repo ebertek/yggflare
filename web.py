@@ -5,6 +5,7 @@ import io
 import ipaddress
 import json
 import os
+import socket
 import sys
 import traceback
 from html import escape
@@ -18,6 +19,24 @@ from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
 from metrics import render as render_metrics
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
+
+class IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+    """HTTPServer defaults to AF_INET even for IPv6 bind addresses."""
+
+    address_family = socket.AF_INET6
+
+
+def validated_bind_address(value):
+    """Accept numeric local bind addresses, never DNS names or hostnames."""
+    if not isinstance(value, str) or "%" in value or len(value) > 45:
+        raise ValueError("YGGFLARE_WEB_BIND must be a numeric IPv4/IPv6 address")
+    try:
+        return ipaddress.ip_address(value)
+    except ValueError as error:
+        raise ValueError(
+            "YGGFLARE_WEB_BIND must be a numeric IPv4/IPv6 address"
+        ) from error
+
 
 CONFIG = Path("/config")
 DATA = Path("/data")
@@ -504,9 +523,11 @@ def serve():
     if metrics_enabled not in ("true", "false"):
         raise ValueError("YGGFLARE_METRICS_ENABLED must be true or false")
     host = os.environ.get("YGGFLARE_WEB_BIND", "127.0.0.1")
-    if host not in ("127.0.0.1", "::1", "0.0.0.0"):
-        raise ValueError("Unsupported web bind address")
-    with ThreadingHTTPServer((host, port), Handler) as server:
+    address = validated_bind_address(host)
+    server_type = (
+        IPv6ThreadingHTTPServer if address.version == 6 else ThreadingHTTPServer
+    )
+    with server_type((str(address), port), Handler) as server:
         server.serve_forever()
 
 
