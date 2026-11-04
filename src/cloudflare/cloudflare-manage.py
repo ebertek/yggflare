@@ -205,9 +205,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
                 reusable=client.list_policies(context["account"]),
             )
             try:
-                budget = int(
-                    os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE", "3")
-                )
+                budget = int(os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE", "3"))
             except ValueError as error:
                 raise ValueError("Invalid Cloudflare auto batch size") from error
             batch = unattended_batch(safe, budget)
