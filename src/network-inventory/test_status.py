@@ -57,7 +57,9 @@ class SavedStatusTests(unittest.TestCase):
         message = output.getvalue()
         self.assertIn("no scan performed", message)
         self.assertIn("IPv4 hosts: 2 | DNS-SD services: 1", message)
-        self.assertIn("Device identities: 2 tracked, 1 observed, 1 high confidence", message)
+        self.assertIn(
+            "Device identities: 2 tracked, 1 observed, 1 high confidence", message
+        )
         self.assertIn("Identity conflicts: 1", message)
         self.assertIn("Pending confirmations: 1", message)
         self.assertIn("printer.local|_ipp._tcp|631", message)
@@ -100,7 +102,12 @@ class SavedStatusTests(unittest.TestCase):
             self.assertEqual(status.main([], path=self.path), 2)
         self.assertIn("No saved network scan", errors.getvalue())
 
-        for bad in ("not-json", "[]", '{"initialized": false}', '{"initialized": true, "hosts": []}'):
+        for bad in (
+            "not-json",
+            "[]",
+            '{"initialized": false}',
+            '{"initialized": true, "hosts": []}',
+        ):
             with self.subTest(state=bad):
                 self.path.write_text(bad, encoding="utf-8")
                 with contextlib.redirect_stderr(io.StringIO()):
