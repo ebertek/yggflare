@@ -20,6 +20,7 @@ from inventory_view import decorate, diff_view
 from metrics import render as render_metrics
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
 
+
 class IPv6ThreadingHTTPServer(ThreadingHTTPServer):
     """HTTPServer defaults to AF_INET even for IPv6 bind addresses."""
 
