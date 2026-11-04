@@ -190,12 +190,7 @@ class LinkDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(batches[0][-64:]), 64)
         self.assertEqual(len(batches[1][-26:]), 26)
         self.assertEqual(
-            {
-                ip
-                for batch in batches
-                for ip in batch
-                if ip.startswith("10.0.0.")
-            },
+            {ip for batch in batches for ip in batch if ip.startswith("10.0.0.")},
             {f"10.0.0.{i}" for i in range(1, 91)},
         )
         self.assertFalse(any("limited" in item for item in result["warnings"]))
