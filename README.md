@@ -191,7 +191,7 @@ where it is not automatically synchronized from the Compose source.
 
 Compose Traefik Host rules, `cf.access: "true"` and ordered `cf.access.policies` labels describe desired Access/Tunnel services. Static inventory supplies internal A records and aliases. Watchers trigger the same guarded reconciliation as scheduled audits; they do not trigger LAN scans or bypass write opt-ins.
 
-Run an audit and review a bounded plan before applying:
+Run an audit and review the complete, fingerprint-bound plan before applying:
 
 ```sh
 docker exec yggflare yggflare cloudflare audit
@@ -200,7 +200,25 @@ docker exec yggflare yggflare cloudflare plan --max-operations 1
 docker exec yggflare yggflare cloudflare apply <approval-fingerprint> --max-operations 1
 ```
 
-Use the actual fingerprint printed by the plan. Apply rechecks live state and rejects a changed plan; manual approval works with auto-apply disabled. `preflight` validates live templates without writes.
+Use the actual fingerprint printed by the plan. By default a manual plan
+includes **all** validated operations (`--max-operations 0`); the example
+above deliberately limits both review and apply to one operation. You can set
+any positive manual limit for a smaller approved plan. Apply rechecks live state
+and rejects a changed plan; manual approval works with auto-apply disabled.
+`preflight` validates live templates without writes.
+
+Automatic reconciliation never rejects the *entire* valid plan just because
+it has more than ten operations. It first validates every proposed action,
+including all protected Access policy decisions, conflicts and duplicates.
+It then selects dependency-ordered hostname groups for a progressive batch,
+always maintaining **Access → Tunnel route → DNS**. Its default is three
+operations per reconciliation cycle, controlled by
+`YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE`; set this to `0` only if you
+intentionally authorize **every validated addition/update** in one cycle.
+For a very small batch, a hostname's remaining protected actions resume in
+future reconciliations. This setting never permits bulk deletion or creates
+new Cloudflare Tunnel objects; it adds ingress routes to the configured Tunnel.
+Each write still validates fresh live state, identities and policies.
 
 Ownership is recorded privately in `/data/managed-hosts.json`. A verified Yggflare-created service is recorded automatically; existing resources need an explicit claim while still declared and matching live Access policies, DNS and ingress:
 
@@ -223,9 +241,23 @@ Automatic retirement instead requires all three settings in the container enviro
 YGGFLARE_CLOUDFLARE_AUTO_APPLY: "true"
 YGGFLARE_CLOUDFLARE_AUTO_CLEANUP: "true"
 YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS: "24"
+YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE: "3"
+YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE: "1"
 ```
 
-Cleanup validates ownership, resource identities, scope and current Compose absence, then removes **external DNS → Tunnel route → Access application**. Automatic cleanup processes at most one orphan per successful cycle after the grace period; reappearance or observation gaps over eight hours reset the timer. Missing ownership/history never permits deletion. Partial failures retain ownership for recovery; successful automatic retirement can notify Discord.
+Cleanup validates ownership, resource identities, scope and current Compose
+absence, then removes **external DNS → Tunnel route → Access application**.
+By default automatic cleanup retires one verified orphan per cycle after the
+grace period. `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE` can raise that
+budget, while `0` explicitly opts into retiring **all** eligible owned
+orphans during a cycle. Each hostname is independently reviewed, fingerprinted
+and revalidated against live state; a failure stops further retirements.
+Bulk retirement has a much larger deletion blast radius than ordinary
+reconciliation: leave the default unless you have separately monitored
+desired-state accuracy and recovery.
+Reappearance or observation gaps over eight hours reset the timer. Missing
+ownership/history never permits deletion. Partial failures retain ownership
+for recovery; successful automatic retirement can notify Discord.
 
 ## Diagnostics and recovery
 
