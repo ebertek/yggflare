@@ -36,8 +36,9 @@ class WebTests(unittest.TestCase):
             "127.0.0.1\nX-Injected: yes",
             "fe80::1%eth0",
         ):
-            with self.subTest(bad=bad), self.assertRaisesRegex(
-                ValueError, "numeric IPv4/IPv6"
+            with (
+                self.subTest(bad=bad),
+                self.assertRaisesRegex(ValueError, "numeric IPv4/IPv6"),
             ):
                 web.validated_bind_address(bad)
 
@@ -76,7 +77,9 @@ class WebTests(unittest.TestCase):
             web.serve()
         ipv6.assert_called_once_with(("::1", 8787), web.Handler)
         ipv4.assert_not_called()
-        self.assertEqual(web.IPv6ThreadingHTTPServer.address_family, web.socket.AF_INET6)
+        self.assertEqual(
+            web.IPv6ThreadingHTTPServer.address_family, web.socket.AF_INET6
+        )
 
     def test_web_rejects_hostname_before_opening_listener(self):
         with (
