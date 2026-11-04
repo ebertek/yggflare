@@ -282,7 +282,10 @@ class NetworkAuditTests(unittest.TestCase):
                 patch("sys.argv", args),
                 patch.dict(
                     "os.environ",
-                    {"YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE": str(webhook)},
+                    {
+                        "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE": str(webhook),
+                        "YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS": "1",
+                    },
                 ),
                 patch.object(audit, "notify_discord") as send,
             ):
@@ -290,6 +293,8 @@ class NetworkAuditTests(unittest.TestCase):
                 send.assert_not_called()
                 state = json.loads((root / "state.json").read_text())
                 state["reported"] = {}  # Trigger a new observation.
+                state["alert_state"]["port_notified"] = []
+                state["alert_state"]["port_counts"] = {}
                 (root / "state.json").write_text(json.dumps(state))
                 send.side_effect = RuntimeError("Discord webhook rejected: HTTP 400")
                 audit.main()
@@ -343,8 +348,10 @@ class NetworkAuditTests(unittest.TestCase):
                 "--discovery-xml",
                 str(source),
             ]
+            immediate = {"YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS": "1"}
             with (
                 patch("sys.argv", args),
+                patch.dict("os.environ", immediate),
                 patch.object(audit, "notify_discord") as notify,
             ):
                 audit.main()
@@ -353,6 +360,8 @@ class NetworkAuditTests(unittest.TestCase):
                 notify.assert_not_called()
                 state["recent_events"] = state["recent_events"] * 201
                 state["reported"] = {}
+                state["alert_state"]["port_notified"] = []
+                state["alert_state"]["port_counts"] = {}
                 (root / "state.json").write_text(json.dumps(state))
                 audit.main()
                 updated = json.loads((root / "state.json").read_text())

@@ -89,6 +89,43 @@ class ControllerTests(unittest.TestCase):
                 controller.version_string(), "Yggflare dev (revision unknown)"
             )
 
+    def test_scheduled_jobs_have_distinct_log_labels_and_durations(self):
+        cases = {
+            "/app/cloudflare/cloudflare-manage.py": (
+                "cloudflare",
+                "Cloudflare reconciliation",
+            ),
+            "/app/cloudflare/cloudflare-auto-cleanup.py": (
+                "cloudflare",
+                "Managed orphan cleanup",
+            ),
+            "/app/cloudflare/cloudflare-live.py": (
+                "cloudflare",
+                "Cloudflare presentation refresh",
+            ),
+            "/app/network-inventory/audit.py": (
+                "network",
+                "Network inventory scan",
+            ),
+        }
+        for script, (component, label) in cases.items():
+            self.assertEqual(controller.job_label(script), label)
+            with (
+                self.subTest(script=script),
+                patch.object(controller, "log") as log,
+                patch.object(controller.subprocess, "Popen") as process,
+            ):
+                child = process.return_value.__enter__.return_value
+                child.stdout = ["output\n"]
+                child.wait.return_value = 0
+                self.assertEqual(controller.run([sys.executable, script]), 0)
+                started_log = log.call_args_list[0].args
+                self.assertEqual(
+                    started_log[:3], ("info", component, label + " started")
+                )
+                self.assertIn(label + " finished in ", log.call_args_list[-1].args[2])
+                self.assertEqual(log.call_args_list[-1].kwargs["exit_code"], 0)
+
     def test_sigterm_and_sigint_request_shutdown(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
             with (
