@@ -365,7 +365,7 @@ def apply_actions(
     if unattended:
         check_unattended_plan(
             report,
-            maximum=min(3, maximum),
+            maximum=maximum,
             reusable=client.list_policies(context["account"]),
         )
     # Preflight all Tunnel shapes before any write. This avoids creating
