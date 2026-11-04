@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from alert_policy import confirmation_scans, confirmed_alerts
 from discord_format import render
 from link_discovery import collect as collect_links
 
@@ -507,6 +508,15 @@ def main():
     now = datetime.now(UTC).isoformat()
     # First run is a reviewable baseline, but will not generate Discord spam.
     bootstrap = not previous.get("initialized")
+    events, alert_state, pending_confirmation = confirmed_alerts(
+        events,
+        reported,
+        advertisements,
+        previous,
+        dns_sd_complete=dns_sd_complete,
+        baseline=bootstrap,
+        required=confirmation_scans(),
+    )
     prior_seen = {
         **{ip: previous.get("scanned_at", "") for ip in previous.get("hosts", {})},
         **previous.get("last_seen", {}),
@@ -532,6 +542,8 @@ def main():
         }
     snapshot = {
         "supplemental": supplemental,
+        "alert_state": alert_state,
+        "alert_pending_confirmations": pending_confirmation,
         "version": 1,
         "initialized": True,
         "scanned_at": now,
@@ -616,7 +628,11 @@ def main():
                 "WARNING: Discord delivery deferred: transport or secret error",
                 file=sys.stderr,
             )
-    print(f"New observations: {len(events)}; inventory and Cloudflare unchanged.")
+    print(
+        f"New confirmed findings: {len(events)}; "
+        f"{len(pending_confirmation)} awaiting confirmation; "
+        "inventory and Cloudflare unchanged."
+    )
 
 
 if __name__ == "__main__":
