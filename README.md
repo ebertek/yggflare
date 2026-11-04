@@ -261,6 +261,19 @@ for recovery; successful automatic retirement can notify Discord.
 
 ## Diagnostics and recovery
 
+At startup, Yggflare prints an identity record before beginning any scheduled
+work, for example `Yggflare main (revision 03ee8b916030)`. The version is
+the release tag (`vMAJOR.MINOR.PATCH`) or `main` for development images;
+the revision is derived from the Git commit used to publish the image.
+JSON logs include the **full 40-character revision** in a `startup` record.
+Local images built without metadata print `dev (revision unknown)` rather than
+guessing the running source. The same value is available without Docker
+inspection or Cloudflare access:
+
+```sh
+docker exec yggflare yggflare --version
+```
+
 ```sh
 docker logs -f yggflare
 docker inspect yggflare --format '{{.State.Health.Status}}'
