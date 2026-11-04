@@ -919,9 +919,7 @@ class GuardedTests(unittest.TestCase):
         large = report(*actions)
         with self.assertRaisesRegex(UnsafePlan, "maximum 10"):
             check_plan(large)
-        validated = check_unattended_plan(
-            large, maximum=None, reusable=policies
-        )
+        validated = check_unattended_plan(large, maximum=None, reusable=policies)
         self.assertEqual(len(validated), 18)
         first = unattended_batch(validated, 3)
         self.assertEqual(
