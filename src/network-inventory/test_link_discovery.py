@@ -129,7 +129,7 @@ class LinkDiscoveryTests(unittest.TestCase):
         )
 
     def test_cap_counts_unique_ips_not_address_interface_pairs(self):
-        """Forty hosts seen twice should not consume 80 of 64 probe slots."""
+        """Forty hosts seen twice should not be scanned twice."""
         calls = []
 
         def run(args):
@@ -159,6 +159,80 @@ class LinkDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(nmap[0][-40:]), 40)
         self.assertEqual(len(set(nmap[0][-40:])), 40)
         self.assertFalse(any("limited" in w for w in result["warnings"]))
+
+    def test_more_than_sixty_four_hosts_are_scanned_in_bounded_batches(self):
+        """Capacity is a per-Nmap-process batch, not a discovery cutoff."""
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return json.dumps(
+                    [
+                        {"dst": f"10.0.0.{i}", "state": ["REACHABLE"]}
+                        for i in range(1, 91)
+                    ]
+                )
+            return "<nmaprun/>" if args[0] == "nmap" else "[]"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_OS_DETECTION": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
+
+        batches = [call for call in calls if call[0] == "nmap"]
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(len(batches[0][-64:]), 64)
+        self.assertEqual(len(batches[1][-26:]), 26)
+        self.assertEqual(
+            {ip for batch in batches for ip in batch[batch.index("-O") + 4 :]},
+            {f"10.0.0.{i}" for i in range(1, 91)},
+        )
+        self.assertFalse(any("limited" in item for item in result["warnings"]))
+
+    def test_discovery_budget_is_configurable_and_checked(self):
+        for value in ("0", "4097", "garbage"):
+            with (
+                patch.dict(
+                    "os.environ",
+                    {
+                        "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                        "YGGFLARE_DISCOVERY_MAX_TARGETS": value,
+                    },
+                    clear=True,
+                ),
+                self.assertRaises(ValueError),
+            ):
+                discovery.collect(ipaddress.ip_network("10.0.0.0/24"))
+        def run(args):
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return json.dumps(
+                    [
+                        {"dst": f"10.0.0.{i}", "state": ["REACHABLE"]}
+                        for i in range(1, 6)
+                    ]
+                )
+            return "<nmaprun/>" if args[0] == "nmap" else "[]"
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_OS_DETECTION": "true",
+                "YGGFLARE_DISCOVERY_MAX_TARGETS": "3",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
+        self.assertIn(
+            "IPv4 probe targets limited to 3 unique addresses",
+            result["warnings"],
+        )
 
     def test_missing_configuration_is_disabled(self):
         with patch.dict("os.environ", {}, clear=True):
