@@ -19,6 +19,9 @@ def main(argv=None):
     """Run a Cloudflare operation using the controller's isolated input snapshot."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--version", action="version", version=controller.version_string()
+    )
+    parser.add_argument(
         "component", choices=("cloudflare", "doctor", "backup", "network")
     )
     parser.add_argument(
