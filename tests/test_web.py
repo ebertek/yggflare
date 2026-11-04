@@ -177,6 +177,21 @@ click();assert.deepEqual(current.map(r=>r.cells[0].textContent),['10.4.21.100','
             self.assertEqual(data["hosts"][0]["status"], "unmanaged")
             self.assertIn("10.4.21.192/27", web.render("inventory", data))
 
+    def test_drift_shows_pending_confirmations_without_escaping_gaps(self):
+        data = {
+            "network_state": {
+                "reported": {},
+                "recent_events": [],
+                "alert_pending_confirmations": [
+                    "NEW DNS-SD <untrusted>.local|_http._tcp|8080 (1/2 scans)"
+                ],
+            }
+        }
+        html = web.render("drift", data)
+        self.assertIn("Awaiting repeat observation", html)
+        self.assertIn("&lt;untrusted&gt;.local", html)
+        self.assertNotIn("<untrusted>.local", html)
+
     def test_discovery_groups_ipv4_ipv6_and_multiple_interfaces_by_mac(self):
         data = {
             "hosts": [],
