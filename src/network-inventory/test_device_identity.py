@@ -52,8 +52,7 @@ class IdentityHistoryTests(unittest.TestCase):
         self.assertEqual(identity["last_seen"], "2026-11-02T10:00:00Z")
         self.assertTrue(
             any(
-                item["kind"] == "new-address"
-                and "10.4.20.20" in item["description"]
+                item["kind"] == "new-address" and "10.4.20.20" in item["description"]
                 for item in second["identity_changes"]
             )
         )
@@ -150,7 +149,10 @@ class IdentityHistoryTests(unittest.TestCase):
             {"address:10.4.20.5", "address:10.4.20.6"},
         )
         self.assertTrue(
-            all(entry["confidence"] == "low" for entry in result["identity_history"].values())
+            all(
+                entry["confidence"] == "low"
+                for entry in result["identity_history"].values()
+            )
         )
 
     def test_not_observed_is_not_offline_and_history_is_retained(self):
