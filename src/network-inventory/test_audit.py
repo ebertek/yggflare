@@ -348,11 +348,10 @@ class NetworkAuditTests(unittest.TestCase):
                 "--discovery-xml",
                 str(source),
             ]
+            immediate = {"YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS": "1"}
             with (
                 patch("sys.argv", args),
-                patch.dict(
-                    "os.environ", {"YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS": "1"}
-                ),
+                patch.dict("os.environ", immediate),
                 patch.object(audit, "notify_discord") as notify,
             ):
                 audit.main()
