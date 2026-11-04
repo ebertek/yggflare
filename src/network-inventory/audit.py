@@ -20,8 +20,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from device_identity import update_history
 from alert_policy import confirmation_scans, confirmed_alerts
+from device_identity import update_history
 from discord_format import render
 from link_discovery import collect as collect_links
 
