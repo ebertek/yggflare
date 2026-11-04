@@ -3,7 +3,10 @@
 import contextlib
 import io
 import json
+import os
+import signal
 import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,6 +35,58 @@ class ControllerTests(unittest.TestCase):
             line = output.getvalue()
             self.assertIn("WARNING [cloudflare] Drift detected", line)
             self.assertRegex(line, r"^\d{4}-\d{2}-\d{2}T.*Z ")
+
+    def test_sigterm_and_sigint_request_shutdown(self):
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            with self.subTest(sig=sig), self.assertRaises(
+                controller.ShutdownRequested
+            ) as result:
+                controller.on_shutdown(sig, None)
+            self.assertEqual(result.exception.signum, sig)
+
+    def test_sigterm_ends_running_job_without_waiting_for_compose_timeout(self):
+        """Exercise the real signal handler, subprocess group and TERM cleanup."""
+        script = (
+            "import os,signal,time; "
+            "print('ready', flush=True); "
+            "os.kill(os.getppid(), signal.SIGTERM); "
+            "time.sleep(30)"
+        )
+        previous = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, controller.on_shutdown)
+        start = time.monotonic()
+        try:
+            with (
+                patch.object(controller, "log"),
+                self.assertRaises(controller.ShutdownRequested),
+            ):
+                controller.run([sys.executable, "-c", script])
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+        self.assertLess(time.monotonic() - start, 5)
+
+    def test_shutdown_escalates_if_active_child_ignores_term(self):
+        """An uncooperative job must never exhaust the 120-second stop grace."""
+        script = (
+            "import os,signal,time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print('ready', flush=True); "
+            "os.kill(os.getppid(), signal.SIGTERM); "
+            "time.sleep(30)"
+        )
+        previous = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, controller.on_shutdown)
+        start = time.monotonic()
+        try:
+            with (
+                patch.object(controller, "log"),
+                patch.object(controller, "SHUTDOWN_GRACE_SECONDS", 0.2),
+                self.assertRaises(controller.ShutdownRequested),
+            ):
+                controller.run([sys.executable, "-c", script])
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+        self.assertLess(time.monotonic() - start, 5)
 
     def test_subprocess_failure_is_reported(self):
         with patch.object(controller, "log") as log:
