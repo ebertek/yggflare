@@ -37,6 +37,14 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["--max-operations", "1"])
         self.assertIn("--root", command)
 
+    def test_large_or_unbounded_reviewed_plan_is_supported(self):
+        _, default_plan = self.invoke(["cloudflare", "plan"])
+        self.assertEqual(default_plan[-2:], ["--max-operations", "0"])
+        _, reviewed_plan = self.invoke(
+            ["cloudflare", "plan", "--max-operations", "500"]
+        )
+        self.assertEqual(reviewed_plan[-2:], ["--max-operations", "500"])
+
     def test_apply_preserves_approval_and_limit(self):
         token = "da8fce91d8119265"
         result, command = self.invoke(
@@ -102,7 +110,7 @@ class CommandTests(unittest.TestCase):
         for args in (
             ["cloudflare", "apply"],
             ["cloudflare", "apply", "not-a-fingerprint"],
-            ["cloudflare", "plan", "--max-operations", "0"],
+            ["cloudflare", "plan", "--max-operations", "-1"],
             ["cloudflare", "plan", "unexpected"],
         ):
             with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()):
