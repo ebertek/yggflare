@@ -61,6 +61,12 @@ def confirmed_alerts(
     ):
         raise ValueError("Invalid saved alert confirmation fields")
     previously_enabled = "alert_state" in previous
+    if previous.get("initialized") and not previously_enabled:
+        # Do this even if this browse fails: legacy DNS-SD announcements
+        # must not replay as new services after an unavailable Avahi cycle.
+        prev_dns_notified = [
+            dns_identity(item) for item in previous.get("advertisements", [])
+        ]
     active_ports = {
         key: message for key, message in reported.items() if key.startswith("new-port:")
     }
@@ -97,10 +103,7 @@ def confirmed_alerts(
         dns_notified = set(prev_dns_notified) & set(services)
         if baseline:
             dns_notified.update(services)
-        elif previous.get("initialized") and not previously_enabled:
-            dns_notified.update(
-                dns_identity(item) for item in previous.get("advertisements", [])
-            )
+
         for key, announcement in sorted(services.items()):
             if dns_counts[key] >= required and key not in dns_notified:
                 notifications.append("NEW DNS-SD " + announcement)
