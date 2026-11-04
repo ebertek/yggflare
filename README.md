@@ -1,10 +1,14 @@
 # Yggflare
 
-Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and DNS**. It reads Docker Compose declarations and private device inventories to detect drift and, when explicitly enabled, reconcile managed resources.
+Yggflare is a self-hosted controller for **Cloudflare Access, Tunnel ingress and
+DNS**. It reads Docker Compose declarations and private device inventories to detect
+drift and, when explicitly enabled, reconcile managed resources.
 
-It also provides vendor-neutral LAN discovery, a read-only inventory UI, Discord alerts, Prometheus metrics and local backups.
+It also provides vendor-neutral LAN discovery, a read-only inventory UI, Discord
+alerts, Prometheus metrics and local backups.
 
-**Default posture:** Cloudflare writes, orphan deletion and the web listener are disabled. Discovery never changes authoritative DNS or inventory files.
+**Default posture:** Cloudflare writes, orphan deletion and the web listener are
+disabled. Discovery never changes authoritative DNS or inventory files.
 
 ## Quick start
 
@@ -15,11 +19,13 @@ It also provides vendor-neutral LAN discovery, a read-only inventory UI, Discord
 - Permission to run Nmap SYN scans.
 - Private storage for configuration, state, backups and API credentials.
 
-**Security:** Docker socket access is effectively host-root access, even when mounted read-only. Run Yggflare only on a trusted host.
+**Security:** Docker socket access is effectively host-root access, even when mounted
+read-only. Run Yggflare only on a trusted host.
 
 ### 1. Configure your host
 
-Use [compose.yaml](compose.yaml) and provide these values through its environment (for example, a local `.env` file):
+Use [compose.yaml](compose.yaml) and provide these values through its environment (for
+example, a local `.env` file):
 
 | Variable | Example | Purpose |
 |---|---|---|
@@ -43,9 +49,12 @@ The sample Compose file mounts the following paths:
 | `/backup` | Backup archives |
 | `/run/secrets` | Cloudflare token and optional Discord webhook |
 
-Create `config/`, `data/`, `backup/` and `secrets/` inside `YGGFLARE_HOME`. Store the Cloudflare token in `secrets/cloudflare_api_token` and the optional Discord URL in `secrets/network_discord_webhook` (an empty file disables notifications).
+Create `config/` , `data/` , `backup/` and `secrets/` inside `YGGFLARE_HOME` . Store
+the Cloudflare token in `secrets/cloudflare_api_token` and the optional Discord URL in
+`secrets/network_discord_webhook` (an empty file disables notifications).
 
-The token needs read access to the selected Access, Tunnel and DNS resources. Grant edit permissions only if you intend to enable reconciliation.
+The token needs read access to the selected Access, Tunnel and DNS resources. Grant
+edit permissions only if you intend to enable reconciliation.
 
 ### 2. Create an inventory
 
@@ -70,9 +79,13 @@ Save `config/static-hosts.json`:
 }
 ```
 
-The inventory accepts 1–256 active hosts. Addresses must fall within the configured device range, outside the Docker range and outside each /27 allocation's network/broadcast addresses.
+The inventory accepts 1–256 active hosts. Addresses must fall within the configured
+device range, outside the Docker range and outside each /27 allocation's
+network/broadcast addresses.
 
-Optional fields include `observed_macs`, `additional_ipv4`, `interface_macs`, `serial_number` and `purchase_date`. See the [inventory validator](src/cloudflare/cloudflare_static_dns.py) for exact rules.
+Optional fields include `observed_macs` , `additional_ipv4` , `interface_macs` ,
+`serial_number` and `purchase_date` . See the
+[inventory validator](src/cloudflare/cloudflare_static_dns.py) for exact rules.
 
 Other optional files in `/config`:
 
@@ -91,11 +104,14 @@ docker exec yggflare yggflare doctor run
 docker exec yggflare yggflare cloudflare audit
 ```
 
-The commands work from any directory once the container is running. Review the first Cloudflare audit before enabling writes.
+The commands work from any directory once the container is running. Review the first
+Cloudflare audit before enabling writes.
 
 ## Configuration
 
-`YGGFLARE_*` controls application behaviour. `CLOUDFLARE_*` selects Cloudflare credentials and resources. Values exported only to your shell do **not** reach the container unless the Compose `environment:` section forwards them.
+`YGGFLARE_*` controls application behaviour. `CLOUDFLARE_*` selects Cloudflare
+credentials and resources. Values exported only to your shell do **not** reach the
+container unless the Compose `environment:` section forwards them.
 
 | Variable | Default | Function |
 |---|---|---|
@@ -118,11 +134,14 @@ The commands work from any directory once the container is running. Review the f
 | `YGGFLARE_WATCH_DEBOUNCE_SECONDS` | `20` | Wait for writes to settle |
 | `YGGFLARE_WATCH_COOLDOWN_SECONDS` | `60` | Minimum interval between reactive audits |
 
-Application defaults apply even when a setting is omitted. To override a value not forwarded by the supplied Compose file, add it to that service's `environment:`.
+Application defaults apply even when a setting is omitted. To override a value not
+forwarded by the supplied Compose file, add it to that service's `environment:` .
 
 ## Cloudflare reconciliation
 
-Compose Traefik `Host` rules and the `cf.access` / `cf.access.policies` labels describe protected external services. The static inventory describes internal DNS. Yggflare compares these declarations with live Cloudflare resources.
+Compose Traefik `Host` rules and the `cf.access` / `cf.access.policies` labels
+describe protected external services. The static inventory describes internal DNS.
+Yggflare compares these declarations with live Cloudflare resources.
 
 ### Review and apply
 
@@ -133,15 +152,22 @@ docker exec yggflare yggflare cloudflare plan
 docker exec yggflare yggflare cloudflare apply APPROVAL_FINGERPRINT
 ```
 
-Replace `APPROVAL_FINGERPRINT` with the fingerprint printed by `plan`. Apply checks the live state again and rejects a changed plan. Manual approval works with automatic reconciliation disabled.
+Replace `APPROVAL_FINGERPRINT` with the fingerprint printed by `plan` . Apply checks
+the live state again and rejects a changed plan. Manual approval works with automatic
+reconciliation disabled.
 
-Manual plans include all validated actions by default. To constrain an approval, use matching `--max-operations N` values for both `plan` and `apply`.
+Manual plans include all validated actions by default. To constrain an approval, use
+matching `--max-operations N` values for both `plan` and `apply` .
 
-When automatic apply is enabled, Yggflare validates the **complete plan** before executing a batch. New protected hostnames are created in **Access → Tunnel route → DNS** order. Yggflare adds routes to the configured Tunnel; it does not create new Tunnel objects.
+When automatic apply is enabled, Yggflare validates the **complete plan** before
+executing a batch. New protected hostnames are created in **Access → Tunnel route →
+DNS** order. Yggflare adds routes to the configured Tunnel; it does not create new
+Tunnel objects.
 
 ### Ownership and cleanup
 
-Only proven Yggflare-managed resources are eligible for retirement. Existing resources need an explicit claim after verifying the live configuration:
+Only proven Yggflare-managed resources are eligible for retirement. Existing resources
+need an explicit claim after verifying the live configuration:
 
 ```sh
 docker exec yggflare yggflare cloudflare claim host.services.example.net
@@ -154,15 +180,23 @@ docker exec yggflare yggflare cloudflare orphan-plan host.services.example.net
 docker exec yggflare yggflare cloudflare orphan-apply host.services.example.net APPROVAL_FINGERPRINT
 ```
 
-Automatic cleanup requires **both** `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` and `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP=true`. A managed hostname must remain absent for at least the configured grace period. Deletion proceeds **external DNS → Tunnel route → Access app**, with live revalidation at each step.
+Automatic cleanup requires **both** `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` and
+`YGGFLARE_CLOUDFLARE_AUTO_CLEANUP=true` . A managed hostname must remain absent for at
+least the configured grace period. Deletion proceeds **external DNS → Tunnel route →
+Access app**, with live revalidation at each step.
 
-Unmanaged hostnames are never deleted. Leave the cleanup batch size at `1` unless you've independently verified desired-state accuracy and recovery. Setting it to `0` permits bulk retirement.
+Unmanaged hostnames are never deleted. Leave the cleanup batch size at `1` unless
+you've independently verified desired-state accuracy and recovery. Setting it to `0`
+permits bulk retirement.
 
 ## Network discovery and alerts
 
-The daily IPv4 scan checks responsive non-Docker addresses using Nmap's popular ports plus configured and declared TCP ports. Avahi supplies separate DNS-SD service evidence. Scans never change DNS records or device declarations.
+The daily IPv4 scan checks responsive non-Docker addresses using Nmap's popular ports
+plus configured and declared TCP ports. Avahi supplies separate DNS-SD service
+evidence. Scans never change DNS records or device declarations.
 
-Optional ARP, NDP, IPv6 and OS discovery are limited to explicitly configured interfaces and address ranges:
+Optional ARP, NDP, IPv6 and OS discovery are limited to explicitly configured
+interfaces and address ranges:
 
 ```yaml
 YGGFLARE_DISCOVERY_INTERFACES: "eth0,eth1"
@@ -173,23 +207,38 @@ YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
 YGGFLARE_DISCOVERY_OS_DETECTION: "true"
 ```
 
-All four switches default to `false`. IPv6 scanning never sweeps an entire /64. The supplemental target budget defaults to 512 unique addresses per IP family (`YGGFLARE_DISCOVERY_MAX_TARGETS`, 1–4096). Nmap processes targets in batches of at most 64; this batch size is **not** a discovery cutoff.
+All four switches default to `false` . IPv6 scanning never sweeps an entire /64. The
+supplemental target budget defaults to 512 unique addresses per IP family
+(`YGGFLARE_DISCOVERY_MAX_TARGETS`, 1–4096). Nmap processes targets in batches of at
+most 64; this batch size is **not** a discovery cutoff.
 
-Additional SSDP, NetBIOS, LLDP, SMB, SNMP and passive fingerprint sources are described in [Discovery options](docs/discovery.md). Only enable sources appropriate to your network.
+Additional SSDP, NetBIOS, LLDP, SMB, SNMP and passive fingerprint sources are
+described in [Discovery options](docs/discovery.md) . Only enable sources appropriate
+to your network.
 
 ### Identity and history
 
-Yggflare correlates inventory declarations, observed MACs, IPv4/IPv6 addresses and discovery evidence. It retains first/last observed timestamps, address changes and an identity timeline.
+Yggflare correlates inventory declarations, observed MACs, IPv4/IPv6 addresses and
+discovery evidence. It retains first/last observed timestamps, address changes and an
+identity timeline.
 
-Confidence is **high**, **medium** or **low** based on corroborating evidence—not a proof of ownership. IP-only sightings remain provisional. Conflicting MAC claims are presented separately; DNS-SD names and OS guesses are hints, not identity keys.
+Confidence is **high**, **medium** or **low** based on corroborating evidence—not a
+proof of ownership. IP-only sightings remain provisional. Conflicting MAC claims are
+presented separately; DNS-SD names and OS guesses are hints, not identity keys.
 
-A missing observation does **not** prove that a device is offline. Histories are bounded and saved in `/data/network-inventory/state.json`.
+A missing observation does **not** prove that a device is offline. Histories are
+bounded and saved in `/data/network-inventory/state.json` .
 
 ### Notifications
 
-Unknown devices and changed MAC/IP observations notify immediately. Newly open TCP ports and new DNS-SD service identities require **two successful observations** by default; setting `YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS=1` restores immediate reporting.
+Unknown devices and changed MAC/IP observations notify immediately. Newly open TCP
+ports and new DNS-SD service identities require **two successful observations** by
+default; setting `YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS=1` restores immediate
+reporting.
 
-Unconfirmed findings remain visible in the UI. Changing a DNS-SD service's dynamic port does not create a new identity. A failed notification doesn't lose a scan: queued Discord messages are retried later.
+Unconfirmed findings remain visible in the UI. Changing a DNS-SD service's dynamic
+port does not create a new identity. A failed notification doesn't lose a scan: queued
+Discord messages are retried later.
 
 ## Web UI and Prometheus
 
@@ -215,7 +264,9 @@ The read-only UI is available at `http://127.0.0.1:8787/` on the Docker host. It
 | `/cloudflare` | Managed, orphaned and unmanaged resource status |
 | `/api/inventory.json` / `/api/inventory.csv` | Inventory exports |
 
-`/metrics` exposes aggregate Prometheus gauges, scan timestamps and Cloudflare snapshot health. It includes no device labels or credentials and triggers no scans. A basic scrape configuration:
+`/metrics` exposes aggregate Prometheus gauges, scan timestamps and Cloudflare
+snapshot health. It includes no device labels or credentials and triggers no scans. A
+basic scrape configuration:
 
 ```yaml
 - job_name: yggflare
@@ -226,7 +277,10 @@ The read-only UI is available at `http://127.0.0.1:8787/` on the Docker host. It
 
 See the [Grafana dashboard](dashboards/yggflare.json) for an optional import.
 
-**The UI has no built-in authentication.** Restrict direct TCP access with a firewall or loopback binding. If you expose it through a proxy, secure the proxy **and** prevent bypassing it on the LAN. Cloudflare Access on a hostname alone does not protect the listener.
+**The UI has no built-in authentication.** Restrict direct TCP access with a firewall
+or loopback binding. If you expose it through a proxy, secure the proxy **and**
+prevent bypassing it on the LAN. Cloudflare Access on a hostname alone does not
+protect the listener.
 
 ## Scheduling, backups and diagnostics
 
@@ -236,7 +290,8 @@ See the [Grafana dashboard](dashboards/yggflare.json) for an optional import.
 | Network scan | Daily at 05:15 UTC |
 | Backup | Daily at 04:00 UTC; keep 14 snapshots |
 
-Watchers trigger Cloudflare audits, not new LAN scans. The controller logs job names, durations and outcomes, and handles shutdown signals without requiring Docker init.
+Watchers trigger Cloudflare audits, not new LAN scans. The controller logs job names,
+durations and outcomes, and handles shutdown signals without requiring Docker init.
 
 ```sh
 docker logs --tail 100 yggflare
@@ -249,16 +304,25 @@ docker exec yggflare yggflare backup verify ARCHIVE.tar.gz
 docker exec yggflare yggflare backup restore-test ARCHIVE.tar.gz
 ```
 
-`doctor` validates local dependencies and mounted secrets without making Cloudflare changes. `network run` saves observations and may send alerts. `discord-test` sends a deliberate test notification.
+`doctor` validates local dependencies and mounted secrets without making Cloudflare
+changes. `network run` saves observations and may send alerts. `discord-test` sends a
+deliberate test notification.
 
-Backups may contain **plaintext credentials**. Restrict access and retain an off-host copy. `verify` checks an archive without extracting it; `restore-test` extracts into isolated temporary storage without replacing live data.
+Backups may contain **plaintext credentials**. Restrict access and retain an off-host
+copy. `verify` checks an archive without extracting it; `restore-test` extracts into
+isolated temporary storage without replacing live data.
 
 ## Releases and development
 
-The image is `ghcr.io/ebertek/yggflare`. Available tags are `main`, `sha-FULL_COMMIT_SHA` and `vMAJOR.MINOR.PATCH`; no `latest` tag is published. Pin the image by digest in production.
+The image is `ghcr.io/ebertek/yggflare` . Available tags are `main` ,
+`sha-FULL_COMMIT_SHA` and `vMAJOR.MINOR.PATCH` ; no `latest` tag is published. Pin the
+image by digest in production.
 
-Each published image identifies its Git revision in startup logs and through `yggflare --version`. After an update, rerun `doctor` and `cloudflare audit` before enabling writes.
+Each published image identifies its Git revision in startup logs and through
+`yggflare --version` . After an update, rerun `doctor` and `cloudflare audit` before
+enabling writes.
 
-See [AGENTS.md](AGENTS.md) for development and test commands. CI checks Python tests, Ruff, Black and the Docker build.
+See [AGENTS.md](AGENTS.md) for development and test commands. CI checks Python tests,
+Ruff, Black and the Docker build.
 
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
