@@ -36,7 +36,7 @@ def identity_summary(state, table):
     if not isinstance(conflicts, list):
         conflicts = []
     if not history and not conflicts:
-        return "<p class=\"muted\">Identity history begins with the next successful scan.</p>"
+        return '<p class="muted">Identity history begins with the next successful scan.</p>'
     entries = sorted(
         (item for item in history.values() if isinstance(item, dict)),
         key=lambda item: (
@@ -62,21 +62,28 @@ def identity_summary(state, table):
     ]
     content = (
         "<h2>Evidence-based device identities</h2>"
-        "<p class=\"muted\">High = declared identity corroborated by observed MAC; "
+        '<p class="muted">High = declared identity corroborated by observed MAC; '
         "medium = unique observed MAC association; low = provisional address "
         "or weak evidence. None proves ownership. A missing observation does "
         "not mean the device is offline. mDNS names are hints only.</p>"
     )
     content += table(
         [
-            "Identity", "Confidence", "Presence", "Current addresses",
-            "Known addresses", "First seen", "Last seen", "Scans",
-            "DNS-SD hints", "Interpretation",
+            "Identity",
+            "Confidence",
+            "Presence",
+            "Current addresses",
+            "Known addresses",
+            "First seen",
+            "Last seen",
+            "Scans",
+            "DNS-SD hints",
+            "Interpretation",
         ],
         rows,
     )
     if len(entries) > 256:
-        content += "<p class=\"muted\">Showing the first 256 identities; state history is retained.</p>"
+        content += '<p class="muted">Showing the first 256 identities; state history is retained.</p>'
     if conflicts:
         content += "<h2>Unresolved identity conflicts</h2>"
         content += table(
@@ -87,7 +94,8 @@ def identity_summary(state, table):
                     ", ".join(record.get("macs", [])),
                     "; ".join(record.get("reasons", [])),
                 ]
-                for record in conflicts[:200] if isinstance(record, dict)
+                for record in conflicts[:200]
+                if isinstance(record, dict)
             ],
         )
     return content

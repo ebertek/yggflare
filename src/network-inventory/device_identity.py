@@ -9,7 +9,9 @@ import ipaddress
 import re
 from collections import defaultdict
 
-MAC_PATTERN = re.compile(r"(?i)(?<![0-9a-f:])(?:[0-9a-f]{2}:){5}[0-9a-f]{2}(?![0-9a-f:])")
+MAC_PATTERN = re.compile(
+    r"(?i)(?<![0-9a-f:])(?:[0-9a-f]{2}:){5}[0-9a-f]{2}(?![0-9a-f:])"
+)
 LINK_SOURCES = {"ARP reply", "NDP reply", "Neighbor cache"}
 DIRECT_SOURCES = {"ARP reply", "NDP reply", "Nmap IPv4 host"}
 MAX_IDENTITIES = 2048
@@ -201,9 +203,9 @@ def update_history(inventory, hosts, supplemental, advertised, previous, now, ig
         old = prior.get(identity_id, {})
         if not isinstance(old, dict):
             old = {}
-        old_addresses = [
-            ip for ip in old.get("addresses", []) if valid_ip(ip) == ip
-        ][:MAX_ADDRESSES]
+        old_addresses = [ip for ip in old.get("addresses", []) if valid_ip(ip) == ip][
+            :MAX_ADDRESSES
+        ]
         addresses = sorted(
             set(old_addresses) | set(evidence["addresses"]), key=address_key
         )[:MAX_ADDRESSES]
@@ -248,7 +250,8 @@ def update_history(inventory, hosts, supplemental, advertised, previous, now, ig
                     "observed_at": now,
                     "identity": identity_id,
                     "kind": "not-observed",
-                    "description": str(old.get("label", identity_id)) + " not observed in this scan",
+                    "description": str(old.get("label", identity_id))
+                    + " not observed in this scan",
                 }
             )
         history[identity_id] = {**old, "missed_scans": missed, "status": "not observed"}
@@ -259,7 +262,9 @@ def update_history(inventory, hosts, supplemental, advertised, previous, now, ig
                     "observed_at": now,
                     "identity": "conflict:" + conflict["address"],
                     "kind": "conflict",
-                    "description": conflict["address"] + ": " + "; ".join(conflict["reasons"]),
+                    "description": conflict["address"]
+                    + ": "
+                    + "; ".join(conflict["reasons"]),
                 }
             )
     # Never discard entries seen this scan; cap retained stale entries by age.
@@ -270,7 +275,9 @@ def update_history(inventory, hosts, supplemental, advertised, previous, now, ig
             key=lambda item: item[1].get("last_seen", ""),
             reverse=True,
         )
-        history = dict([*active.items(), *stale[: max(0, MAX_IDENTITIES - len(active))]])
+        history = dict(
+            [*active.items(), *stale[: max(0, MAX_IDENTITIES - len(active))]]
+        )
     return {
         "identity_history": history,
         "identity_conflicts": conflicts[:200],
