@@ -27,6 +27,7 @@ The controller is the image's PID 1 by default. It must explicitly handle SIGTER
 | `src/cloudflare/cloudflare_write_api.py` | Narrowly scoped Cloudflare writes; never add unrestricted delete functionality |
 | `src/network-inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
 | `src/network-inventory/device_identity.py` | Vendor-neutral, uncertain MAC/IP identity correlation and bounded history |
+| `src/network-inventory/status.py` | Read-only CLI summary of persisted network findings and identity conflicts |
 | `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
 | `src/network-inventory/alert_policy.py` | Confirm volatile TCP/DNS-SD signals before Discord, preserving immediate identity drift |
 | `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
@@ -78,11 +79,12 @@ docker exec yggflare yggflare cloudflare audit
 docker exec yggflare yggflare cloudflare plan --max-operations 1
 docker exec yggflare yggflare backup verify <archive-name>.tar.gz
 docker exec yggflare yggflare backup restore-test <archive-name>.tar.gz
+docker exec yggflare yggflare network status --details
 docker exec yggflare yggflare network run
 docker exec yggflare yggflare network discord-test
 ```
 
-`network run` updates observation state and may send Discord drift alerts; `discord-test` deliberately sends a message. The other diagnostic/plan operations are designed to be read-only. Never run fingerprint-approved `apply` or `orphan-apply` without assessing the exact live plan and authorization.
+`network status` and `network status --details` only read the saved scan and never trigger scans, notifications or Cloudflare requests. `network run` updates observation state and may send Discord drift alerts; `discord-test` deliberately sends a message. The other diagnostic/plan operations are designed to be read-only. Never run fingerprint-approved `apply` or `orphan-apply` without assessing the exact live plan and authorization.
 
 ## Current roadmap (verify on GitHub)
 

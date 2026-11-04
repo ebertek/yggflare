@@ -38,10 +38,13 @@ def main(argv=None):
             "restore-test",
             "run",
             "discord-test",
+            "status",
         ),
     )
     parser.add_argument("argument", nargs="?")
     parser.add_argument("approval", nargs="?")
+    parser.add_argument("--details", action="store_true")
+    parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--max-operations",
         type=int,
@@ -49,6 +52,20 @@ def main(argv=None):
         help="Manual Cloudflare plan limit; 0 (default) means all validated actions",
     )
     args = parser.parse_args(argv)
+    network_status = args.component == "network" and args.operation == "status"
+    if (args.details or args.json) and not network_status:
+        parser.error("--details and --json require network status")
+    if network_status:
+        if args.argument or args.approval or args.max_operations != 0:
+            parser.error("network status accepts no additional positional arguments")
+        if args.details and args.json:
+            parser.error("--details and --json cannot be combined")
+        command = [sys.executable, "/app/network-inventory/status.py"]
+        if args.details:
+            command.append("--details")
+        if args.json:
+            command.append("--json")
+        return subprocess.run(command, check=False).returncode
     if args.component != "cloudflare":
         if args.component == "doctor" and args.operation == "run":
             return subprocess.run(
