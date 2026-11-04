@@ -13,6 +13,7 @@ from cloudflare_guarded import (
     check_unattended_plan,
     fingerprint,
     preflight_compatibility,
+    unattended_batch,
 )
 from cloudflare_write_api import CloudflareWriter, policy_links
 
@@ -891,6 +892,91 @@ class GuardedTests(unittest.TestCase):
         self.assertEqual(client.events, ["static_create", "static_create"])
         with self.assertRaises(UnsafePlan):
             check_unattended_plan(report(*(safe["actions"] * 2)))
+
+    def test_more_than_ten_valid_cloudflare_operations_can_be_batched(self):
+        """A large valid plan must make progress rather than stall entirely."""
+        allow = "a" * 32
+        deny = "b" * 32
+        policies = [
+            {"id": allow, "decision": "allow"},
+            {"id": deny, "decision": "deny"},
+        ]
+        actions = []
+        for index in range(1, 7):
+            hostname = f"service-{index}.ebi.nu"
+            for kind in (
+                "create_dns_cname",
+                "add_tunnel_ingress",
+                "create_access_app",
+            ):
+                actions.append(
+                    {
+                        "kind": kind,
+                        "hostname": hostname,
+                        "policies": [allow, deny],
+                    }
+                )
+        large = report(*actions)
+        with self.assertRaisesRegex(UnsafePlan, "maximum 10"):
+            check_plan(large)
+        validated = check_unattended_plan(
+            large, maximum=None, reusable=policies
+        )
+        self.assertEqual(len(validated), 18)
+        first = unattended_batch(validated, 3)
+        self.assertEqual(
+            [a["kind"] for a in first],
+            ["create_access_app", "add_tunnel_ingress", "create_dns_cname"],
+        )
+        self.assertEqual({a["hostname"] for a in first}, {"service-1.ebi.nu"})
+        self.assertEqual(len(unattended_batch(validated, 9)), 9)
+        self.assertEqual(len(unattended_batch(validated, 0)), 18)
+        self.assertEqual(len(check_plan(large, maximum=18)), 18)
+
+    def test_progressive_batch_handles_host_larger_than_budget(self):
+        actions = [
+            {
+                "kind": kind,
+                "hostname": "a.ebi.nu",
+            }
+            for kind in ("create_access_app", "add_tunnel_ingress", "create_dns_cname")
+        ]
+        self.assertEqual(
+            [a["kind"] for a in unattended_batch(actions, 2)],
+            ["create_access_app", "add_tunnel_ingress"],
+        )
+        for invalid in (-1, True, "3"):
+            with self.subTest(budget=invalid), self.assertRaises(ValueError):
+                unattended_batch(actions, invalid)
+
+    def test_progressive_reconciliation_rejects_unsafe_late_operation(self):
+        allow = "a" * 32
+        deny = "b" * 32
+        policies = [
+            {"id": allow, "decision": "allow"},
+            {"id": deny, "decision": "deny"},
+        ]
+        actions = [
+            {
+                "kind": "create_access_app",
+                "hostname": f"service-{index}.ebi.nu",
+                "policies": [allow, deny],
+            }
+            for index in range(1, 15)
+        ]
+        actions[-1]["policies"] = [allow]
+        with self.assertRaises(UnsafePlan):
+            check_unattended_plan(
+                report(*actions),
+                maximum=None,
+                reusable=policies,
+            )
+        with self.assertRaises(UnsafePlan):
+            check_unattended_plan(
+                report(*actions[:-1], blocked=[{"reason": "collision"}]),
+                maximum=None,
+                reusable=policies,
+            )
 
     def test_write_api_disallows_unknown_method(self):
         """Refuse DELETE and all unsupported HTTP method names."""
