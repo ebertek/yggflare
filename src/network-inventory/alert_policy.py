@@ -113,9 +113,10 @@ def confirmed_alerts(
         dns_counts = dict(prev_dns_counts)
         dns_notified = set(prev_dns_notified)
 
-    # Newly initialized state is a baseline, never a Discord event.
+    # Preserve the raw initial baseline in observation history; the audit
+    # layer never queues or delivers its baseline events to Discord.
     if baseline:
-        notifications = []
+        notifications = list(events)
         pending = []
     return (
         notifications,
