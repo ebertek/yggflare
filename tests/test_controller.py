@@ -119,8 +119,10 @@ class ControllerTests(unittest.TestCase):
                 child.stdout = ["output\n"]
                 child.wait.return_value = 0
                 self.assertEqual(controller.run([sys.executable, script]), 0)
-                self.assertEqual(log.call_args_list[0].args[0:3],
-                                 ("info", component, label + " started"))
+                started_log = log.call_args_list[0].args
+                self.assertEqual(
+                    started_log[:3], ("info", component, label + " started")
+                )
                 self.assertIn(label + " finished in ", log.call_args_list[-1].args[2])
                 self.assertEqual(log.call_args_list[-1].kwargs["exit_code"], 0)
 
