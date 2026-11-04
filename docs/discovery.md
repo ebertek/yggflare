@@ -42,7 +42,7 @@ No SMB file content is read. Cached target addresses need not still be reachable
 
 Manual `yggflare network run` and scheduled scans report unbuffered phase
 start/end timings to stderr/stdout, with 15-second heartbeats while long-running
-subprocesses are captured. This makes host discovery, focused/top-100 TCP scans,
+subprocesses are captured. This makes host discovery, the combined IPv4 TCP pass,
 DNS-SD and supplemental discovery distinguishable without logging packet data,
 secrets or raw scan output.
 
@@ -63,11 +63,25 @@ missing utilities and timeouts remain warnings. Up to 16 NetBIOS targets are
 queried using at most four concurrent workers. Supplemental observations
 are best-effort, not authoritative DNS changes.
 
-The regular IPv4 scan still makes distinct host-discovery, focused-port/service
-and top-100-port passes. The new phase timings distinguish whether those
-passes or supplemental work dominate a given deployment. Performance depends
-on host reachability and service-response behavior, so no fixed runtime
-guarantee is implied.
+The regular IPv4 scan uses host discovery followed by **one combined TCP
+scan** of responsive, non-Docker targets. Its port list is the union of:
+1. the fixed Yggflare IoT/management port list,
+2. every TCP port declared in the private inventory, and
+3. at least Nmap's top 100 TCP ports as ranked by the installed
+   `/usr/share/nmap/nmap-services` database.
+
+The third component includes frequency ties at the 100th rank so changes in
+tie order cannot silently drop coverage. Yggflare fails closed if the installed
+Nmap services database is missing, malformed, oversized or has too few TCP
+rankings; it does **not** run a reduced-coverage scan that would later be
+mistaken for a complete inventory. The image checks for that database at build
+time. The single scan preserves `-sS`, scoped targets, `-Pn`, `-n`, `-T3`,
+bounded retry/host timeout, and light `-sV` service identification.
+
+The original top-100 pass did not attempt `-sV`; running light version probes
+on newly covered popular ports can cost additional time. The reduction in
+Nmap process startup and repeated SYN probing should be benchmarked on the
+deployed network rather than assumed. No fixed runtime guarantee is implied.
 
 ## LLDP/CDP
 
