@@ -126,14 +126,14 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     parser.add_argument(
         "--max-operations",
         type=int,
-        default=10,
-        help="Maximum operations for an explicitly approved plan (default 10; positive integers allowed)",
+        default=0,
+        help="Manual plan limit: 0 (default) approves the full validated plan",
     )
     args = parser.parse_args()
     if sum((args.preflight, args.apply is not None, args.auto)) > 1:
         raise ValueError("--preflight, --apply and --auto are mutually exclusive")
-    if args.max_operations < 1:
-        raise ValueError("Maximum operations must be positive")
+    if args.max_operations < 0:
+        raise ValueError("Maximum operations must be nonnegative")
     if args.auto:
         require_auto_opt_in()
     root = args.root.expanduser().resolve()
@@ -144,7 +144,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
 
     if args.apply is None and not args.auto:
         report, context, actions, token = plan(
-            client, root, settings, args.max_operations
+            client, root, settings, args.max_operations or None
         )
         if args.preflight:
             details = preflight_compatibility(client, context)
@@ -183,7 +183,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     with os.fdopen(descriptor, "r+") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         report, context, actions, token = plan(
-            client, root, settings, None if args.auto else args.max_operations
+            client, root, settings, None if args.auto else args.max_operations or None
         )
         if args.auto:
             print_static_summary(report)
@@ -195,7 +195,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
                 return 0
             raise UnsafePlan("Refusing apply: no operations remain")
         active_report = report
-        active_maximum = args.max_operations
+        active_maximum = args.max_operations or None
         if args.auto:
             # Validate *all* proposed operations before choosing a batch.
             # Never let a late unsafe policy hide behind the batch boundary.
