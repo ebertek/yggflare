@@ -139,9 +139,21 @@ def log_startup():
     )
 
 
+def job_label(script):
+    """Friendly stable labels without logging command arguments or secrets."""
+    return {
+        "cloudflare-manage.py": "Cloudflare reconciliation",
+        "cloudflare-auto-cleanup.py": "Managed orphan cleanup",
+        "cloudflare-live.py": "Cloudflare presentation refresh",
+        "audit.py": "Network inventory scan",
+    }.get(Path(script).name, "Scheduled job")
+
+
 def run(args, *, env=None):
     component = "cloudflare" if "/cloudflare/" in args[1] else "network"
-    log("info", component, "Cycle started")
+    label = job_label(args[1])
+    started = time.monotonic()
+    log("info", component, f"{label} started")
     with subprocess.Popen(
         args,
         env=env,
@@ -163,11 +175,16 @@ def run(args, *, env=None):
             # Includes the SIGTERM exception. Do not leave subprocesses
             # running or block indefinitely in Popen.__exit__().
             stop_child_group(process)
+            log(
+                "warning",
+                component,
+                f"{label} interrupted after {time.monotonic() - started:.1f}s",
+            )
             raise
     log(
         "info" if exit_code == 0 else "error",
         component,
-        "Cycle finished",
+        f"{label} finished in {time.monotonic() - started:.1f}s",
         exit_code=exit_code,
     )
     if exit_code:
