@@ -45,9 +45,7 @@ class IdentityHistoryTests(unittest.TestCase):
             set(),
         )
         identity = second["identity_history"]["inventory:server.example"]
-        self.assertEqual(
-            identity["addresses"], ["10.4.20.10", "10.4.20.20"]
-        )
+        self.assertEqual(identity["addresses"], ["10.4.20.10", "10.4.20.20"])
         self.assertEqual(identity["current_addresses"], ["10.4.20.20"])
         self.assertEqual(identity["seen_scans"], 2)
         self.assertEqual(identity["first_seen"], "2026-11-01T10:00:00Z")
@@ -152,10 +150,7 @@ class IdentityHistoryTests(unittest.TestCase):
             {"address:10.4.20.5", "address:10.4.20.6"},
         )
         self.assertTrue(
-            all(
-                entry["confidence"] == "low"
-                for entry in result["identity_history"].values()
-            )
+            all(entry["confidence"] == "low" for entry in result["identity_history"].values())
         )
 
     def test_not_observed_is_not_offline_and_history_is_retained(self):
@@ -192,10 +187,8 @@ class IdentityHistoryTests(unittest.TestCase):
             "2026-11-03T10:00:00Z",
             set(),
         )
-        notices = [
-            item for item in third["identity_changes"]
-            if item["kind"] == "not-observed"
-        ]
+        changes = third["identity_changes"]
+        notices = [item for item in changes if item["kind"] == "not-observed"]
         self.assertEqual(len(notices), 1)
 
     def test_ignored_docker_hosts_and_unverified_candidates_do_not_gain_identity(self):
