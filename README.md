@@ -213,7 +213,7 @@ supplemental target budget defaults to 512 unique addresses per IP family
 most 64; this batch size is **not** a discovery cutoff.
 
 Additional SSDP, NetBIOS, LLDP, SMB, SNMP and passive fingerprint sources are
-described in [Discovery options](docs/discovery.md) . Only enable sources appropriate
+described in [Discovery options](docs/discovery.md). Only enable sources appropriate
 to your network.
 
 ### Identity and history
@@ -227,7 +227,7 @@ proof of ownership. IP-only sightings remain provisional. Conflicting MAC claims
 presented separately; DNS-SD names and OS guesses are hints, not identity keys.
 
 A missing observation does **not** prove that a device is offline. Histories are
-bounded and saved in `/data/network-inventory/state.json` .
+bounded and saved in `/data/network-inventory/state.json`.
 
 ### Notifications
 
@@ -251,7 +251,16 @@ YGGFLARE_WEB_BIND: "127.0.0.1"
 YGGFLARE_WEB_PORT: "8787"
 ```
 
-The read-only UI is available at `http://127.0.0.1:8787/` on the Docker host. It includes:
+The read-only UI is available at `http://127.0.0.1:8787/` on the Docker host.
+`YGGFLARE_WEB_BIND` also accepts an explicit local IPv4 or IPv6 address, for example
+`10.4.21.1` on a host-side interface. An unassigned address fails at startup;
+hostnames are rejected. Keep loopback as the default.
+
+An interface-specific bind reduces accidental exposure on other host addresses,
+but **is not authentication or a substitute for firewall rules**. Confirm proxy
+and Prometheus reachability before changing a production listener.
+
+The interface includes:
 
 | Route | View |
 |---|---|
