@@ -26,6 +26,7 @@ The controller is the image's PID 1 by default. It must explicitly handle SIGTER
 | `src/cloudflare/cloudflare-auto-cleanup.py` | Optional grace-period auto retirement; inspect code before enabling |
 | `src/cloudflare/cloudflare_write_api.py` | Narrowly scoped Cloudflare writes; never add unrestricted delete functionality |
 | `src/network-inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
+| `src/network-inventory/device_identity.py` | Vendor-neutral, uncertain MAC/IP identity correlation and bounded history |
 | `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
 | `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
 | `docker_inventory.py` | Sanitized, cached read-only Compose/Docker metadata for the web UI; never a reconciliation input |
@@ -117,7 +118,7 @@ Keep this guide evergreen. Update it when architecture or safety invariants chan
 
 - Existing inventory details (including hostnames, IPs and MACs) remain visible by default in pages and exports. `YGGFLARE_WEB_SHOW_SECRETS` is not implemented; do not use it to mask existing fields. Credentials and raw environment remain excluded.
 - `inventory_view.py` derives review flags and static/observed diffs. Optional `device_class` and boolean `retired` are presentation metadata only: never change DNS/scanning/cleanup semantics based on them. Offline is not retired; unobserved ports are unknown, not closed.
-- Scan state retains first/last-seen timestamps by LAN address. Display them as scan observations, not a live device heartbeat.
+- Scan state retains first/last-seen timestamps by LAN address and a separate bounded `identity_history` keyed only by declared inventory identity, unique MAC evidence, or provisional address observation. Competing MAC claims and shared/proxy MACs must never be silently merged. Preserve confidence labels, provenance, explicit uncertainty, and `not observed != offline`. The `identity_changes` timeline is strictly informational and cannot authorize inventory/DNS changes.
 
 - Container destinations `/config`, `/data`, `/backup`, `/compose-source` are fixed. Do not reintroduce path or container-name environment knobs. The image owns `PYTHONPATH`; host bind sources remain configurable. Printed approvals and documentation use `docker exec yggflare`, which works from any directory. Do not use Compose exec commands. If the operator changes `container_name`, they substitute that name in the command.
 - Docker inventory omits services without LAN endpoints and resolves shared-network parents uniquely (Compose service references within project). Never assign all parent ports to every child or infer process ownership from an endpoint scan.
