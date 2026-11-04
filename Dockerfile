@@ -1,7 +1,11 @@
 FROM docker:29-cli AS docker-cli
 
 FROM python:3.15-slim
+ARG YGGFLARE_BUILD_VERSION=dev
+ARG YGGFLARE_BUILD_REVISION=unknown
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC PYTHONPATH=/app:/app/cloudflare
+ENV YGGFLARE_BUILD_VERSION=${YGGFLARE_BUILD_VERSION} \
+    YGGFLARE_BUILD_REVISION=${YGGFLARE_BUILD_REVISION}
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap arp-scan ndisc6 avahi-utils lldpd p0f smbclient samba-common-bin snmp util-linux iproute2 ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*

@@ -78,6 +78,9 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            YGGFLARE_BUILD_VERSION=${{ github.ref_name }}
+            YGGFLARE_BUILD_REVISION=${{ github.sha }}
           tags: |
             ghcr.io/ebertek/yggflare:sha-${{ github.sha }}
             ${{ (github.ref == 'refs/heads/main' || steps.release_main.outputs.matches == 'true') && 'ghcr.io/ebertek/yggflare:main' || '' }}

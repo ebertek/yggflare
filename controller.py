@@ -3,6 +3,7 @@
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -107,6 +108,35 @@ def log(level, component, message, **fields):
         )
     else:
         print(f"{timestamp} {level.upper():<5} [{component}] {message}", flush=True)
+
+
+def image_identity():
+    """Return safe, immutable image-build metadata or development placeholders."""
+    version = os.environ.get("YGGFLARE_BUILD_VERSION", "dev")
+    revision = os.environ.get("YGGFLARE_BUILD_REVISION", "unknown")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", version):
+        version = "unknown"
+    if not re.fullmatch(r"[a-fA-F0-9]{40}", revision):
+        revision = "unknown"
+    return version, revision.lower()
+
+
+def version_string():
+    """Human-readable identifier for logs and the container CLI."""
+    version, revision = image_identity()
+    return f"Yggflare {version} (revision {revision[:12]})"
+
+
+def log_startup():
+    """Identify the exact running release before starting any scheduled work."""
+    version, revision = image_identity()
+    log(
+        "info",
+        "startup",
+        version_string(),
+        version=version,
+        revision=revision,
+    )
 
 
 def run(args, *, env=None):
@@ -242,6 +272,7 @@ def main():
     # Explicit handlers are required when Python is PID 1 in Docker.
     signal.signal(signal.SIGTERM, on_shutdown)
     signal.signal(signal.SIGINT, on_shutdown)
+    log_startup()
     DATA.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":

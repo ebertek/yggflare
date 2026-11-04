@@ -35,6 +35,60 @@ class ControllerTests(unittest.TestCase):
             self.assertIn("WARNING [cloudflare] Drift detected", line)
             self.assertRegex(line, r"^\d{4}-\d{2}-\d{2}T.*Z ")
 
+    def test_startup_banner_identifies_version_and_full_revision(self):
+        revision = "ab" * 20
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_BUILD_VERSION": "v1.2.3",
+                    "YGGFLARE_BUILD_REVISION": revision,
+                },
+            ),
+            patch.object(controller, "LOG_FORMAT", "text"),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            controller.log_startup()
+        self.assertIn(
+            "INFO  [startup] Yggflare v1.2.3 (revision abababababab)",
+            output.getvalue(),
+        )
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_BUILD_VERSION": "main",
+                    "YGGFLARE_BUILD_REVISION": revision,
+                },
+            ),
+            patch.object(controller, "LOG_FORMAT", "json"),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            controller.log_startup()
+        record = json.loads(output.getvalue())
+        self.assertEqual(record["component"], "startup")
+        self.assertEqual(record["version"], "main")
+        self.assertEqual(record["revision"], revision)
+        self.assertEqual(record["message"], "Yggflare main (revision abababababab)")
+
+    def test_startup_identity_handles_local_build_and_untrusted_metadata(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_BUILD_VERSION": "main\nsecret",
+                "YGGFLARE_BUILD_REVISION": "not-a-git-revision",
+            },
+        ):
+            self.assertEqual(
+                controller.version_string(),
+                "Yggflare unknown (revision unknown)",
+            )
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(
+                controller.version_string(), "Yggflare dev (revision unknown)"
+            )
+
     def test_sigterm_and_sigint_request_shutdown(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
             with (

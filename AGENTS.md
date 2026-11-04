@@ -57,7 +57,7 @@ work around a validation failure. Keep public setup examples host-neutral.
 
 ## Build, test and release
 
-- Image: `ghcr.io/ebertek/yggflare`. `:main` is development; `:vMAJOR.MINOR.PATCH` is stable. Prefer pinning to a digest in Compose so Renovate can update moving tags.
+- Image: `ghcr.io/ebertek/yggflare`. `:main` is development; `:vMAJOR.MINOR.PATCH` is stable. Prefer pinning to a digest in Compose so Renovate can update moving tags. The publish workflow passes `YGGFLARE_BUILD_VERSION` and `YGGFLARE_BUILD_REVISION` as Docker build args; the image exposes them for the early `[startup]` log and `yggflare --version`. Release logs must identify the real source commit; a local build without args deliberately reports `dev/unknown`. Keep the version/revision consistent with image OCI labels and test both text and JSON log modes.
 - Before PR: run `ruff check .`, `black --check .`, and:
   ```bash
   python -m unittest discover -s tests -p 'test_*.py'
