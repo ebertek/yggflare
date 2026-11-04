@@ -84,6 +84,27 @@ class IdentityHistoryTests(unittest.TestCase):
             "medium",
         )
 
+    def test_inventory_without_declared_mac_is_not_automatically_a_conflict(self):
+        inventory = {
+            "10.4.20.2": {
+                "name": "nameless-mac.example",
+                "mac": "",
+                "allowed_macs": set(),
+            }
+        }
+        result = update_history(
+            inventory,
+            {"10.4.20.2": host("02:bb:cc:dd:ee:ff")},
+            {},
+            [],
+            {},
+            "2026-11-01T10:00:00Z",
+            set(),
+        )
+        self.assertEqual(result["identity_conflicts"], [])
+        entry = result["identity_history"]["inventory:nameless-mac.example"]
+        self.assertEqual(entry["confidence"], "medium")
+
     def test_competing_link_macs_are_conflicts_not_silent_merges(self):
         inventory = {
             "10.4.20.1": {
@@ -203,6 +224,7 @@ class IdentityHistoryTests(unittest.TestCase):
         )
         entry = second["identity_history"]["mac:aa:bb:cc:dd:ee:ff"]
         self.assertEqual(entry["status"], "not observed")
+        self.assertEqual(entry["current_addresses"], [])
         self.assertEqual(entry["missed_scans"], 1)
         self.assertEqual(entry["last_seen"], "2026-11-01T10:00:00Z")
         self.assertIn("mac:aa:bb:cc:dd:ee:ff", second["identity_history"])
