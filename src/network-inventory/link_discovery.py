@@ -13,6 +13,11 @@ from datetime import UTC, datetime
 
 from service_discovery import collect as collect_services
 
+DEFAULT_MAX_TARGETS = 512
+HARD_MAX_TARGETS = 4096
+NMAP_BATCH_SIZE = 64
+MAX_SEEDS = 4096
+
 
 def collect(network, run=None, seeds=()):
     """Explicit interfaces and prefixes gate every active probe."""
@@ -20,6 +25,14 @@ def collect(network, run=None, seeds=()):
     if not raw_interfaces:
         return {}
     interfaces = [v.strip() for v in raw_interfaces.split(",")]
+    try:
+        max_targets = int(
+            os.environ.get("YGGFLARE_DISCOVERY_MAX_TARGETS", DEFAULT_MAX_TARGETS)
+        )
+    except ValueError as error:
+        raise ValueError("Invalid YGGFLARE_DISCOVERY_MAX_TARGETS") from error
+    if not 1 <= max_targets <= HARD_MAX_TARGETS:
+        raise ValueError("YGGFLARE_DISCOVERY_MAX_TARGETS must be 1-4096")
     raw_prefixes = os.environ.get("YGGFLARE_DISCOVERY_IPV6_CIDRS", "").strip()
     config = {
         "ipv6_prefixes": (
@@ -148,7 +161,9 @@ def collect(network, run=None, seeds=()):
                     add(fields[0], interface, "ARP reply", fields[1].lower())
     # Supplemental sources supply candidates, never a CIDR sweep. Resolve the
     # actual outgoing interface instead of copying a Docker network name.
-    candidates = list(seeds)[:256]
+    candidates = list(seeds)
+    if len(candidates) > MAX_SEEDS:
+        raise ValueError("Too many discovery seeds; refusing silent truncation")
     if config.get("ipv6_scan") and prefixes:
         try:
             ids = command(["docker", "ps", "-q"]).split()
@@ -170,6 +185,8 @@ def collect(network, run=None, seeds=()):
             result["warnings"].append("Docker IPv6 candidates unavailable")
     known = {r["ip"] for r in result["records"]}
     routed = set()
+    routed_counts = {4: 0, 6: 0}
+    routed_limited = set()
     for raw, source in sorted(set(candidates)):
         try:
             address = ipaddress.ip_address(raw)
@@ -177,13 +194,13 @@ def collect(network, run=None, seeds=()):
             continue
         if not allowed(address) or str(address) in known or str(address) in routed:
             continue
-        if (
-            sum(
-                ipaddress.ip_address(value).version == address.version
-                for value in routed
-            )
-            >= 64
-        ):
+        if routed_counts[address.version] >= max_targets:
+            if address.version not in routed_limited:
+                result["warnings"].append(
+                    f"IPv{address.version} routed candidates limited to "
+                    f"{max_targets} addresses"
+                )
+                routed_limited.add(address.version)
             continue
         if address.version == 4 and not config.get("os_detection"):
             continue
@@ -192,6 +209,7 @@ def collect(network, run=None, seeds=()):
         ):
             continue
         routed.add(str(address))
+        routed_counts[address.version] += 1
         try:
             routes = json.loads(
                 command(
@@ -217,7 +235,7 @@ def collect(network, run=None, seeds=()):
             result["warnings"].append("Candidate route unavailable")
     # Preserve every observation, but probe each address once per family.
     # A host/macvlan pair may see the same address on both interfaces; route
-    # selection prevents double Nmap probes and wasted slots in the 64-IP cap.
+    # selection prevents double Nmap probes and wasted target slots.
     targets = []
     for version in (4, 6):
         by_ip = defaultdict(set)
@@ -259,12 +277,12 @@ def collect(network, run=None, seeds=()):
                 except (TypeError, ValueError, AttributeError):
                     pass
             selected.append((ip, preferred))
-        if len(selected) > 64:
+        if len(selected) > max_targets:
             result["warnings"].append(
-                f"IPv{version} probe targets limited to 64 unique addresses"
+                f"IPv{version} probe targets limited to {max_targets} unique addresses"
             )
-        targets.extend(selected[:64])
-    # NDP probes are still interface-specific; keep their bounded target cap.
+        targets.extend(selected[:max_targets])
+    # NDP probes use the chosen route/interface for each candidate.
     ndp_targets = [
         (ip, interface)
         for ip, interface in targets
@@ -283,7 +301,7 @@ def collect(network, run=None, seeds=()):
         if index % 8 == 0 or index == len(ndp_targets):
             note(f"NDP probes completed: {index}/{len(ndp_targets)}")
 
-    # One Nmap invocation per family/interface instead of one per address.
+    # Bound Nmap subprocess time/output per batch without truncating targets.
     # Each group contains only previously validated, explicitly scoped targets.
     grouped = defaultdict(list)
     for ip, interface in targets:
@@ -292,7 +310,12 @@ def collect(network, run=None, seeds=()):
             not ipv6 and config.get("os_detection")
         ):
             grouped[(ipv6, interface)].append(ip)
-    for (ipv6, interface), addresses in sorted(grouped.items()):
+    batches = [
+        (ipv6, interface, addresses[start : start + NMAP_BATCH_SIZE])
+        for (ipv6, interface), addresses in sorted(grouped.items())
+        for start in range(0, len(addresses), NMAP_BATCH_SIZE)
+    ]
+    for ipv6, interface, addresses in batches:
         family = "IPv6" if ipv6 else "IPv4"
         note(f"START {family} Nmap on {interface}: {len(addresses)} targets")
         started = time.monotonic()
