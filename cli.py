@@ -39,7 +39,12 @@ def main(argv=None):
     )
     parser.add_argument("argument", nargs="?")
     parser.add_argument("approval", nargs="?")
-    parser.add_argument("--max-operations", type=int, default=10)
+    parser.add_argument(
+        "--max-operations",
+        type=int,
+        default=0,
+        help="Manual Cloudflare plan limit; 0 (default) means all validated actions",
+    )
     args = parser.parse_args(argv)
     if args.component != "cloudflare":
         if args.component == "doctor" and args.operation == "run":
@@ -73,8 +78,8 @@ def main(argv=None):
             return subprocess.run(command, check=False).returncode
         parser.error("Unsupported command for this component")
 
-    if not 1 <= args.max_operations <= 10:
-        parser.error("--max-operations must be between 1 and 10")
+    if args.max_operations < 0:
+        parser.error("--max-operations must be nonnegative")
     if args.operation == "apply":
         if args.argument is None or not FINGERPRINT.fullmatch(args.argument):
             parser.error("apply requires the 16-character approval fingerprint")
@@ -93,7 +98,7 @@ def main(argv=None):
     elif args.argument is not None or args.approval is not None:
         parser.error("unexpected positional argument")
     if args.operation in ("claim", "orphan-plan", "orphan-apply"):
-        if args.max_operations != 10:
+        if args.max_operations != 0:
             parser.error("--max-operations is not valid for the orphan workflow")
 
     controller.DATA.mkdir(parents=True, exist_ok=True)

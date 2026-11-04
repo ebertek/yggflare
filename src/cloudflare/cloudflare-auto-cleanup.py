@@ -1,4 +1,4 @@
-"""Explicit opt-in, time-delayed retirement of one proven orphan per cycle."""
+"""Explicit opt-in, time-delayed retirement of proven, reviewed orphans."""
 
 import json
 import os
@@ -21,6 +21,13 @@ from cloudflare_write_api import CloudflareWriter
 from yggflare_config import cloudflare_settings
 
 
+def cleanup_batch(eligible, budget):
+    """Limit destructive retirements per cycle; zero explicitly means all."""
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget < 0:
+        raise ValueError("Orphan cleanup batch size must be nonnegative")
+    return list(eligible) if budget == 0 else list(eligible[:budget])
+
+
 def main():
     """Require both opt-ins; never delete a hostname not in the ownership registry."""
     if os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") != "true":
@@ -39,6 +46,14 @@ def main():
         ) from error
     if not 24 <= grace <= 720:
         raise OwnershipError("Orphan grace period must be between 24 and 720 hours")
+    try:
+        batch_size = int(
+            os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE", "1")
+        )
+    except ValueError as error:
+        raise OwnershipError("Invalid orphan cleanup batch size") from error
+    if batch_size < 0:
+        raise OwnershipError("Orphan cleanup batch size must be nonnegative")
 
     client = CloudflareWriter(api_token())
     settings = cloudflare_settings()
@@ -64,12 +79,18 @@ def main():
         print("Orphan cleanup: no eligible managed hostnames.")
         return 0
 
-    hostname = eligible[0]  # At most one target per successful cycle.
-    _, approval = review_orphan(client, source, data, bound, hostname)
-    steps = retire(client, source, data, bound, hostname, approval)
-    print(f"Auto-retired managed orphan: {hostname} ({', '.join(steps)})")
+    # Each orphan gets an independent live plan and fingerprint revalidation.
+    # Never reuse a previous Tunnel/DNS/Access snapshot across deletions.
+    for hostname in cleanup_batch(eligible, batch_size):
+        _, approval = review_orphan(client, source, data, bound, hostname)
+        steps = retire(client, source, data, bound, hostname, approval)
+        print(f"Auto-retired managed orphan: {hostname} ({', '.join(steps)})")
+        notify_retirement(hostname)
+    return 0
 
-    # Best-effort reporting; never expose the webhook credential in logs.
+
+def notify_retirement(hostname):
+    """Best-effort reporting; never expose the webhook credential in logs."""
     secret = Path(
         os.environ.get(
             "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE",
@@ -109,7 +130,7 @@ def main():
                     pass
             except OSError:
                 print("WARNING: Orphan retired, but Discord notification failed.")
-    return 0
+    return None
 
 
 if __name__ == "__main__":

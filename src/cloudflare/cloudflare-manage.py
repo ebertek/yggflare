@@ -24,6 +24,7 @@ from cloudflare_guarded import (
     check_unattended_plan,
     fingerprint,
     preflight_compatibility,
+    unattended_batch,
 )
 from cloudflare_orphans import claim, print_summary, scope
 from cloudflare_unaccounted_dns import print_unaccounted_summary
@@ -125,14 +126,14 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     parser.add_argument(
         "--max-operations",
         type=int,
-        default=10,
-        help="Hard limit for a single approved reconciliation (default 10)",
+        default=0,
+        help="Manual plan limit: 0 (default) approves the full validated plan",
     )
     args = parser.parse_args()
     if sum((args.preflight, args.apply is not None, args.auto)) > 1:
         raise ValueError("--preflight, --apply and --auto are mutually exclusive")
-    if not 1 <= args.max_operations <= 10:
-        raise ValueError("Maximum operations must be between 1 and 10")
+    if args.max_operations < 0:
+        raise ValueError("Maximum operations must be nonnegative")
     if args.auto:
         require_auto_opt_in()
     root = args.root.expanduser().resolve()
@@ -143,7 +144,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
 
     if args.apply is None and not args.auto:
         report, context, actions, token = plan(
-            client, root, settings, args.max_operations
+            client, root, settings, args.max_operations or None
         )
         if args.preflight:
             details = preflight_compatibility(client, context)
@@ -182,7 +183,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
     with os.fdopen(descriptor, "r+") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         report, context, actions, token = plan(
-            client, root, settings, args.max_operations
+            client, root, settings, None if args.auto else args.max_operations or None
         )
         if args.auto:
             print_static_summary(report)
@@ -193,20 +194,35 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
                 print("Cloudflare auto reconciliation: no changes required.")
                 return 0
             raise UnsafePlan("Refusing apply: no operations remain")
+        active_report = report
+        active_maximum = args.max_operations or None
         if args.auto:
-            check_unattended_plan(
+            # Validate *all* proposed operations before choosing a batch.
+            # Never let a late unsafe policy hide behind the batch boundary.
+            safe = check_unattended_plan(
                 report,
-                maximum=min(3, args.max_operations),
+                maximum=None,
                 reusable=client.list_policies(context["account"]),
+            )
+            try:
+                budget = int(os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE", "3"))
+            except ValueError as error:
+                raise ValueError("Invalid Cloudflare auto batch size") from error
+            batch = unattended_batch(safe, budget)
+            active_report = {**report, "actions": batch}
+            active_maximum = len(batch)
+            print(
+                f"Cloudflare auto reconciliation: applying {len(batch)} of "
+                f"{len(actions)} validated operations"
             )
         elif token != args.apply:
             raise UnsafePlan("Live plan changed; review a new fingerprint")
         completed = apply_actions(
             client,
-            report,
+            active_report,
             context,
             docker_addresses=LIVE.docker_ipv4,
-            maximum=args.max_operations,
+            maximum=active_maximum,
             unattended=args.auto,
         )
         # Only Yggflare-created endpoints can be claimed automatically.
