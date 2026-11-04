@@ -58,6 +58,32 @@ class IdentityHistoryTests(unittest.TestCase):
             )
         )
 
+    def test_stale_neighbor_mac_cannot_gain_high_confidence_from_nmap_ip(self):
+        inventory = {
+            "10.4.20.2": {
+                "name": "host.example",
+                "mac": "aa:aa:aa:aa:aa:aa",
+                "allowed_macs": {"aa:aa:aa:aa:aa:aa"},
+            }
+        }
+        result = update_history(
+            inventory,
+            {"10.4.20.2": host()},
+            {
+                "records": [
+                    record("10.4.20.2", "aa:aa:aa:aa:aa:aa (STALE)", "Neighbor cache")
+                ]
+            },
+            [],
+            {},
+            "2026-11-01T10:00:00Z",
+            set(),
+        )
+        self.assertEqual(
+            result["identity_history"]["inventory:host.example"]["confidence"],
+            "medium",
+        )
+
     def test_competing_link_macs_are_conflicts_not_silent_merges(self):
         inventory = {
             "10.4.20.1": {
