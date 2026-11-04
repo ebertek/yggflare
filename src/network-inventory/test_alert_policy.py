@@ -119,6 +119,24 @@ class AlertPolicyTests(unittest.TestCase):
         )
         self.assertEqual(second, ["NEW DNS-SD printer.local|_ipp._tcp|631"])
 
+    def test_legacy_dns_sd_migration_survives_first_failed_browse(self):
+        previous = {
+            "initialized": True,
+            "advertisements": ["known.local|_ipp._tcp|631"],
+        }
+        _, state, _ = self.apply(
+            [], {}, previous["advertisements"], previous, complete=False
+        )
+        self.assertEqual(state["dns_notified"], ["known.local|_ipp._tcp"])
+        events, _, pending = self.apply(
+            [],
+            {},
+            previous["advertisements"],
+            {"initialized": True, "alert_state": state},
+        )
+        self.assertEqual(events, [])
+        self.assertEqual(pending, [])
+
     def test_critical_identity_changes_are_immediate(self):
         message = "CHANGED MAC router.example 10.0.0.1: bad (expected good)"
         events, _, pending = self.apply(
