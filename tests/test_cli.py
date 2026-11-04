@@ -51,6 +51,42 @@ class CommandTests(unittest.TestCase):
         )
         snapshot.assert_not_called()
 
+    def test_network_status_reads_state_without_snapshot_or_network_scan(self):
+        commands = [
+            (["network", "status"], []),
+            (["network", "status", "--details"], ["--details"]),
+            (["network", "status", "--json"], ["--json"]),
+        ]
+        for arguments, flags in commands:
+            with (
+                self.subTest(arguments=arguments),
+                patch.object(cli.controller, "snapshot") as snapshot,
+                patch.object(cli.subprocess, "run") as run,
+            ):
+                run.return_value = SimpleNamespace(returncode=0)
+                self.assertEqual(cli.main(arguments), 0)
+                snapshot.assert_not_called()
+                run.assert_called_once_with(
+                    [cli.sys.executable, "/app/network-inventory/status.py", *flags],
+                    check=False,
+                )
+
+    def test_network_status_rejects_mutating_or_unexpected_arguments(self):
+        bad = [
+            ["network", "status", "unexpected"],
+            ["network", "status", "--max-operations", "3"],
+            ["network", "status", "--details", "--json"],
+            ["network", "run", "--details"],
+            ["cloudflare", "audit", "--json"],
+        ]
+        for arguments in bad:
+            with self.subTest(arguments=arguments), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    cli.main(arguments)
+                self.assertEqual(error.exception.code, 2)
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)
