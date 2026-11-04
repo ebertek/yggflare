@@ -294,9 +294,7 @@ def scan(inventory, timeout, do_dns_sd=True):
         # Nmap cannot combine --top-ports with -p on one invocation, so
         # derive the frequency-ranked top ports from the installed database.
         ports = sorted(
-            set(map(int, DEFAULT_PORTS.split(",")))
-            | recorded_tcp
-            | top_tcp_ports()
+            set(map(int, DEFAULT_PORTS.split(","))) | recorded_tcp | top_tcp_ports()
         )
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as targets_file:
             targets_file.write("\n".join(targets) + "\n")
