@@ -122,7 +122,12 @@ def resolve(inventory, observed):
             problems.append("Multiple MAC claims for this address")
         if len(matched) > 1:
             problems.append("MAC is claimed by multiple inventory identities")
-        if declared and macs and not macs.issubset(declared.get("allowed_macs", set())):
+        if (
+            declared
+            and declared.get("allowed_macs")
+            and macs
+            and not macs.issubset(declared["allowed_macs"])
+        ):
             problems.append("Observed MAC differs from declared identity")
         if declared and matched and declared["name"] not in matched:
             problems.append("Address and MAC point to different declared identities")
@@ -148,7 +153,7 @@ def resolve(inventory, observed):
             identity_id = "address:" + ip
             label = "Unassigned address " + ip
         directly_observed_mac = mac in evidence["direct_macs"]
-        if name and mac and directly_observed_mac:
+        if name and mac and directly_observed_mac and name in matched:
             confidence = "high"
         elif mac and (name or directly_observed_mac) and not ambiguous_shared:
             confidence = "medium"
@@ -263,7 +268,12 @@ def update_history(inventory, hosts, supplemental, advertised, previous, now, ig
                     + " not observed in this scan",
                 }
             )
-        history[identity_id] = {**old, "missed_scans": missed, "status": "not observed"}
+        history[identity_id] = {
+            **old,
+            "current_addresses": [],
+            "missed_scans": missed,
+            "status": "not observed",
+        }
     for conflict in conflicts:
         if conflict["address"] not in old_conflicts:
             changes.append(
