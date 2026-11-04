@@ -33,6 +33,103 @@ XML = """<?xml version="1.0"?>
 class NetworkAuditTests(unittest.TestCase):
     """Scanners must not infer open services from uncertainty."""
 
+    def test_top_tcp_ports_preserves_ranked_boundary_ties(self):
+        """One pass must cover Nmap's 100 most popular TCP ports."""
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "nmap-services"
+            lines = [
+                f"service{i} {i}/tcp {1 - i / 1000:.3f}"
+                for i in range(1, 102)
+            ]
+            # TCP port 101 shares the cutoff ratio of TCP port 100.
+            lines[-1] = "service101 101/tcp 0.900"
+            lines.append("udpservice 62078/udp 1.000")
+            lines.append("duplicate 1/tcp 0.800")
+            source.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+            result = audit.top_tcp_ports(source)
+        self.assertEqual(result, set(range(1, 102)))
+        self.assertNotIn(62078, result)
+
+    def test_top_tcp_ports_fails_closed_on_missing_or_corrupt_database(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "nmap-services"
+            with self.assertRaisesRegex(RuntimeError, "unavailable"):
+                audit.top_tcp_ports(source)
+            source.write_text("broken 22/tcp not-a-ratio\\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "frequency"):
+                audit.top_tcp_ports(source)
+            source.write_text("http 80/tcp 0.5\\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Insufficient"):
+                audit.top_tcp_ports(source)
+
+    def test_ipv4_combined_scan_keeps_focused_and_popular_ports(self):
+        """One TCP pass retains custom/declared ports and discovered versions."""
+        discovery_xml = (
+            '<nmaprun><host><status state="up"/>'
+            '<address addr="10.4.20.33" addrtype="ipv4"/>'
+            '<address addr="aa:bb:cc:dd:ee:ff" addrtype="mac"/>'
+            "</host></nmaprun>"
+        )
+        scanned_xml = (
+            '<nmaprun><host><status state="up"/>'
+            '<address addr="10.4.20.33" addrtype="ipv4"/>'
+            '<ports><port protocol="tcp" portid="443"><state state="open"/>'
+            '<service name="https"/></port>'
+            '<port protocol="tcp" portid="62078"><state state="open"/>'
+            '<service name="custom" product="Example" version="1.0" '
+            'method="probed"/></port>'
+            '<port protocol="tcp" portid="4070"><state state="closed"/>'
+            "</port></ports></host></nmaprun>"
+        )
+        commands = []
+
+        def run(args, seconds):
+            commands.append(args)
+            if "-sn" in args:
+                return discovery_xml
+            self.assertEqual(args[0], "nmap")
+            self.assertIn("-sV", args)
+            self.assertIn("--version-light", args)
+            self.assertNotIn("--top-ports", args)
+            selected = set(map(int, args[args.index("-p") + 1].split(",")))
+            self.assertTrue({22, 80, 443, 9999, 62078, 6444} <= selected)
+            self.assertNotIn(5353, selected)  # UDP declarations not TCP probes
+            self.assertEqual(
+                Path(args[args.index("-iL") + 1]).read_text().strip(),
+                "10.4.20.33",
+            )
+            return scanned_xml
+
+        inventory = {
+            "10.4.20.33": {"ports": {"tcp/62078", "udp/5353"}},
+        }
+        with (
+            patch.object(audit, "run_command", side_effect=run),
+            patch.object(audit, "docker_ips", return_value=set()),
+            patch.object(audit, "top_tcp_ports", return_value={443, 9999}),
+        ):
+            hosts, advertisements, complete = audit.scan(
+                inventory, timeout=900, do_dns_sd=False
+            )
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(hosts["10.4.20.33"]["ports"], ["tcp/443", "tcp/62078"])
+        self.assertEqual(
+            hosts["10.4.20.33"]["services"]["tcp/62078"]["product"], "Example"
+        )
+        self.assertEqual(advertisements, [])
+        self.assertFalse(complete)
+
+    def test_no_tcp_targets_does_not_load_service_database(self):
+        with (
+            patch.object(audit, "run_command", return_value="<nmaprun/>") as run,
+            patch.object(audit, "docker_ips", return_value=set()),
+            patch.object(audit, "top_tcp_ports") as top,
+        ):
+            hosts, _, _ = audit.scan({}, timeout=30, do_dns_sd=False)
+        self.assertEqual(hosts, {})
+        run.assert_called_once()
+        top.assert_not_called()
+
     def test_scan_phase_writes_unbuffered_start_and_end(self):
         """Operators should see which stage is running before it finishes."""
         output = io.StringIO()
