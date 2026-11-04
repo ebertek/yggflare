@@ -13,7 +13,6 @@ MAC_PATTERN = re.compile(
     r"(?i)(?<![0-9a-f:])(?:[0-9a-f]{2}:){5}[0-9a-f]{2}(?![0-9a-f:])"
 )
 LINK_SOURCES = {"ARP reply", "NDP reply", "Neighbor cache"}
-DIRECT_SOURCES = {"ARP reply", "NDP reply", "Nmap IPv4 host"}
 MAX_IDENTITIES = 2048
 MAX_CHANGES = 200
 MAX_ADDRESSES = 24
@@ -51,7 +50,14 @@ def known_inventory(inventory):
 
 def observed_addresses(hosts, supplemental, advertised, ignored):
     """Collect address evidence; retain sources without inventing ownership."""
-    observed = defaultdict(lambda: {"macs": set(), "sources": set(), "hints": set()})
+    observed = defaultdict(
+        lambda: {
+            "macs": set(),
+            "direct_macs": set(),
+            "sources": set(),
+            "hints": set(),
+        }
+    )
     for ip, host in hosts.items():
         ip = valid_ip(ip)
         if not ip or ip in ignored:
@@ -60,6 +66,7 @@ def observed_addresses(hosts, supplemental, advertised, ignored):
         mac = valid_mac(host.get("mac", ""))
         if mac:
             observed[ip]["macs"].add(mac)
+            observed[ip]["direct_macs"].add(mac)
     for record in supplemental.get("records", []):
         if not isinstance(record, dict):
             continue
@@ -78,6 +85,8 @@ def observed_addresses(hosts, supplemental, advertised, ignored):
             mac = valid_mac(record.get("detail", ""))
             if mac:
                 observed[ip]["macs"].add(mac)
+                if source in ("ARP reply", "NDP reply"):
+                    observed[ip]["direct_macs"].add(mac)
     for advert in advertised:
         if not isinstance(advert, dict):
             continue
@@ -138,10 +147,10 @@ def resolve(inventory, observed):
         else:
             identity_id = "address:" + ip
             label = "Unassigned address " + ip
-        direct = bool(evidence["sources"] & DIRECT_SOURCES)
-        if name and mac and direct:
+        directly_observed_mac = mac in evidence["direct_macs"]
+        if name and mac and directly_observed_mac:
             confidence = "high"
-        elif name and mac or mac and direct and not ambiguous_shared:
+        elif mac and (name or directly_observed_mac) and not ambiguous_shared:
             confidence = "medium"
         else:
             confidence = "low"
