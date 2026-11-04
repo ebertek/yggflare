@@ -80,8 +80,9 @@ class CommandTests(unittest.TestCase):
             ["cloudflare", "audit", "--json"],
         ]
         for arguments in bad:
-            with self.subTest(arguments=arguments), contextlib.redirect_stderr(
-                io.StringIO()
+            with (
+                self.subTest(arguments=arguments),
+                contextlib.redirect_stderr(io.StringIO()),
             ):
                 with self.assertRaises(SystemExit) as error:
                     cli.main(arguments)
