@@ -85,9 +85,7 @@ class AlertPolicyTests(unittest.TestCase):
             ["device.local|_hap._tcp|45857"],
             {"initialized": True, "alert_state": state},
         )
-        self.assertEqual(
-            second, ["NEW DNS-SD device.local|_hap._tcp|45857"]
-        )
+        self.assertEqual(second, ["NEW DNS-SD device.local|_hap._tcp|45857"])
         self.assertFalse(pending)
         third, _, _ = self.apply(
             [],
@@ -99,18 +97,24 @@ class AlertPolicyTests(unittest.TestCase):
 
     def test_missing_dns_sd_data_preserves_prior_candidates(self):
         first, state, _ = self.apply(
-            [], {}, ["printer.local|_ipp._tcp|631"],
+            [],
+            {},
+            ["printer.local|_ipp._tcp|631"],
             {"initialized": True, "alert_state": {}},
         )
         self.assertEqual(first, [])
         _, state, _ = self.apply(
-            [], {}, [],
+            [],
+            {},
+            [],
             {"initialized": True, "alert_state": state},
             complete=False,
         )
         self.assertEqual(state["dns_counts"]["printer.local|_ipp._tcp"], 1)
         second, _, _ = self.apply(
-            [], {}, ["printer.local|_ipp._tcp|631"],
+            [],
+            {},
+            ["printer.local|_ipp._tcp|631"],
             {"initialized": True, "alert_state": state},
         )
         self.assertEqual(second, ["NEW DNS-SD printer.local|_ipp._tcp|631"])
