@@ -73,8 +73,8 @@ def main(argv=None):
             return subprocess.run(command, check=False).returncode
         parser.error("Unsupported command for this component")
 
-    if not 1 <= args.max_operations <= 10:
-        parser.error("--max-operations must be between 1 and 10")
+    if args.max_operations < 1:
+        parser.error("--max-operations must be positive")
     if args.operation == "apply":
         if args.argument is None or not FINGERPRINT.fullmatch(args.argument):
             parser.error("apply requires the 16-character approval fingerprint")
