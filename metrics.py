@@ -113,7 +113,8 @@ def render(config, data, now=None):
     unknown_count = sum(key.startswith("unknown-device:") for key in reported)
     findings_count = len(reported)
     observed_identities = [
-        entry for entry in identities.values()
+        entry
+        for entry in identities.values()
         if isinstance(entry, dict) and entry.get("status") == "observed"
     ]
 
