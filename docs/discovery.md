@@ -10,6 +10,7 @@ A failed source produces a sanitized warning while other sources continue.
 |---|---|
 | `YGGFLARE_DISCOVERY_SSDP` | One IPv4 SSDP M-SEARCH per interface; up to 128 replies within three seconds |
 | `YGGFLARE_DISCOVERY_LLDP` | Read LLDP/CDP neighbours from an existing lldpd socket |
+| `YGGFLARE_DISCOVERY_RA` | Solicit scoped ICMPv6 Router Advertisements with `rdisc6`; one short probe per configured interface |
 | `YGGFLARE_DISCOVERY_NETBIOS` | NetBIOS node-status names for all observed, in-scope IPv4 addresses, with bounded workers and per-target timeouts |
 | `YGGFLARE_DISCOVERY_SMB` | Anonymous SMB share listing for the same bounded addresses |
 | `YGGFLARE_DISCOVERY_SNMP` | Query explicitly configured SNMP targets with mounted credentials |
@@ -22,6 +23,7 @@ Example first-pass configuration for a host with the selected interfaces and CID
 ```yaml
 YGGFLARE_DISCOVERY_SSDP: "true"
 YGGFLARE_DISCOVERY_NETBIOS: "true"
+YGGFLARE_DISCOVERY_RA: "false"
 YGGFLARE_DISCOVERY_SMB: "false"
 YGGFLARE_DISCOVERY_LLDP: "false"
 YGGFLARE_DISCOVERY_SNMP: "false"
@@ -90,24 +92,83 @@ on newly covered popular ports can cost additional time. The reduction in
 Nmap process startup and repeated SYN probing should be benchmarked on the
 deployed network rather than assumed. No fixed runtime guarantee is implied.
 
-## LLDP/CDP
+## IPv6 Router Advertisements (rdisc6)
 
-The image supplies `lldpcli`. Run `lldpd` on the host, configured for receive-only
-mode and CDP support (`-r -c`) on the intended interfaces. Mount its runtime socket
-into the container at `/run/lldpd/lldpd.socket`, then enable the LLDP switch. For a
-host using the same directory:
+Set `YGGFLARE_DISCOVERY_RA=true` **and** configure
+`YGGFLARE_DISCOVERY_INTERFACES` and `YGGFLARE_DISCOVERY_IPV6_CIDRS`.
+Yggflare sends one short router solicitation to `ff02::2` per selected interface:
+
+```sh
+rdisc6 -n -r 1 -w 750 ff02::2 eth0
+```
+
+It retains validated link-local router sources, router preference/lifetime,
+address-configuration flags, and advertised prefixes or DNS server addresses
+that overlap the configured IPv6 scope. A broader overlapping prefix is
+**topology evidence only**; it never expands the scan boundary. Output is
+bounded to eight advertisements per interface and allowlisted numeric fields.
+
+Router observations have no device IP in Yggflare state. They appear in
+**Discovery** as interface-level evidence and never become Nmap targets,
+device identities, authoritative DNS records, or Cloudflare inputs.
+A missing Router Advertisement (`rdisc6` exit code 2) is normal and does
+not generate a warning; execution failures do. This is an *active* ICMPv6
+solicitation, not passive packet capture. Yggflare does not configure the
+host's IPv6 routes or addresses.
+
+## LLDP/CDP (host daemon required)
+
+Yggflare installs `lldpcli`, **not a running LLDP daemon**. To collect
+neighbours, install and operate `lldpd` on the Linux host:
+
+```sh
+sudo apt-get install lldpd
+sudo systemctl status lldpd
+sudo lldpcli show neighbors details
+```
+
+Configure the host daemon's startup options for **receive-only** `-r`, CDP
+support `-c`, and physical interfaces only, e.g. `-I eth0`. The flags
+`lldpd -r -c -I eth0` are an *example configuration*, **not** a second daemon
+to start beside the host service. The exact persistent setting depends on
+the distribution and its systemd unit; inspect `systemctl cat lldpd`
+before editing it.
+
+The Yggflare collector expects the daemon's control socket at
+`/run/lldpd/lldpd.socket` **inside the container**. Ubuntu/Debian packages
+commonly use `/run/lldpd.socket` on the host. For that default socket,
+use this explicit file bind in your *source* Compose:
+
+```yaml
+volumes:
+  - /run/lldpd.socket:/run/lldpd/lldpd.socket:ro
+```
+
+For a more robust setup across daemon restarts, configure the host daemon
+with `-u /run/lldpd/lldpd.socket`, ensure the host creates that runtime
+directory at startup, and mount the entire directory:
 
 ```yaml
 volumes:
   - /run/lldpd:/run/lldpd:ro
 ```
 
-The collector only issues `show neighbors details`; it does not start or configure
-the host daemon. A read-only bind mount does not make the socket API read-only.
-Only selected interfaces' chassis/name/description/port identity is displayed.
-Neighbours without management IPs remain visible as link-layer observations.
-Discovery is limited to advertisements reaching that host's interfaces, not the
-entire switched network.
+Then verify both sides:
+
+```sh
+# On the host
+sudo lldpcli show neighbors details
+# Inside Yggflare, after mounting the socket
+docker exec yggflare lldpcli -u /run/lldpd/lldpd.socket show neighbors details
+```
+
+Finally enable `YGGFLARE_DISCOVERY_LLDP=true`. The collector only queries
+neighbour details; it does not start or reconfigure the host daemon. **A
+read-only socket bind is not an API-level read-only restriction.** Treat it
+as trusted host access. LLDP/CDP sees only advertisements arriving at the
+host's interfaces; it cannot inventory the entire switched network.
+No neighbour advertisements is a normal outcome if the directly attached
+equipment does not transmit LLDP/CDP.
 
 ## SNMP
 
