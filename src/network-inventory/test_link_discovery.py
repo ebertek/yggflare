@@ -44,6 +44,91 @@ class LinkDiscoveryTests(unittest.TestCase):
             self.assertIn("-O", calls[-1])
             self.assertEqual(calls[-1][-1], "fd00::2")
 
+    def test_router_advertisements_are_interface_topology_not_scan_targets(self):
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:3] == ["ip", "-j", "neigh"]:
+                return "[]"
+            if args[0] == "rdisc6":
+                return (
+                    "Router preference : high\n"
+                    "Router lifetime : 1800 (0x00000708) seconds\n"
+                    " Prefix : fd0e:be00:da00:20::/64\n"
+                    " Prefix : 2001:db8::/64\n"
+                    " from fe80::1\n"
+                )
+            return ""
+
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd0e:be00:da00:20::/64",
+                "YGGFLARE_DISCOVERY_RA": "true",
+                "YGGFLARE_DISCOVERY_IPV6_SCAN": "true",
+            },
+            clear=True,
+        ):
+            result = discovery.collect(ipaddress.ip_network("10.4.20.0/23"), run)
+        probes = [args for args in calls if args[0] == "rdisc6"]
+        self.assertEqual(
+            probes, [["rdisc6", "-n", "-r", "1", "-w", "750", "ff02::2", "eth0"]]
+        )
+        self.assertFalse(any(args[0] == "nmap" for args in calls))
+        ra = [r for r in result["records"] if r["source"] == "IPv6 router advertisement"]
+        self.assertEqual(len(ra), 1)
+        self.assertEqual(ra[0]["ip"], "")
+        self.assertEqual(ra[0]["interface"], "eth0")
+        self.assertIn("fd0e:be00:da00:20::/64", ra[0]["detail"])
+        self.assertNotIn("2001:db8", ra[0]["detail"])
+        self.assertEqual(result["warnings"], [])
+
+    def test_rdisc6_no_reply_is_normal_but_execution_errors_warn(self):
+        for returncode in (1, 2):
+            calls = []
+
+            def run(args):
+                calls.append(args)
+                if args[:3] == ["ip", "-j", "neigh"]:
+                    return "[]"
+                if args[0] == "rdisc6":
+                    raise subprocess.CalledProcessError(returncode, "rdisc6")
+                return ""
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                    "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
+                    "YGGFLARE_DISCOVERY_RA": "true",
+                },
+                clear=True,
+            ):
+                result = discovery.collect(
+                    ipaddress.ip_network("10.0.0.0/24"), run
+                )
+            self.assertEqual(
+                result["warnings"],
+                [] if returncode == 2 else ["rdisc6: unavailable, failed or timed out"],
+            )
+            self.assertEqual(result["records"], [])
+
+    def test_router_discovery_requires_explicit_ipv6_prefix(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                    "YGGFLARE_DISCOVERY_RA": "true",
+                },
+                clear=True,
+            ),
+            self.assertRaisesRegex(ValueError, "explicit IPv6 prefix scope"),
+        ):
+            discovery.collect(ipaddress.ip_network("10.0.0.0/24"))
+
     def test_ndp_no_reply_is_not_a_failure_but_other_errors_warn(self):
         for returncode in (1, 2):
             calls = []
