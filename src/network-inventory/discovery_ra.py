@@ -81,7 +81,9 @@ def router_records(raw, scopes):
                 if description not in seen:
                     if len(results) >= MAX_ROUTERS:
                         raise ValueError("Too many IPv6 router advertisements")
-                    results.append(description[:512])
+                    if len(description) > 512:
+                        raise ValueError("Oversized IPv6 router detail")
+                    results.append(description)
                     seen.add(description)
             props = {}
             prefixes = set()
