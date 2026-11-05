@@ -65,9 +65,7 @@ Router lifetime           :         1800 (0x00000708) seconds
         self.assertEqual(router_records(sample, self.scopes), [])
 
     def test_requires_complete_source_line_and_rejects_control_metadata(self):
-        result = router_records(
-            " Prefix: fd0e:be00:da00:20::/64\n", self.scopes
-        )
+        result = router_records(" Prefix: fd0e:be00:da00:20::/64\n", self.scopes)
         self.assertEqual(result, [])
         sample = (
             "Router preference: high\n"
