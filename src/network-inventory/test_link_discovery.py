@@ -77,7 +77,9 @@ class LinkDiscoveryTests(unittest.TestCase):
             probes, [["rdisc6", "-n", "-r", "1", "-w", "750", "ff02::2", "eth0"]]
         )
         self.assertFalse(any(args[0] == "nmap" for args in calls))
-        ra = [r for r in result["records"] if r["source"] == "IPv6 router advertisement"]
+        ra = [
+            r for r in result["records"] if r["source"] == "IPv6 router advertisement"
+        ]
         self.assertEqual(len(ra), 1)
         self.assertEqual(ra[0]["ip"], "")
         self.assertEqual(ra[0]["interface"], "eth0")
@@ -106,9 +108,7 @@ class LinkDiscoveryTests(unittest.TestCase):
                 },
                 clear=True,
             ):
-                result = discovery.collect(
-                    ipaddress.ip_network("10.0.0.0/24"), run
-                )
+                result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
             self.assertEqual(
                 result["warnings"],
                 [] if returncode == 2 else ["rdisc6: unavailable, failed or timed out"],
