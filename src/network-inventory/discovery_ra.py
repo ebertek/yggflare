@@ -103,11 +103,13 @@ def router_records(raw, scopes):
                 address = ipaddress.ip_address(value.split()[0])
             except (IndexError, ValueError):
                 continue
-            if (
-                isinstance(address, ipaddress.IPv6Address)
-                and any(address in scope for scope in scopes)
+            if isinstance(address, ipaddress.IPv6Address) and any(
+                address in scope for scope in scopes
             ):
-                if len(dns_servers) >= MAX_DNS_SERVERS and str(address) not in dns_servers:
+                if (
+                    len(dns_servers) >= MAX_DNS_SERVERS
+                    and str(address) not in dns_servers
+                ):
                     raise ValueError("Too many IPv6 advertised DNS servers")
                 dns_servers.add(str(address))
         elif name == "router preference" and value.lower() in PREFERENCE:
