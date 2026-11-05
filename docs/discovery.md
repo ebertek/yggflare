@@ -113,8 +113,8 @@ Router observations have no device IP in Yggflare state. They appear in
 device identities, authoritative DNS records, or Cloudflare inputs.
 A missing Router Advertisement (`rdisc6` exit code 2) is normal and does
 not generate a warning; execution failures do. This is an *active* ICMPv6
-solicitation, not passive packet capture. Yggflare does not configure the
-host's IPv6 routes or addresses.
+solicitation, not passive packet capture. Yggflare does not itself configure
+routes or addresses; the host kernel may independently process received RAs.
 
 ## LLDP/CDP (host daemon required)
 
