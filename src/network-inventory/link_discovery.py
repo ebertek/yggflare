@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import UTC, datetime
 
+from discovery_ra import router_records
 from service_discovery import collect as collect_services
 
 DEFAULT_MAX_TARGETS = 512
@@ -39,7 +40,7 @@ def collect(network, run=None, seeds=()):
             [v.strip() for v in raw_prefixes.split(",")] if raw_prefixes else []
         )
     }
-    for flag in ("arp_scan", "ndp_probe", "ipv6_scan", "os_detection"):
+    for flag in ("arp_scan", "ndp_probe", "ipv6_scan", "os_detection", "ra"):
         name = "YGGFLARE_DISCOVERY_" + flag.upper()
         value = os.environ.get(name, "false")
         if value not in ("true", "false"):
@@ -58,6 +59,8 @@ def collect(network, run=None, seeds=()):
     prefixes = [ipaddress.IPv6Network(p) for p in config.get("ipv6_prefixes", [])]
     if any(p.prefixlen < 64 or p.is_multicast or p.is_link_local for p in prefixes):
         raise ValueError("Use explicit unicast IPv6 prefixes of /64 or narrower")
+    if config["ra"] and not prefixes:
+        raise ValueError("Router discovery requires explicit IPv6 prefix scope")
     result = {
         "observed_at": datetime.now(UTC).isoformat(),
         "records": [],
@@ -384,6 +387,31 @@ def collect(network, run=None, seeds=()):
                         )
         except ET.ParseError:
             result["warnings"].append("nmap: invalid XML response")
+    # Router Advertisements are topology metadata, not device candidates.
+    # Collect only after the Nmap target lists have been finalized so a
+    # link-local router address can never promote an unscoped probe.
+    if config["ra"]:
+        note("START IPv6 router-advertisement discovery")
+        for interface in interfaces:
+            raw = command(
+                ["rdisc6", "-n", "-r", "1", "-w", "750", "ff02::2", interface],
+                timeout=5,
+                no_reply_codes=(2,),
+            )
+            if not raw:
+                continue
+            try:
+                for detail in router_records(raw, prefixes):
+                    result["records"].append(
+                        {
+                            "ip": "",
+                            "interface": interface,
+                            "source": "IPv6 router advertisement",
+                            "detail": detail,
+                        }
+                    )
+            except ValueError:
+                result["warnings"].append("rdisc6: invalid or oversized response")
     note("START optional service discovery")
     collect_services(interfaces, allowed, result["records"], add, result["warnings"])
     note(
