@@ -203,11 +203,15 @@ YGGFLARE_DISCOVERY_INTERFACES: "eth0,eth1"
 YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd00:1234:5678::/64"
 YGGFLARE_DISCOVERY_ARP_SCAN: "true"
 YGGFLARE_DISCOVERY_NDP_PROBE: "true"
+YGGFLARE_DISCOVERY_RA: "false"
 YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
 YGGFLARE_DISCOVERY_OS_DETECTION: "true"
 ```
 
-All four switches default to `false` . IPv6 scanning never sweeps an entire /64. The
+These optional collector switches default to `false`. IPv6 scanning never
+sweeps an entire /64. `YGGFLARE_DISCOVERY_RA` optionally solicits router
+advertisements on selected interfaces, recording scoped, read-only topology
+evidence—not device identities or DNS inputs. The
 supplemental target budget defaults to 512 unique addresses per IP family
 (`YGGFLARE_DISCOVERY_MAX_TARGETS`, 1–4096). Nmap processes targets in batches of at
 most 64; this batch size is **not** a discovery cutoff.
