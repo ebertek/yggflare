@@ -85,12 +85,10 @@ Router lifetime           :         1800 (0x00000708) seconds
 
     def test_large_numeric_router_details_fail_instead_of_truncating(self):
         prefixes = "".join(
-            f"Prefix: fd0e:be00:da00:20::{i}/128\\n"
-            for i in range(1, 13)
+            f"Prefix: fd0e:be00:da00:20::{i}/128\\n" for i in range(1, 13)
         )
         dns = "".join(
-            f"Recursive DNS server: fd0e:be00:da00:20::{i}\\n"
-            for i in range(1, 9)
+            f"Recursive DNS server: fd0e:be00:da00:20::{i}\\n" for i in range(1, 9)
         )
         with self.assertRaisesRegex(ValueError, "Oversized IPv6 router detail"):
             router_records(prefixes + dns + "from fe80::1\\n", self.scopes)
