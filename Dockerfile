@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap arp-scan ndisc6 avahi-utils lldpd p0f smbclient samba-common-bin snmp util-linux iproute2 ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
 # nmblookup is provided by samba-common-bin, not smbclient.
-RUN command -v nmblookup && command -v smbclient \
+RUN command -v nmblookup && command -v smbclient && command -v rdisc6 \
     && test -r /usr/share/nmap/nmap-services
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 RUN docker --version
