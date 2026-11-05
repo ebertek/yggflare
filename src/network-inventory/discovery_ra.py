@@ -26,7 +26,11 @@ def allowed_prefix(value, scopes):
         return None
     if not isinstance(prefix, ipaddress.IPv6Network):
         return None
-    if prefix.is_multicast or prefix.is_link_local or prefix.is_unspecified:
+    if (
+        prefix.is_multicast
+        or prefix.is_link_local
+        or prefix.network_address.is_unspecified
+    ):
         return None
     if any(prefix.overlaps(scope) for scope in scopes):
         return str(prefix)
@@ -74,7 +78,9 @@ def router_records(raw, scopes):
                 if "mac" in props:
                     details.append("router MAC: " + props["mac"])
                 description = "; ".join(details)
-                if description not in seen and len(results) < MAX_ROUTERS:
+                if description not in seen:
+                    if len(results) >= MAX_ROUTERS:
+                        raise ValueError("Too many IPv6 router advertisements")
                     results.append(description[:512])
                     seen.add(description)
             props = {}
@@ -88,7 +94,9 @@ def router_records(raw, scopes):
         name = name.lower()
         if name == "prefix":
             candidate = allowed_prefix(value.split()[0], scopes) if value else None
-            if candidate and len(prefixes) < MAX_PREFIXES:
+            if candidate:
+                if len(prefixes) >= MAX_PREFIXES and candidate not in prefixes:
+                    raise ValueError("Too many IPv6 router prefixes")
                 prefixes.add(candidate)
         elif name == "recursive dns server":
             try:
@@ -98,8 +106,9 @@ def router_records(raw, scopes):
             if (
                 isinstance(address, ipaddress.IPv6Address)
                 and any(address in scope for scope in scopes)
-                and len(dns_servers) < MAX_DNS_SERVERS
             ):
+                if len(dns_servers) >= MAX_DNS_SERVERS and str(address) not in dns_servers:
+                    raise ValueError("Too many IPv6 advertised DNS servers")
                 dns_servers.add(str(address))
         elif name == "router preference" and value.lower() in PREFERENCE:
             props[name] = value.lower()
