@@ -80,7 +80,8 @@ Router lifetime           :         1800 (0x00000708) seconds
         with self.assertRaises(ValueError):
             router_records("x" * 65537, self.scopes)
         raw = "".join(f"from fe80::{i}\n" for i in range(1, 20))
-        self.assertEqual(len(router_records(raw, self.scopes)), 8)
+        with self.assertRaisesRegex(ValueError, "Too many"):
+            router_records(raw, self.scopes)
 
     def test_allows_prefix_overlap_without_widening_scan_scope(self):
         router = "Prefix: fd0e:be00:da00::/56\nfrom fe80::a\n"
