@@ -160,9 +160,16 @@ Manual plans include all validated actions by default. To constrain an approval,
 matching `--max-operations N` values for both `plan` and `apply` .
 
 When automatic apply is enabled, Yggflare validates the **complete plan** before
-executing a batch. New protected hostnames are created in **Access → Tunnel route →
-DNS** order. Yggflare adds routes to the configured Tunnel; it does not create new
-Tunnel objects.
+executing a batch. For Access changes, the assigned reusable policies must include
+at least one `allow` **or** `bypass` decision, followed by exactly one terminal
+`deny`. Bypass deliberately skips Access authentication for matching requests:
+review policy selectors carefully and never assume a policy is restricted from
+its name alone. Reconciliation error messages identify the hostname and selected
+policy decisions without exposing policy rules.
+
+New protected hostnames are created in **Access → Tunnel route → DNS** order.
+Yggflare adds routes to the configured Tunnel; it does not create new Tunnel
+objects.
 
 ### Ownership and cleanup
 
