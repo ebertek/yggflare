@@ -2,7 +2,7 @@
 
 This module is inert until explicitly called by a separately approved command.
 Existing Access policy updates require fresh-state verification and the
-unattended path additionally enforces defensive allow/deny policy guardrails.
+unattended path requires allow or bypass followed by a terminal deny policy.
 """
 
 import copy
@@ -115,30 +115,56 @@ AUTO_SUPPORTED = {
 }
 
 
-def check_auto_access_policies(wanted, reusable):
-    """Require an allow policy and a terminal deny for unattended Access changes."""
+def _describe_access_policies(policies):
+    """Bound error details and escape control characters in remote policy names."""
+    labels = []
+    for policy in policies[:12]:
+        name = policy.get("name") or policy["id"]
+        if not isinstance(name, str):
+            name = policy["id"]
+        label = "".join(char if char.isprintable() else "?" for char in name)[:64]
+        decision = policy.get("decision")
+        if decision not in ("allow", "bypass", "deny"):
+            decision = "invalid"
+        labels.append(f"{label}={decision}")
+    if len(policies) > 12:
+        labels.append(f"... (+{len(policies) - 12} more)")
+    return ", ".join(labels)
+
+
+def check_auto_access_policies(wanted, reusable, *, hostname=None):
+    """Require allow or bypass before one final deny for unattended Access."""
+    prefix = f"{hostname}: " if hostname else ""
     if not isinstance(reusable, list):
-        raise UnsafePlan("Cannot validate reusable Access policy inventory")
+        raise UnsafePlan(prefix + "Cannot validate reusable Access policy inventory")
     indexed = {}
     for policy in reusable:
         if not isinstance(policy, dict):
-            raise UnsafePlan("Malformed reusable Access policy")
+            raise UnsafePlan(prefix + "Malformed reusable Access policy")
         identifier = policy.get("id")
         if not isinstance(identifier, str) or identifier in indexed:
-            raise UnsafePlan("Invalid or duplicate reusable Access policy ID")
+            raise UnsafePlan(prefix + "Invalid or duplicate reusable Access policy ID")
         indexed[identifier] = policy
     if not isinstance(wanted, list) or len(wanted) != len(set(wanted)):
-        raise UnsafePlan("Invalid unattended Access policy assignments")
+        raise UnsafePlan(prefix + "Invalid unattended Access policy assignments")
     if not wanted or any(identifier not in indexed for identifier in wanted):
-        raise UnsafePlan("Unknown reusable policy in unattended Access update")
-    decisions = [indexed[identifier].get("decision") for identifier in wanted]
+        raise UnsafePlan(prefix + "Unknown reusable policy in unattended Access update")
+    selected = [indexed[identifier] for identifier in wanted]
+    decisions = [policy.get("decision") for policy in selected]
+    details = f"; selected: {_describe_access_policies(selected)}"
+    if any(decision not in ("allow", "bypass", "deny") for decision in decisions):
+        raise UnsafePlan(
+            prefix + "Unrecognized reusable Access policy decision" + details
+        )
     if decisions.count("deny") != 1 or decisions[-1] != "deny":
-        raise UnsafePlan("Unattended Access update requires a final deny policy")
-    if "allow" not in decisions[:-1]:
-        raise UnsafePlan("Unattended Access update requires an allow policy")
-    if any(decision not in {"allow", "bypass", "deny"} for decision in decisions):
-        raise UnsafePlan("Unrecognized reusable Access policy decision")
-
+        raise UnsafePlan(
+            prefix + "Unattended Access requires exactly one final deny policy" + details
+        )
+    if not any(decision in ("allow", "bypass") for decision in decisions[:-1]):
+        raise UnsafePlan(
+            prefix + "Unattended Access requires an allow or bypass policy "
+            "before the final deny" + details
+        )
 
 def check_unattended_plan(report, maximum=3, reusable=None):
     """Allow only bounded changes with safe new and existing Access policies."""
@@ -147,7 +173,9 @@ def check_unattended_plan(report, maximum=3, reusable=None):
         raise UnsafePlan("Unattended plan contains unsupported operations")
     for action in actions:
         if action["kind"] in {"create_access_app", "update_access_policies"}:
-            check_auto_access_policies(action["policies"], reusable)
+            check_auto_access_policies(
+                action["policies"], reusable, hostname=action["hostname"]
+            )
     return actions
 
 
@@ -391,7 +419,9 @@ def apply_actions(
                 raise UnsafePlan(f"{hostname}: reusable policy was removed")
             if unattended:
                 check_auto_access_policies(
-                    action["policies"], client.list_policies(context["account"])
+                    action["policies"],
+                    client.list_policies(context["account"]),
+                    hostname=hostname,
                 )
             client.create_access_app(context["account"], hostname, action["policies"])
             verify_access(client, context["account"], hostname, action["policies"])
@@ -407,7 +437,9 @@ def apply_actions(
                 raise UnsafePlan(f"{hostname}: reusable policy is not available")
             if unattended:
                 check_auto_access_policies(
-                    action["policies"], client.list_policies(context["account"])
+                    action["policies"],
+                    client.list_policies(context["account"]),
+                    hostname=hostname,
                 )
             try:
                 client.update_access_policies(
