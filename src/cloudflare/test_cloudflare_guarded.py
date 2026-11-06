@@ -335,7 +335,7 @@ class GuardedTests(unittest.TestCase):
             [allow, POLICY, deny],
         )
 
-    def test_unattended_access_update_blocks_missing_allow_or_deny(self):
+    def test_unattended_access_update_blocks_missing_terminal_deny(self):
         """Reject unsafe automatic policy changes before any API write."""
         allow = "22222222-2222-2222-2222-222222222222"
         deny = "33333333-3333-3333-3333-333333333333"
@@ -344,7 +344,7 @@ class GuardedTests(unittest.TestCase):
             {"id": allow, "decision": "allow"},
             {"id": deny, "decision": "deny"},
         ]
-        for wanted in ([POLICY, deny], [allow], [deny, allow], [allow, deny, deny]):
+        for wanted in ([deny], [allow], [deny, allow], [allow, deny, deny]):
             with self.subTest(wanted=wanted), self.assertRaises(UnsafePlan):
                 check_unattended_plan(
                     report(
@@ -359,14 +359,14 @@ class GuardedTests(unittest.TestCase):
                     reusable=records,
                 )
 
-    def test_unattended_access_update_refuses_changed_policy_decision(self):
+    def test_unattended_access_update_refuses_unknown_policy_decision(self):
         """Recheck reusable decisions immediately before updating the app."""
         allow = "22222222-2222-2222-2222-222222222222"
         deny = "33333333-3333-3333-3333-333333333333"
         client = FakeWriter()
         client.policies = [
             {"id": POLICY, "decision": "bypass"},
-            {"id": allow, "decision": "bypass"},
+            {"id": allow, "decision": "service_auth"},
             {"id": deny, "decision": "deny"},
         ]
         client.apps = [
@@ -391,7 +391,7 @@ class GuardedTests(unittest.TestCase):
         self.assertEqual(client.events, [])
 
     def test_unattended_accepts_bounded_new_host(self):
-        """A new service's three staged operations require allow and final deny."""
+        """A new service's staged operations require allow/bypass and final deny."""
         allow = "22222222-2222-2222-2222-222222222222"
         deny = "33333333-3333-3333-3333-333333333333"
         client = FakeWriter()
@@ -413,8 +413,102 @@ class GuardedTests(unittest.TestCase):
                 report(*(candidate["actions"] * 2)), reusable=client.policies
             )
 
+    def test_unattended_bjornify_creation_accepts_bypass_policies(self):
+        """Bypass + bypass + terminal deny permits guarded automatic creation."""
+        whitelist = "22222222-2222-2222-2222-222222222222"
+        block = "33333333-3333-3333-3333-333333333333"
+        client = FakeWriter()
+        client.policies = [
+            {"id": POLICY, "name": "2-Home", "decision": "bypass"},
+            {"id": whitelist, "name": "3-Whitelist", "decision": "bypass"},
+            {"id": block, "name": "Block", "decision": "deny"},
+        ]
+        candidate = safe_new_host_actions(POLICY, block)
+        for action in candidate["actions"]:
+            action["hostname"] = "bjornify.ebi.nu"
+            action["policies"] = [POLICY, whitelist, block]
+        approved = check_unattended_plan(candidate, reusable=client.policies)
+        self.assertEqual(len(approved), 3)
+        completed = apply_actions(client, candidate, CONTEXT, unattended=True)
+        self.assertEqual(
+            [step["kind"] for step in completed],
+            ["create_access_app", "add_tunnel_ingress", "create_dns_cname"],
+        )
+        self.assertEqual(client.events, ["access", "tunnel", "dns"])
+        self.assertEqual(
+            [item["id"] for item in client.apps[0]["policies"]],
+            [POLICY, whitelist, block],
+        )
+
+    def test_unattended_bypass_only_update_preserves_application(self):
+        """Bypass also works for an existing Access application's update."""
+        block = "33333333-3333-3333-3333-333333333333"
+        client = FakeWriter()
+        client.policies = [
+            {"id": POLICY, "name": "2-Home", "decision": "bypass"},
+            {"id": block, "name": "Block", "decision": "deny"},
+        ]
+        client.apps = [
+            {
+                "id": "d" * 32,
+                "name": "bjornify",
+                "domain": "bjornify.ebi.nu",
+                "type": "self_hosted",
+                "session_duration": "12h",
+                "policies": policy_links([POLICY, block]),
+            }
+        ]
+        changed = report(
+            {
+                "kind": "update_access_policies",
+                "hostname": "bjornify.ebi.nu",
+                "app_id": "d" * 32,
+                "before": [POLICY, block],
+                "policies": [POLICY, block],
+            }
+        )
+        check_unattended_plan(changed, reusable=client.policies)
+        result = apply_actions(client, changed, CONTEXT, unattended=True)
+        self.assertEqual(result[0]["kind"], "update_access_policies")
+        self.assertEqual(client.events, ["access_policy_update"])
+        self.assertEqual(client.apps[0]["session_duration"], "12h")
+
+    def test_unattended_policy_errors_name_hostname_and_decisions(self):
+        """Blocked plans identify hostname and selected decision types."""
+        block = "33333333-3333-3333-3333-333333333333"
+        client = FakeWriter()
+        client.policies = [
+            {"id": POLICY, "name": "2-Home", "decision": "service_auth"},
+            {"id": block, "name": "Block", "decision": "deny"},
+        ]
+        candidate = report(
+            {
+                "kind": "create_access_app",
+                "hostname": "bjornify.ebi.nu",
+                "policies": [POLICY, block],
+            }
+        )
+        with self.assertRaisesRegex(
+            UnsafePlan, "bjornify.ebi.nu: Unrecognized reusable Access policy decision"
+        ) as caught:
+            check_unattended_plan(candidate, reusable=client.policies)
+        self.assertIn("2-Home=invalid, Block=deny", str(caught.exception))
+        client.policies[0]["decision"] = "bypass"
+        candidate["actions"][0]["policies"] = [block]
+        with self.assertRaisesRegex(
+            UnsafePlan, "bjornify.ebi.nu: Unattended Access requires an allow or bypass"
+        ) as caught:
+            check_unattended_plan(candidate, reusable=client.policies)
+        self.assertIn("selected: Block=deny", str(caught.exception))
+        candidate["actions"][0]["policies"] = [POLICY]
+        with self.assertRaisesRegex(
+            UnsafePlan, "bjornify.ebi.nu: Unattended Access requires exactly one final deny"
+        ) as caught:
+            check_unattended_plan(candidate, reusable=client.policies)
+        self.assertIn("selected: 2-Home=bypass", str(caught.exception))
+
     def test_unattended_new_host_rejects_unsafe_policies_before_writes(self):
-        """Missing allow/deny and wrong order must never create a public app."""
+        """Missing grant/deny and wrong order must never create a public app."""
         allow = "22222222-2222-2222-2222-222222222222"
         deny = "33333333-3333-3333-3333-333333333333"
         client = FakeWriter()
@@ -423,7 +517,7 @@ class GuardedTests(unittest.TestCase):
             {"id": allow, "decision": "allow"},
             {"id": deny, "decision": "deny"},
         ]
-        for policies in ([POLICY], [POLICY, deny], [allow], [deny, allow]):
+        for policies in ([POLICY], [deny], [allow], [deny, allow]):
             candidate = safe_new_host_actions(allow, deny)
             for action in candidate["actions"]:
                 action["policies"] = list(policies)
@@ -444,7 +538,7 @@ class GuardedTests(unittest.TestCase):
             {"id": deny, "decision": "deny"},
         ]
         changed = [
-            {"id": allow, "decision": "bypass"},
+            {"id": allow, "decision": "service_auth"},
             {"id": deny, "decision": "deny"},
         ]
         with (
