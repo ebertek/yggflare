@@ -502,7 +502,8 @@ class GuardedTests(unittest.TestCase):
         self.assertIn("selected: Block=deny", str(caught.exception))
         candidate["actions"][0]["policies"] = [POLICY]
         with self.assertRaisesRegex(
-            UnsafePlan, "bjornify.ebi.nu: Unattended Access requires exactly one final deny"
+            UnsafePlan,
+            "bjornify.ebi.nu: Unattended Access requires exactly one final deny",
         ) as caught:
             check_unattended_plan(candidate, reusable=client.policies)
         self.assertIn("selected: 2-Home=bypass", str(caught.exception))
