@@ -158,13 +158,16 @@ def check_auto_access_policies(wanted, reusable, *, hostname=None):
         )
     if decisions.count("deny") != 1 or decisions[-1] != "deny":
         raise UnsafePlan(
-            prefix + "Unattended Access requires exactly one final deny policy" + details
+            prefix
+            + "Unattended Access requires exactly one final deny policy"
+            + details
         )
     if not any(decision in ("allow", "bypass") for decision in decisions[:-1]):
         raise UnsafePlan(
             prefix + "Unattended Access requires an allow or bypass policy "
             "before the final deny" + details
         )
+
 
 def check_unattended_plan(report, maximum=3, reusable=None):
     """Allow only bounded changes with safe new and existing Access policies."""
