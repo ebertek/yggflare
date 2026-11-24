@@ -314,7 +314,9 @@ class NetworkAuditTests(unittest.TestCase):
                 )
                 recovered = json.loads((root / "state.json").read_text())
                 self.assertEqual(recovered["pending_discord_events"], [])
-                self.assertEqual(recovered["notification_status"]["status"], "submitted")
+                self.assertEqual(
+                    recovered["notification_status"]["status"], "submitted"
+                )
                 self.assertIn("last_success_at", recovered["notification_status"])
                 self.assertEqual(recovered["recent_events"], failed["recent_events"])
 

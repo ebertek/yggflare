@@ -643,7 +643,9 @@ def main():
                 save_state(args.state_dir, snapshot)
                 notify_discord(webhook, snapshot["pending_discord_events"])
                 snapshot["pending_discord_events"] = []
-                delivery.update(status="submitted", last_success_at=datetime.now(UTC).isoformat())
+                delivery.update(
+                    status="submitted", last_success_at=datetime.now(UTC).isoformat()
+                )
             else:
                 snapshot["notification_status"]["status"] = "not_configured"
         except (RuntimeError, ValueError) as error:

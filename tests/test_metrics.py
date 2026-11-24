@@ -15,13 +15,20 @@ class MetricsTests(unittest.TestCase):
     def test_job_metrics_do_not_invent_success_or_expose_job_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "job-status.json").write_text(json.dumps({
-                "version": 1,
-                "jobs": {
-                    "backup": {"status": "completion_unknown", "started_at": "2026-11-03T00:00:00Z"},
-                    "private": {"status": "succeeded"},
-                },
-            }))
+            (root / "job-status.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "jobs": {
+                            "backup": {
+                                "status": "completion_unknown",
+                                "started_at": "2026-11-03T00:00:00Z",
+                            },
+                            "private": {"status": "succeeded"},
+                        },
+                    }
+                )
+            )
             output = metrics.render(root, root).decode()
             self.assertIn("yggflare_job_evidence_available 1", output)
             self.assertIn("yggflare_job_backup_completion_unknown 1", output)

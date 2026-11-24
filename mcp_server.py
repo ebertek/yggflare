@@ -712,7 +712,9 @@ class InventoryTools:
         artifacts = artifact_status(Path("/backup"))
         jobs = (data.get("job_status") or {}).get("jobs", {})
         latest = artifacts.get("latest")
-        checks = backup_checks(Path("/data"), Path("/backup") / latest["name"] if latest else None)
+        checks = backup_checks(
+            Path("/data"), Path("/backup") / latest["name"] if latest else None
+        )
         return {
             **project(artifacts, ("available", "archive_count")),
             "latest": artifacts.get("latest"),
@@ -733,8 +735,12 @@ class InventoryTools:
         return {
             **snapshot_context(data),
             "pending_deliveries": len(state.get("pending_discord_events", [])),
-            "last_success_at": state.get("notification_status", {}).get("last_success_at"),
-            **project(state.get("notification_status", {}), ("status", "last_attempt_at")),
+            "last_success_at": state.get("notification_status", {}).get(
+                "last_success_at"
+            ),
+            **project(
+                state.get("notification_status", {}), ("status", "last_attempt_at")
+            ),
             "recipient_receipt_verified": None,
         }
 

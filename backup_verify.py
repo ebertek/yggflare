@@ -26,7 +26,8 @@ def main():
     try:
         result = (
             restore_test(candidate, controller.DATA)
-            if args.restore_test else verify_archive(candidate)
+            if args.restore_test
+            else verify_archive(candidate)
         )
     except Exception:
         try:
