@@ -17,6 +17,7 @@ from docker_inventory import address_key, local_macvlan_interfaces, snapshot
 from inventory_catalog import records as catalog_records
 from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
+from job_status import health, read_jobs
 from metrics import render as render_metrics
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
 
@@ -255,6 +256,8 @@ def model():
         "hosts": sorted(hosts, key=lambda h: (address_key(h["ipv4"]), h["hostname"])),
         "warnings": warnings,
         "network_state": state,
+        "job_status": read_jobs(DATA),
+        "controller_health": health(DATA),
         "discovery_devices": inventory.get("hosts", []),
         "cloudflare_view": optional_state("cloudflare-view.json"),
         "cloudflare_view_status": optional_state("cloudflare-view-status.json"),

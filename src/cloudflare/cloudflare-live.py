@@ -33,7 +33,13 @@ from cloudflare_unaccounted_dns import (
     declared_dns_names,
     print_unaccounted_summary,
 )
-from cloudflare_view import begin, project, publish
+from cloudflare_view import (
+    audit_projection,
+    begin,
+    configuration_projection,
+    project,
+    publish,
+)
 from yggflare_config import cloudflare_settings, domain
 
 CONTAINER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -189,6 +195,17 @@ def run_audit(
     for action in static_actions:
         kind = action["kind"]
         report["proposed_by_kind"][kind] = report["proposed_by_kind"].get(kind, 0) + 1
+    report["web_view"]["audit"] = audit_projection(report)
+    report["web_view"]["configuration"] = configuration_projection(
+        desired,
+        apps,
+        policies,
+        public_dns,
+        internal_dns,
+        routes,
+        tunnel_id,
+        internal_dns_collected=not skip_docker,
+    )
     report["mode"] = "READ_ONLY_LIVE_API"
     report["notes"] = [
         "Cloudflare API GET requests only; no updates or deletions",

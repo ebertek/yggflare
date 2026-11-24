@@ -1,12 +1,14 @@
 """Regression tests for the read-only MCP interface."""
 
 import sys
+import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
 
 from mcp import Client, StdioServerParameters
 
+from job_status import artifact_status, read_jobs, track
 from mcp_server import TOOL_NAMES, InventoryTools, build_server
 
 
@@ -171,6 +173,197 @@ class InventoryToolTests(unittest.TestCase):
         self.assertFalse(status["scan_initialized"])
         self.assertIsNone(status["scanned_at"])
         self.assertFalse(status["cloudflare"]["last_refresh_verified"])
+
+    def test_extended_evidence_and_secret_projection(self):
+        state = self.data["network_state"]
+        state["supplemental"] = {
+            "observed_at": "sample",
+            "records": [
+                {
+                    "ip": "",
+                    "source": "IPv6 router advertisement",
+                    "detail": "prefix",
+                    "secret": "never-export",
+                },
+                {"ip": "192.0.2.10", "source": "ARP reply", "detail": "mac"},
+            ],
+        }
+        state["identity_conflicts"] = [
+            {
+                "address": "192.0.2.10",
+                "macs": ["one", "two"],
+                "reasons": ["conflict"],
+                "secret": "never-export",
+            }
+        ]
+        state["identity_history"]["example"]["macs"] = ["02:00:00:00:00:10"]
+        state["identity_changes"] = [{"identity": "example", "kind": "first-observed"}]
+        state["hosts"] = {
+            "192.0.2.10": {
+                "ports": ["tcp/80"],
+                "services": {"tcp/80": {"name": "http", "secret": "never-export"}},
+            }
+        }
+        state["advertisements"] = ["example.local|_http._tcp|80"]
+        state["alert_pending_confirmations"] = ["candidate"]
+        self.assertEqual(
+            self.tools.get_discovery_status()["supplemental_source_counts"][
+                "ARP reply"
+            ],
+            1,
+        )
+        self.assertEqual(
+            self.tools.get_discovery_evidence(source="ARP reply")["total"], 1
+        )
+        self.assertNotIn("never-export", str(self.tools.get_discovery_evidence()))
+        self.assertNotIn("never-export", str(self.tools.get_identity_conflicts()))
+        self.assertEqual(self.tools.get_device_history("02:00:00:00:00:10")["total"], 1)
+        self.assertEqual(self.tools.get_identity_changes("example")["total"], 1)
+        services = self.tools.list_network_services()
+        self.assertEqual([r["source"] for r in services["items"]], ["nmap", "dns_sd"])
+        self.assertNotIn("never-export", str(services))
+        self.assertEqual(self.tools.get_pending_network_findings()["total"], 1)
+
+    def test_audit_missing_and_filtered(self):
+        self.assertFalse(self.tools.get_cloudflare_audit()["audit_available"])
+        self.data["cloudflare_view"]["audit"] = {
+            "version": 1,
+            "total_findings": 2,
+            "truncated": False,
+            "findings": [
+                {
+                    "section": "blocked",
+                    "hostname": "example.invalid",
+                    "reason": "multiple Access apps",
+                    "secret": "never-export",
+                },
+                {
+                    "section": "proposed",
+                    "hostname": "other.invalid",
+                    "kind": "create_dns_cname",
+                },
+            ],
+        }
+        result = self.tools.get_cloudflare_audit(section="blocked")
+        self.assertTrue(result["audit_available"])
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["snapshot_total_findings"], 2)
+        self.assertNotIn("never-export", str(result))
+        with self.assertRaises(ValueError):
+            self.tools.get_cloudflare_audit(section="unknown")
+
+    def test_cloudflare_configuration_and_saved_findings(self):
+        self.assertFalse(self.tools.get_cloudflare_access()["configuration_available"])
+        self.data["cloudflare_view"]["configuration"] = {
+            "version": 1,
+            "internal_dns_collected": True,
+            "access": {
+                "total": 1,
+                "items": [
+                    {
+                        "hostname": "example.invalid",
+                        "status": "matched",
+                        "observed_decisions": ["allow", "deny"],
+                        "secret": "never-export",
+                    }
+                ],
+            },
+            "dns": {
+                "total": 1,
+                "items": [
+                    {
+                        "hostname": "example.invalid",
+                        "type": "TXT",
+                        "content": "never-export",
+                    }
+                ],
+            },
+            "tunnel": {
+                "total": 1,
+                "items": [
+                    {
+                        "hostname": "example.invalid",
+                        "origin_host": "origin.invalid",
+                        "secret": "never-export",
+                    }
+                ],
+            },
+        }
+        access = self.tools.get_cloudflare_access("example.invalid")
+        self.assertEqual(access["items"][0]["observed_decisions"], ["allow", "deny"])
+        self.assertNotIn("never-export", str(access))
+        self.assertNotIn("never-export", str(self.tools.get_cloudflare_dns()))
+        self.assertNotIn("never-export", str(self.tools.get_cloudflare_tunnel()))
+        self.data["network_state"]["reported"] = {"new-port:192.0.2.10:tcp/80": "new"}
+        self.assertEqual(
+            self.tools.get_network_findings()["items"][0]["finding_id"],
+            "new-port:192.0.2.10:tcp/80",
+        )
+
+    def test_dns_sd_address_filter(self):
+        self.data["network_state"]["advertisement_details"] = [
+            {
+                "host": "example.local",
+                "service": "_http._tcp",
+                "port": 80,
+                "addresses": ["192.0.2.10"],
+                "txt": "never-export",
+            }
+        ]
+        result = self.tools.list_network_services(address="192.0.2.10")
+        self.assertEqual(result["total"], 1)
+        self.assertNotIn("never-export", str(result))
+
+    def test_operational_status(self):
+        self.assertFalse(self.tools.get_job_status()["available"])
+        self.data["job_status"] = {
+            "version": 1,
+            "jobs": {
+                "backup": {
+                    "status": "succeeded",
+                    "last_success_at": "sample",
+                    "history": [
+                        {
+                            "status": "succeeded",
+                            "started_at": "sample",
+                            "secret": "never-export",
+                        }
+                    ],
+                }
+            },
+        }
+        self.assertTrue(self.tools.get_job_status()["available"])
+        self.assertEqual(self.tools.get_job_history("backup")["total"], 1)
+        self.assertNotIn("never-export", str(self.tools.get_job_history()))
+        self.assertIsNone(
+            self.tools.get_notification_status()["recipient_receipt_verified"]
+        )
+
+    def test_scheduler_evidence_and_archive_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            self.assertIsNone(read_jobs(data))
+            with track(data, "backup", self.fail):
+                self.assertEqual(
+                    read_jobs(data)["jobs"]["backup"]["status"], "completion_unknown"
+                )
+            success = read_jobs(data)["jobs"]["backup"]["last_success_at"]
+            with self.assertRaisesRegex(RuntimeError, "SECRET"):
+                with track(data, "backup", self.fail):
+                    raise RuntimeError("SECRET")
+            row = read_jobs(data)["jobs"]["backup"]
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["last_success_at"], success)
+            self.assertNotIn("SECRET", str(row))
+            for _ in range(25):
+                with track(data, "backup", self.fail):
+                    pass
+            self.assertEqual(len(read_jobs(data)["jobs"]["backup"]["history"]), 20)
+            (data / "yggflare-20260101T000000Z.tar.gz").write_bytes(b"test")
+            (data / "yggflare-20260102T000000Z.tar.gz").symlink_to("/etc/passwd")
+            result = artifact_status(data)
+            self.assertEqual(result["archive_count"], 1)
+            self.assertEqual(result["latest"]["bytes"], 4)
 
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):

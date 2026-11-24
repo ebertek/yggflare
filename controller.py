@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from backup import create_snapshot, prune_snapshots
+from job_status import track
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
@@ -305,6 +306,10 @@ def main():
             listener.stop()
 
 
+def tracked(job):
+    return track(DATA, job, lambda message: log("warning", "controller", message))
+
+
 def run_scheduler(listener=None):
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     web_enabled = os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true"
@@ -345,12 +350,14 @@ def run_scheduler(listener=None):
             trigger = "scheduled" if periodic else ", ".join(reasons)
             log("info", "cloudflare", f"Reconciliation triggered: {trigger}")
             try:
-                cloudflare_run()
+                with tracked("cloudflare_cycle"):
+                    cloudflare_run()
             except Exception as error:
                 log("error", "cloudflare", f"Cycle failed: {error}")
             if web_enabled or listener is not None:
                 try:
-                    refresh_cloudflare_view()
+                    with tracked("cloudflare_view"):
+                        refresh_cloudflare_view()
                 except Exception:
                     log(
                         "warning",
@@ -363,11 +370,12 @@ def run_scheduler(listener=None):
         if (current_utc.hour, current_utc.minute) >= (4, 0):
             if last_backup_day != current_utc.date().isoformat():
                 try:
-                    archive = create_snapshot(
-                        CONFIG, DATA, BACKUP, Path("/run/secrets")
-                    )
-                    prune_snapshots(BACKUP)
-                    log("info", "backup", f"Snapshot created: {archive.name}")
+                    with tracked("backup"):
+                        archive = create_snapshot(
+                            CONFIG, DATA, BACKUP, Path("/run/secrets")
+                        )
+                        prune_snapshots(BACKUP)
+                        log("info", "backup", f"Snapshot created: {archive.name}")
                     last_backup_day = current_utc.date().isoformat()
                     backup_marker.write_text(last_backup_day + "\n", encoding="utf-8")
                 except Exception as error:
@@ -375,7 +383,8 @@ def run_scheduler(listener=None):
         if (current_utc.hour, current_utc.minute) >= (NETWORK_HOUR, NETWORK_MINUTE):
             if last_network_day != current_utc.date().isoformat():
                 try:
-                    network_run()
+                    with tracked("network_scan"):
+                        network_run()
                     last_network_day = current_utc.date().isoformat()
                     network_marker.write_text(last_network_day + "\n", encoding="utf-8")
                 except Exception as error:
