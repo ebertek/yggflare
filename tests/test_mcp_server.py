@@ -396,6 +396,20 @@ class InventoryToolTests(unittest.TestCase):
         self.assertIsNone(path["reachability_verified"])
         self.assertNotIn("never-export", str(path))
 
+    def test_topology_and_snapshot_pagination(self):
+        rows = [
+            {"project": "core", "service": "a", "declared_networks": ["lan"], "runtime_networks": ["core_lan"]},
+            {"project": "core", "service": "b", "shared_network": "a"},
+        ]
+        self.tools.service_loader = lambda: {"items": rows}
+        first = self.tools.list_docker_services(limit=1)
+        second = self.tools.list_docker_services(offset=1, limit=1, snapshot_id=first["snapshot_id"])
+        self.assertEqual(second["items"][0]["service"], "b")
+        self.assertEqual(self.tools.get_network_topology()["total"], 3)
+        rows[0]["service"] = "changed"
+        with self.assertRaises(ValueError):
+            self.tools.list_docker_services(offset=1, snapshot_id=first["snapshot_id"])
+
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):

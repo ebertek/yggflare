@@ -307,7 +307,7 @@ protect the listener.
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same twenty-nine read-only tools. HTTP is disabled by default.
+use the same thirty read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -376,13 +376,14 @@ in the repository.
 | `get_yggflare_health` | Controller heartbeat and image revision |
 | `get_job_status` | Last attempt and last success for scheduled jobs |
 | `get_job_history` | Bounded scheduler execution history |
-| `get_backup_status` | Local archive metadata and backup job status |
-| `get_notification_status` | Saved pending delivery count; delivery remains unverified |
+| `get_backup_status` | Local archive metadata, job status and recorded explicit verification |
+| `get_notification_status` | Saved queue depth and webhook submission evidence |
 | `list_docker_services` | Compose and local runtime services, including non-LAN services |
 | `get_docker_service` | Exact project-scoped service or endpoint lookup |
 | `get_compose_drift` | Candidate image, address, health and presence discrepancies |
 | `get_service_dependencies` | Declared dependencies and shared-network evidence |
 | `get_ingress_path` | Correlate exact service aliases with saved Cloudflare configuration |
+| `get_network_topology` | Declared and local runtime network memberships and resolved namespace ownership |
 
 Service topology uses a separate 30-second sanitized cache. It includes host
 and bridge-only declarations without inventing LAN addresses. Local Docker
@@ -395,7 +396,13 @@ Job evidence is retained for the last 20 completed/unknown attempts per
 scheduled job. A started attempt with no completion evidence is
 `completion_unknown`, not a confirmed running or successful job. Archive
 presence does not imply integrity or restoration; an empty notification queue
-does not establish recipient receipt. These tools do not run diagnostics,
+does not establish recipient receipt. Existing explicit backup verify/restore-test
+commands record the latest check outcome of each kind, tied to the unchanged
+archive's file identity and timestamps. Changed or different archives have
+unknown evidence; off-host retention and application recovery remain unverified.
+Network scans record webhook attempts and successful submissions, not receipt.
+The metrics endpoint exposes fixed scheduler attempt/success/completion-unknown
+series and the last successful webhook submission timestamp. These tools do not run diagnostics,
 read archives, send notifications or execute jobs.
 
 The audit snapshot is available after the next successful presentation refresh;
@@ -407,7 +414,11 @@ Origin userinfo, paths and queries are never returned. Findings are not executab
 plans, omit policy IDs/selectors and arbitrary DNS payloads, and are capped at
 2,000 with explicit truncation metadata. Supplemental source counts describe
 observations, not collector coverage or success. Pending findings are distinct
-from pending Discord deliveries. All list tools retain the 50-item page limit.
+from pending Discord deliveries. All list tools retain the 50-item page limit and return a projected result-set
+fingerprint (`snapshot_id`). Pages may be shorter than requested due to the
+256 KiB row budget; follow `next_offset`. `list_docker_services` and
+`get_network_topology` accept the previous snapshot ID and reject changed
+results. Other callers can compare IDs themselves.
 
 Tools do not run scans, call Cloudflare, trigger reconciliation, send
 notifications, or change inventory. The inventory model may inspect local

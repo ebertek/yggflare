@@ -1,5 +1,7 @@
 """Read-only MCP tools over Yggflare's existing presentation model."""
 
+import hashlib
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -68,15 +70,32 @@ def project(record, fields):
     return {key: bounded(record[key]) for key in fields if key in record}
 
 
-def page(rows, offset, limit):
+def page(rows, offset, limit, expected_snapshot_id=""):
     if offset < 0 or not 1 <= limit <= MAX_PAGE:
         raise ValueError("offset must be nonnegative; limit must be between 1 and 50")
-    end = offset + limit
+    # Fingerprint projected, filtered rows; do not retain private copies.
+    digest = hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if expected_snapshot_id and expected_snapshot_id != digest:
+        raise ValueError("Result set changed; restart pagination at offset zero")
+    items = []
+    used = 0
+    for row in rows[offset:offset + limit]:
+        size = len(json.dumps(row, ensure_ascii=True).encode())
+        if size > 256 * 1024:
+            raise ValueError("Projected row exceeds response budget")
+        if used + size > 256 * 1024:
+            break
+        items.append(row)
+        used += size
+    end = offset + len(items)
     return {
         "total": len(rows),
         "offset": offset,
         "next_offset": end if end < len(rows) else None,
-        "items": rows[offset:end],
+        "snapshot_id": digest,
+        "items": items,
     }
 
 
@@ -707,7 +726,7 @@ class InventoryTools:
         return {"available": document is not None, **page(rows, offset, limit)}
 
     def get_backup_status(self) -> dict[str, Any]:
-        """Read local archive metadata; never verify, extract or claim restore assurance."""
+        """Read archive metadata and recorded explicit checks; never open archives."""
         data = self.loader()
         artifacts = artifact_status(Path("/backup"))
         jobs = (data.get("job_status") or {}).get("jobs", {})
@@ -779,11 +798,12 @@ class InventoryTools:
         return context, rows
 
     def list_docker_services(
-        self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25
+        self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25,
+        snapshot_id: str = "",
     ) -> dict[str, Any]:
         """List Compose and local runtime services including non-LAN services."""
         context, rows = self._service_rows(query, project_name)
-        return {**context, **page(rows, offset, limit)}
+        return {**context, **page(rows, offset, limit, snapshot_id)}
 
     def get_docker_service(
         self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
@@ -857,6 +877,23 @@ class InventoryTools:
         )
         result["items"] = [project(row, fields) for row in result["items"]]
         return result
+
+    def get_network_topology(
+        self, project_name: str = "", offset: int = 0, limit: int = 25,
+        snapshot_id: str = "",
+    ) -> dict[str, Any]:
+        """List declared and local runtime network relationships, not physical links."""
+        context, services = self._service_rows("", project_name)
+        rows = []
+        for row in services:
+            identity = project(row, ("project", "service", "container_name"))
+            for field, source in (("declared_networks", "compose"), ("runtime_networks", "local_docker")):
+                for network in row.get(field, []):
+                    rows.append({**identity, "network": network, "source": source})
+            if row.get("shared_network"):
+                rows.append({**identity, "network_owner": row["shared_network"],
+                             "source": "resolved_namespace"})
+        return {**context, **page(rows, offset, limit, snapshot_id)}
 
     def get_ingress_path(
         self, hostname: str, offset: int = 0, limit: int = 25
@@ -981,6 +1018,7 @@ TOOL_NAMES = (
     "get_compose_drift",
     "get_service_dependencies",
     "get_ingress_path",
+    "get_network_topology",
 )
 
 
