@@ -307,7 +307,7 @@ protect the listener.
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same seven read-only tools. HTTP is disabled by default.
+use the same fifteen read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -361,6 +361,21 @@ in the repository.
 | `get_discovery_changes` | Recent saved discovery events |
 | `get_cloudflare_lifecycle` | Saved DNS, Access and Tunnel resource presence |
 | `get_service_exposure` | Correlate Docker aliases with saved Cloudflare lifecycle |
+| `get_cloudflare_audit` | Saved proposed, blocked, static DNS and review-only DNS findings |
+| `get_discovery_status` | Saved collector observation counts and freshness |
+| `get_discovery_evidence` | Supplemental observations by address or source |
+| `get_identity_conflicts` | Competing MAC/address evidence |
+| `get_device_history` | Page retained identity records by ID, label, address or MAC |
+| `get_identity_changes` | Retained identity timeline |
+| `list_network_services` | Scan-confirmed ports and separate DNS-SD advertisements |
+| `get_pending_network_findings` | Findings awaiting confirmation |
+
+The audit snapshot is available after the next successful presentation refresh;
+older snapshots report `audit_available=false`. Findings are not executable
+plans, omit policy IDs/selectors and arbitrary DNS payloads, and are capped at
+2,000 with explicit truncation metadata. Supplemental source counts describe
+observations, not collector coverage or success. Pending findings are distinct
+from pending Discord deliveries. All list tools retain the 50-item page limit.
 
 Tools do not run scans, call Cloudflare, trigger reconciliation, send
 notifications, or change inventory. The inventory model may inspect local

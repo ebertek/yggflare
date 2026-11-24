@@ -1,5 +1,6 @@
 """Allowlisted presentation snapshot; never an input to reconciliation/cleanup."""
 
+import ipaddress
 import json
 import os
 import tempfile
@@ -66,6 +67,80 @@ def project(registry, desired, applications, dns, config):
         "audited_at": timestamp(),
         "scope": registry["scope"],
         "hosts": rows,
+    }
+
+
+# Bound the saved projection independently of MCP pagination.
+MAX_AUDIT_ROWS = 2000
+BLOCK_REASONS = frozenset(
+    {
+        "multiple Access apps",
+        "Access app is not self_hosted",
+        "Access app is missing its ordered policy list",
+        "Unexpected Access policy representation",
+        "Access policy lacks ID or integer precedence",
+        "Access policy precedence is not consecutive from 1",
+        "Duplicate Access policy IDs",
+        "existing DNS records conflict with tunnel CNAME",
+        "ambiguous Docker A records",
+        "invalid Docker IPv4 value",
+        "non-Docker address is protected",
+        "declared companion A records are absent",
+        "ambiguous A/CNAME records",
+        "A record is proxied",
+        "declared companion A records differ",
+    }
+)
+
+
+def audit_projection(report):
+    """Project findings, never raw policies, record payloads, IDs or write plans."""
+    rows = []
+
+    def add(section, item, fields):
+        row = {"section": section}
+        for key in fields:
+            value = item.get(key)
+            if isinstance(value, str):
+                row[key] = value[:253]
+            elif isinstance(value, bool):
+                row[key] = value
+        if "reason" in fields and item.get("reason"):
+            reason = item["reason"]
+            row["reason"] = (
+                reason if reason in BLOCK_REASONS else "validation failed"
+            )
+        # Only numeric IP values may leave the DNS comparison.
+        for key in ("expected", "actual", "before", "content"):
+            if key not in fields:
+                continue
+            row.pop(key, None)
+            try:
+                row[key] = str(ipaddress.ip_address(item.get(key)))
+            except ValueError:
+                pass
+        rows.append(row)
+
+    for item in report.get("actions", []):
+        add("proposed", item, ("hostname", "kind", "before", "content"))
+    for item in report.get("blocked", []):
+        add("blocked", item, ("hostname", "reason"))
+    static = report.get("static_dns", {})
+    for item in static.get("findings", []):
+        add("static_dns", item, ("hostname", "status", "reason", "expected", "actual"))
+    internal = report.get("unaccounted_ygg_dns", {})
+    for item in internal.get("findings", []):
+        add("unaccounted_dns", item, ("hostname", "type", "category", "proxied"))
+    for item in internal.get("retained", {}).get("missing", []):
+        add("retained_missing", item, ("hostname", "type"))
+    rows.sort(key=lambda row: (row["section"], row.get("hostname", "")))
+    return {
+        "version": 1,
+        "static_dns_enabled": static.get("enabled") is True,
+        "internal_dns_enabled": internal.get("enabled") is True,
+        "total_findings": len(rows),
+        "truncated": len(rows) > MAX_AUDIT_ROWS,
+        "findings": rows[:MAX_AUDIT_ROWS],
     }
 
 

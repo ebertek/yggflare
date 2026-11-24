@@ -172,6 +172,53 @@ class InventoryToolTests(unittest.TestCase):
         self.assertIsNone(status["scanned_at"])
         self.assertFalse(status["cloudflare"]["last_refresh_verified"])
 
+    def test_extended_evidence_and_secret_projection(self):
+        state = self.data["network_state"]
+        state["supplemental"] = {
+            "observed_at": "sample",
+            "records": [
+                {"ip": "", "source": "IPv6 router advertisement", "detail": "prefix", "secret": "never-export"},
+                {"ip": "192.0.2.10", "source": "ARP reply", "detail": "mac"},
+            ],
+        }
+        state["identity_conflicts"] = [
+            {"address": "192.0.2.10", "macs": ["one", "two"], "reasons": ["conflict"], "secret": "never-export"}
+        ]
+        state["identity_history"]["example"]["macs"] = ["02:00:00:00:00:10"]
+        state["identity_changes"] = [{"identity": "example", "kind": "first-observed"}]
+        state["hosts"] = {"192.0.2.10": {"ports": ["tcp/80"], "services": {"tcp/80": {"name": "http", "secret": "never-export"}}}}
+        state["advertisements"] = ["example.local|_http._tcp|80"]
+        state["alert_pending_confirmations"] = ["candidate"]
+        self.assertEqual(self.tools.get_discovery_status()["supplemental_source_counts"]["ARP reply"], 1)
+        self.assertEqual(self.tools.get_discovery_evidence(source="ARP reply")["total"], 1)
+        self.assertNotIn("never-export", str(self.tools.get_discovery_evidence()))
+        self.assertNotIn("never-export", str(self.tools.get_identity_conflicts()))
+        self.assertEqual(self.tools.get_device_history("02:00:00:00:00:10")["total"], 1)
+        self.assertEqual(self.tools.get_identity_changes("example")["total"], 1)
+        services = self.tools.list_network_services()
+        self.assertEqual([r["source"] for r in services["items"]], ["nmap", "dns_sd"])
+        self.assertNotIn("never-export", str(services))
+        self.assertEqual(self.tools.get_pending_network_findings()["total"], 1)
+
+    def test_audit_missing_and_filtered(self):
+        self.assertFalse(self.tools.get_cloudflare_audit()["audit_available"])
+        self.data["cloudflare_view"]["audit"] = {
+            "version": 1,
+            "total_findings": 2,
+            "truncated": False,
+            "findings": [
+                {"section": "blocked", "hostname": "example.invalid", "reason": "multiple Access apps", "secret": "never-export"},
+                {"section": "proposed", "hostname": "other.invalid", "kind": "create_dns_cname"},
+            ],
+        }
+        result = self.tools.get_cloudflare_audit(section="blocked")
+        self.assertTrue(result["audit_available"])
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["snapshot_total_findings"], 2)
+        self.assertNotIn("never-export", str(result))
+        with self.assertRaises(ValueError):
+            self.tools.get_cloudflare_audit(section="unknown")
+
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):

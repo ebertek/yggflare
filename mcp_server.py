@@ -39,6 +39,9 @@ IDENTITY_FIELDS = (
     "last_seen",
     "seen_scans",
     "name_hints",
+    "macs",
+    "sources",
+    "missed_scans",
 )
 CLOUDFLARE_FIELDS = ("hostname", "lifecycle", "declared", "claimed", "tunnel_routes")
 
@@ -302,6 +305,178 @@ class InventoryTools:
             "ownership_counts": counts,
         }
 
+    def get_cloudflare_audit(
+        self, hostname: str = "", section: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read saved configuration discrepancies, not an executable write plan."""
+        sections = ("proposed", "blocked", "static_dns", "unaccounted_dns", "retained_missing")
+        if section and section not in sections:
+            raise ValueError("Unknown audit section")
+        data = self.loader()
+        audit = data.get("cloudflare_view", {}).get("audit", {})
+        available = audit.get("version") == 1
+        rows = [
+            project(
+                item,
+                (
+                    "section", "hostname", "kind", "reason", "status", "type",
+                    "category", "proxied", "expected", "actual", "before", "content",
+                ),
+            )
+            for item in audit.get("findings", [])
+            if available
+            and (not section or item.get("section") == section)
+            and (not hostname or item.get("hostname", "").casefold() == hostname.casefold())
+        ]
+        return {
+            **cloudflare_context(data),
+            "audit_available": available,
+            "static_dns_enabled": audit.get("static_dns_enabled") if available else None,
+            "internal_dns_enabled": audit.get("internal_dns_enabled") if available else None,
+            "snapshot_total_findings": audit.get("total_findings") if available else None,
+            "snapshot_truncated": audit.get("truncated") if available else None,
+            **page(rows, offset, limit),
+        }
+
+    def get_discovery_status(self) -> dict[str, Any]:
+        """Summarize saved collector evidence; zero observations do not prove coverage."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        supplemental = state.get("supplemental", {})
+        counts: dict[str, int] = {}
+        for item in supplemental.get("records", []):
+            source = str(item.get("source", "unknown"))[:MAX_TEXT]
+            counts[source] = counts.get(source, 0) + 1
+        return {
+            **snapshot_context(data),
+            "ipv4_hosts": len(state.get("hosts", {})),
+            "dns_sd_complete": state.get("dns_sd_complete"),
+            "dns_sd_scanned_at": state.get("dns_sd_scanned_at"),
+            "dns_sd_services": len(state.get("advertisements", [])),
+            "supplemental_observed_at": supplemental.get("observed_at"),
+            "supplemental_warning_count": len(supplemental.get("warnings", [])),
+            "supplemental_source_counts": dict(sorted(counts.items())[:MAX_VALUES]),
+            "supplemental_sources_truncated": len(counts) > MAX_VALUES,
+            "pending_discord_deliveries": len(state.get("pending_discord_events", [])),
+            "coverage_verified": False,
+        }
+
+    def get_discovery_evidence(
+        self, address: str = "", source: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read supplemental evidence, including topology-only records without an IP."""
+        data = self.loader()
+        supplemental = data.get("network_state", {}).get("supplemental", {})
+        rows = [
+            project(item, ("ip", "interface", "source", "detail"))
+            for item in supplemental.get("records", [])
+            if (not address or item.get("ip") == address)
+            and (not source or item.get("source", "").casefold() == source.casefold())
+        ]
+        return {
+            **snapshot_context(data),
+            "supplemental_observed_at": supplemental.get("observed_at"),
+            "supplemental_warning_count": len(supplemental.get("warnings", [])),
+            **page(rows, offset, limit),
+        }
+
+    def get_identity_conflicts(
+        self, address: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read competing identity evidence without selecting an authoritative MAC."""
+        data = self.loader()
+        rows = [
+            project(item, ("address", "macs", "reasons"))
+            for item in data.get("network_state", {}).get("identity_conflicts", [])
+            if not address or item.get("address") == address
+        ]
+        return {**snapshot_context(data), **page(rows, offset, limit)}
+
+    def get_device_history(
+        self, identifier: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Page identities by canonical ID, label, address or observed MAC."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        needle = identifier.strip().casefold()
+        rows = []
+        for key, item in sorted(state.get("identity_history", {}).items()):
+            values = [key, item.get("label", "")]
+            for field in ("addresses", "current_addresses", "macs"):
+                values.extend(item.get(field, []))
+            if not needle or needle in {str(value).casefold() for value in values}:
+                rows.append({"identity": bounded(key), **project(item, IDENTITY_FIELDS)})
+        return {**snapshot_context(data), **page(rows, offset, limit)}
+
+    def get_identity_changes(
+        self, identity: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read the retained identity timeline, newest first."""
+        data = self.loader()
+        rows = [
+            project(item, ("observed_at", "identity", "kind", "description"))
+            for item in reversed(data.get("network_state", {}).get("identity_changes", []))
+            if not identity or item.get("identity") == identity
+        ]
+        return {**snapshot_context(data), **page(rows, offset, limit)}
+
+    def list_network_services(
+        self, address: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """List saved scan-confirmed ports and DNS-SD hints as distinct evidence."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        rows = []
+        for ip, host in sorted(state.get("hosts", {}).items()):
+            if address and ip != address:
+                continue
+            for port in host.get("ports", []):
+                details = host.get("services", {}).get(port, {})
+                rows.append(
+                    {
+                        "source": "nmap",
+                        "address": bounded(ip),
+                        "port": bounded(port),
+                        **project(details, ("name", "product", "version", "method")),
+                    }
+                )
+        for item in state.get("advertisements", []):
+            # The persisted alert identities are pipe-delimited, not raw TXT data.
+            if not isinstance(item, str):
+                continue
+            parts = item.split("|")
+            if len(parts) != 3:
+                continue
+            host, service, port = parts
+            if address and address != host:
+                continue
+            rows.append(
+                {
+                    "source": "dns_sd",
+                    "host": bounded(host),
+                    "service": bounded(service),
+                    "port": bounded(port),
+                }
+            )
+        return {
+            **snapshot_context(data),
+            "dns_sd_complete": state.get("dns_sd_complete"),
+            "dns_sd_scanned_at": state.get("dns_sd_scanned_at"),
+            **page(rows, offset, limit),
+        }
+
+    def get_pending_network_findings(
+        self, offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read findings awaiting repeated observation, not notification payloads."""
+        data = self.loader()
+        rows = [
+            {"candidate": bounded(item)}
+            for item in data.get("network_state", {}).get("alert_pending_confirmations", [])
+            if isinstance(item, str)
+        ]
+        return {**snapshot_context(data), **page(rows, offset, limit)}
+
     def get_service_exposure(
         self, identifier: str, offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
@@ -339,6 +514,14 @@ TOOL_NAMES = (
     "get_discovery_changes",
     "get_cloudflare_lifecycle",
     "get_service_exposure",
+    "get_cloudflare_audit",
+    "get_discovery_status",
+    "get_discovery_evidence",
+    "get_identity_conflicts",
+    "get_device_history",
+    "get_identity_changes",
+    "list_network_services",
+    "get_pending_network_findings",
 )
 
 
