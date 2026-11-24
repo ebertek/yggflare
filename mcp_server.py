@@ -370,27 +370,45 @@ class InventoryTools:
         dataset = config.get(section, {}) if available else {}
         fields = {
             "access": (
-                "hostname", "declared", "app_count", "status", "expected_decisions",
-                "observed_decisions", "policy_list_truncated",
+                "hostname",
+                "declared",
+                "app_count",
+                "status",
+                "expected_decisions",
+                "observed_decisions",
+                "policy_list_truncated",
             ),
             "dns": (
-                "hostname", "zone", "type", "proxied", "address",
+                "hostname",
+                "zone",
+                "type",
+                "proxied",
+                "address",
                 "matches_configured_tunnel",
             ),
             "tunnel": (
-                "hostname", "precedence", "has_path_match", "declared",
-                "origin_scheme", "origin_host", "origin_port", "origin_status",
+                "hostname",
+                "precedence",
+                "has_path_match",
+                "declared",
+                "origin_scheme",
+                "origin_host",
+                "origin_port",
+                "origin_status",
             ),
         }
         rows = [
             project(item, fields[section])
             for item in dataset.get("items", [])
-            if not hostname or item.get("hostname", "").casefold() == hostname.casefold()
+            if not hostname
+            or item.get("hostname", "").casefold() == hostname.casefold()
         ]
         return {
             **cloudflare_context(data),
             "configuration_available": available,
-            "internal_dns_collected": config.get("internal_dns_collected") if available else None,
+            "internal_dns_collected": (
+                config.get("internal_dns_collected") if available else None
+            ),
             "snapshot_total": dataset.get("total"),
             "snapshot_truncated": dataset.get("truncated"),
             **page(rows, offset, limit),
@@ -526,10 +544,14 @@ class InventoryTools:
                 addresses = item.get("addresses", [])
                 if address and address not in addresses and address != item.get("host"):
                     continue
-                rows.append({
-                    "source": "dns_sd",
-                    **project(item, ("host", "service", "name", "port", "addresses")),
-                })
+                rows.append(
+                    {
+                        "source": "dns_sd",
+                        **project(
+                            item, ("host", "service", "name", "port", "addresses")
+                        ),
+                    }
+                )
         for item in state.get("advertisements", []) if not details else []:
             # Older snapshots only retain the pipe-delimited alert identities.
             if not isinstance(item, str):
@@ -555,9 +577,7 @@ class InventoryTools:
             **page(rows, offset, limit),
         }
 
-    def get_network_findings(
-        self, offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+    def get_network_findings(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
         """Read latest reported finding keys; absence does not establish resolution."""
         data = self.loader()
         state = data.get("network_state", {})

@@ -100,15 +100,39 @@ class CloudflareViewTests(unittest.TestCase):
     def test_configuration_projection_never_exports_selectors_or_payloads(self):
         result = configuration_projection(
             {"example.invalid": ["one", "two"]},
-            [{"domain": "example.invalid", "type": "self_hosted",
-              "policies": [{"id": "two", "precedence": 2}, {"id": "one", "precedence": 1}]}],
-            [{"id": "one", "decision": "bypass", "include": ["SECRET"]},
-             {"id": "two", "decision": "deny"}],
-            [{"name": "example.invalid", "type": "CNAME", "content": "tunnel.cfargotunnel.com"}],
+            [
+                {
+                    "domain": "example.invalid",
+                    "type": "self_hosted",
+                    "policies": [
+                        {"id": "two", "precedence": 2},
+                        {"id": "one", "precedence": 1},
+                    ],
+                }
+            ],
+            [
+                {"id": "one", "decision": "bypass", "include": ["SECRET"]},
+                {"id": "two", "decision": "deny"},
+            ],
+            [
+                {
+                    "name": "example.invalid",
+                    "type": "CNAME",
+                    "content": "tunnel.cfargotunnel.com",
+                }
+            ],
             [{"name": "txt.invalid", "type": "TXT", "content": "SECRET"}],
-            [{"hostname": "example.invalid", "service": "https://origin.invalid:443/SECRET?token=SECRET"},
-             {"hostname": "other.invalid", "service": "https://user:SECRET@origin.invalid"},
-             {"service": "http_status:404"}],
+            [
+                {
+                    "hostname": "example.invalid",
+                    "service": "https://origin.invalid:443/SECRET?token=SECRET",
+                },
+                {
+                    "hostname": "other.invalid",
+                    "service": "https://user:SECRET@origin.invalid",
+                },
+                {"service": "http_status:404"},
+            ],
             "tunnel",
             internal_dns_collected=True,
         )

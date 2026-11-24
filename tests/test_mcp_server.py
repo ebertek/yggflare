@@ -257,11 +257,35 @@ class InventoryToolTests(unittest.TestCase):
             "internal_dns_collected": True,
             "access": {
                 "total": 1,
-                "items": [{"hostname": "example.invalid", "status": "matched",
-                           "observed_decisions": ["allow", "deny"], "secret": "never-export"}],
+                "items": [
+                    {
+                        "hostname": "example.invalid",
+                        "status": "matched",
+                        "observed_decisions": ["allow", "deny"],
+                        "secret": "never-export",
+                    }
+                ],
             },
-            "dns": {"total": 1, "items": [{"hostname": "example.invalid", "type": "TXT", "content": "never-export"}]},
-            "tunnel": {"total": 1, "items": [{"hostname": "example.invalid", "origin_host": "origin.invalid", "secret": "never-export"}]},
+            "dns": {
+                "total": 1,
+                "items": [
+                    {
+                        "hostname": "example.invalid",
+                        "type": "TXT",
+                        "content": "never-export",
+                    }
+                ],
+            },
+            "tunnel": {
+                "total": 1,
+                "items": [
+                    {
+                        "hostname": "example.invalid",
+                        "origin_host": "origin.invalid",
+                        "secret": "never-export",
+                    }
+                ],
+            },
         }
         access = self.tools.get_cloudflare_access("example.invalid")
         self.assertEqual(access["items"][0]["observed_decisions"], ["allow", "deny"])
@@ -269,12 +293,20 @@ class InventoryToolTests(unittest.TestCase):
         self.assertNotIn("never-export", str(self.tools.get_cloudflare_dns()))
         self.assertNotIn("never-export", str(self.tools.get_cloudflare_tunnel()))
         self.data["network_state"]["reported"] = {"new-port:192.0.2.10:tcp/80": "new"}
-        self.assertEqual(self.tools.get_network_findings()["items"][0]["finding_id"], "new-port:192.0.2.10:tcp/80")
+        self.assertEqual(
+            self.tools.get_network_findings()["items"][0]["finding_id"],
+            "new-port:192.0.2.10:tcp/80",
+        )
 
     def test_dns_sd_address_filter(self):
         self.data["network_state"]["advertisement_details"] = [
-            {"host": "example.local", "service": "_http._tcp", "port": 80,
-             "addresses": ["192.0.2.10"], "txt": "never-export"}
+            {
+                "host": "example.local",
+                "service": "_http._tcp",
+                "port": 80,
+                "addresses": ["192.0.2.10"],
+                "txt": "never-export",
+            }
         ]
         result = self.tools.list_network_services(address="192.0.2.10")
         self.assertEqual(result["total"], 1)

@@ -197,7 +197,13 @@ def run_audit(
         report["proposed_by_kind"][kind] = report["proposed_by_kind"].get(kind, 0) + 1
     report["web_view"]["audit"] = audit_projection(report)
     report["web_view"]["configuration"] = configuration_projection(
-        desired, apps, policies, public_dns, internal_dns, routes, tunnel_id,
+        desired,
+        apps,
+        policies,
+        public_dns,
+        internal_dns,
+        routes,
+        tunnel_id,
         internal_dns_collected=not skip_docker,
     )
     report["mode"] = "READ_ONLY_LIVE_API"

@@ -155,9 +155,7 @@ def record_set(rows):
 
 
 def safe_dns_name(value):
-    if isinstance(value, str) and re.fullmatch(
-        r"[a-zA-Z0-9_*.-]{1,253}", value
-    ):
+    if isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9_*.-]{1,253}", value):
         return value.lower().rstrip(".")
     return ""
 
@@ -193,8 +191,15 @@ def safe_origin(value):
 
 
 def configuration_projection(
-    desired, apps, policies, external_dns, internal_dns, ingress, tunnel_id,
-    *, internal_dns_collected
+    desired,
+    apps,
+    policies,
+    external_dns,
+    internal_dns,
+    ingress,
+    tunnel_id,
+    *,
+    internal_dns_collected,
 ):
     """Read-only configuration evidence; policy rules and credentials never leave."""
     decisions = {
@@ -205,9 +210,12 @@ def configuration_projection(
 
     def decision_list(ids):
         return [
-            decisions.get(identifier)
-            if decisions.get(identifier) in {"allow", "deny", "bypass", "non_identity"}
-            else "unknown"
+            (
+                decisions.get(identifier)
+                if decisions.get(identifier)
+                in {"allow", "deny", "bypass", "non_identity"}
+                else "unknown"
+            )
             for identifier in ids[:64]
         ]
 
@@ -240,7 +248,9 @@ def configuration_projection(
             "declared": expected is not None,
             "app_count": len(matches),
             "status": status,
-            "expected_decisions": decision_list(expected) if expected is not None else None,
+            "expected_decisions": (
+                decision_list(expected) if expected is not None else None
+            ),
             "observed_decisions": decision_list(actual) if actual is not None else None,
             "policy_list_truncated": len(expected or []) > 64 or len(actual or []) > 64,
         }
@@ -251,8 +261,10 @@ def configuration_projection(
         for item in records:
             name = safe_dns_name(item.get("name"))
             kind = item.get("type")
-            if not name or not isinstance(kind, str) or not re.fullmatch(
-                r"[A-Z][A-Z0-9]{0,9}", kind
+            if (
+                not name
+                or not isinstance(kind, str)
+                or not re.fullmatch(r"[A-Z][A-Z0-9]{0,9}", kind)
             ):
                 continue
             row = {"hostname": name, "zone": zone, "type": kind}
@@ -266,7 +278,8 @@ def configuration_projection(
                     pass
             elif zone == "external" and kind == "CNAME" and isinstance(content, str):
                 row["matches_configured_tunnel"] = (
-                    content.lower().rstrip(".") == tunnel_id.lower() + ".cfargotunnel.com"
+                    content.lower().rstrip(".")
+                    == tunnel_id.lower() + ".cfargotunnel.com"
                 )
             dns.append(row)
     dns.sort(key=lambda row: (row["zone"], row["hostname"], row["type"]))
