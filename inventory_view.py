@@ -150,8 +150,9 @@ def classify_addresses(hosts):
             and any(row.get("shared_network") for row in rows)
         )
         relationship = (
-            "expected_shared_namespace" if shared else
-            "ambiguous" if len(rows) > 1 else "single"
+            "expected_shared_namespace"
+            if shared
+            else "ambiguous" if len(rows) > 1 else "single"
         )
         for row in rows:
             row["address_relationship"] = relationship
@@ -170,9 +171,17 @@ def diff_view(data, table):
         for d in data.get("diffs", [])
     ]
     text = '<p class="muted">Static declarations versus the latest scan. Missing observations are unknown, not proof that a device or port is gone. Accepted alternate MACs are not drift.</p>'
-    for severity, heading in (("drift", "Observed discrepancies"), ("unknown", "Inconclusive observations")):
+    for severity, heading in (
+        ("drift", "Observed discrepancies"),
+        ("unknown", "Inconclusive observations"),
+    ):
         selected = [row for row in rows if row[-1] == severity]
         text += f"<h2>{heading} ({len(selected)})</h2>"
-        text += (table(["Host", "IP", "Field", "Declared", "Observed", "Assessment"], selected)
-                 if selected else "<p>None in the saved comparison.</p>")
+        text += (
+            table(
+                ["Host", "IP", "Field", "Declared", "Observed", "Assessment"], selected
+            )
+            if selected
+            else "<p>None in the saved comparison.</p>"
+        )
     return text

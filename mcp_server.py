@@ -132,11 +132,29 @@ class InventoryTools:
             "inventory_rows": len(hosts),
             "unknown_rows": sum(h.get("status") == "unmanaged" for h in hosts),
             "identity_conflicts": len(state.get("identity_conflicts", [])),
-            "local_interface_rows": sum(h.get("status") == "local interface" for h in hosts),
-            "shared_namespace_addresses": len({h["ipv4"] for h in hosts if h.get("address_relationship") == "expected_shared_namespace"}),
-            "ambiguous_addresses": len({h["ipv4"] for h in hosts if h.get("address_relationship") == "ambiguous"}),
-            "observed_discrepancies": sum(d.get("severity") == "drift" for d in data.get("diffs", [])),
-            "inconclusive_observations": sum(d.get("severity") == "unknown" for d in data.get("diffs", [])),
+            "local_interface_rows": sum(
+                h.get("status") == "local interface" for h in hosts
+            ),
+            "shared_namespace_addresses": len(
+                {
+                    h["ipv4"]
+                    for h in hosts
+                    if h.get("address_relationship") == "expected_shared_namespace"
+                }
+            ),
+            "ambiguous_addresses": len(
+                {
+                    h["ipv4"]
+                    for h in hosts
+                    if h.get("address_relationship") == "ambiguous"
+                }
+            ),
+            "observed_discrepancies": sum(
+                d.get("severity") == "drift" for d in data.get("diffs", [])
+            ),
+            "inconclusive_observations": sum(
+                d.get("severity") == "unknown" for d in data.get("diffs", [])
+            ),
             "dns_sd_complete": state.get("dns_sd_complete"),
             "dns_sd_scanned_at": state.get("dns_sd_scanned_at"),
             "cloudflare": cloudflare_context(data),
@@ -189,24 +207,52 @@ class InventoryTools:
                 or str(item.get("label", "")).casefold() == identifier
             )
         ]
-        shared = (len(matches) > 1 and len({h.get("ipv4") for h in matches}) == 1 and all(h.get("address_relationship") == "expected_shared_namespace" for h in matches))
+        shared = (
+            len(matches) > 1
+            and len({h.get("ipv4") for h in matches}) == 1
+            and all(
+                h.get("address_relationship") == "expected_shared_namespace"
+                for h in matches
+            )
+        )
         return {
             **snapshot_context(data),
             **page([project(host, DEVICE_FIELDS) for host in matches], offset, limit),
             "identities": page(identities, 0, MAX_PAGE),
             "ambiguous": len(matches) > 1 and not shared,
-            "lookup_relationship": ("expected_shared_namespace" if shared else "ambiguous" if len(matches) > 1 else "single" if matches else "not_found"),
+            "lookup_relationship": (
+                "expected_shared_namespace"
+                if shared
+                else (
+                    "ambiguous"
+                    if len(matches) > 1
+                    else "single" if matches else "not_found"
+                )
+            ),
         }
 
-    def get_inventory_drift(self, offset: int = 0, limit: int = 25, severity: str = "") -> dict[str, Any]:
+    def get_inventory_drift(
+        self, offset: int = 0, limit: int = 25, severity: str = ""
+    ) -> dict[str, Any]:
         """Compare declared inventory and saved observations; missing evidence is unknown."""
         data = self.loader()
         fields = ("hostname", "ipv4", "field", "expected", "observed", "severity")
         if severity not in ("", "drift", "unknown"):
             raise ValueError("severity must be drift, unknown, or empty")
         diffs = data.get("diffs", [])
-        rows = [project(item, fields) for item in diffs if not severity or item.get("severity") == severity]
-        return {**snapshot_context(data), **page(rows, offset, limit), "observed_discrepancies": sum(d.get("severity") == "drift" for d in diffs), "inconclusive_observations": sum(d.get("severity") == "unknown" for d in diffs)}
+        rows = [
+            project(item, fields)
+            for item in diffs
+            if not severity or item.get("severity") == severity
+        ]
+        return {
+            **snapshot_context(data),
+            **page(rows, offset, limit),
+            "observed_discrepancies": sum(d.get("severity") == "drift" for d in diffs),
+            "inconclusive_observations": sum(
+                d.get("severity") == "unknown" for d in diffs
+            ),
+        }
 
     def get_discovery_changes(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
         """Read recent saved discovery events, newest first, including baseline flags."""
@@ -216,7 +262,11 @@ class InventoryTools:
         rows = []
         for item in reversed(state.get("recent_events", [])):
             row = project(item, ("observed_at", "message", "baseline"))
-            row["finding_status"] = ("present_in_latest_reported_findings" if item.get("message") in current else "historical_not_confirmed_current")
+            row["finding_status"] = (
+                "present_in_latest_reported_findings"
+                if item.get("message") in current
+                else "historical_not_confirmed_current"
+            )
             rows.append(row)
         return {
             **snapshot_context(data),
@@ -238,8 +288,18 @@ class InventoryTools:
             row["access_app_count"] = len(item.get("access_app_ids", []))
             row["dns_record_count"] = len(item.get("dns_record_ids", []))
             rows.append(row)
-        counts = {key: sum(item.get("lifecycle") == key for item in data.get("cloudflare_view", {}).get("hosts", [])) for key in ("managed", "orphaned", "declared / unclaimed", "unmanaged")}
-        return {**cloudflare_context(data), **page(rows, offset, limit), "ownership_counts": counts}
+        counts = {
+            key: sum(
+                item.get("lifecycle") == key
+                for item in data.get("cloudflare_view", {}).get("hosts", [])
+            )
+            for key in ("managed", "orphaned", "declared / unclaimed", "unmanaged")
+        }
+        return {
+            **cloudflare_context(data),
+            **page(rows, offset, limit),
+            "ownership_counts": counts,
+        }
 
     def get_service_exposure(
         self, identifier: str, offset: int = 0, limit: int = 25

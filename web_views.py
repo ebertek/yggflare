@@ -404,9 +404,11 @@ def drift_view(data, table):
             (
                 "Initial baseline (not notified)"
                 if item.get("baseline")
-                else "Present in latest reported findings"
-                if item.get("message") in state.get("reported", {}).values()
-                else "Historical (not confirmed current)"
+                else (
+                    "Present in latest reported findings"
+                    if item.get("message") in state.get("reported", {}).values()
+                    else "Historical (not confirmed current)"
+                )
             ),
         ]
         for item in reversed(history)

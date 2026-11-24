@@ -189,7 +189,9 @@ def model():
                 "last_seen": state.get("scanned_at", "") if observed else "",
             }
         )
-    local = local_macvlan_interfaces(NETWORK) if set(state.get("hosts", {})) - known else {}
+    local = (
+        local_macvlan_interfaces(NETWORK) if set(state.get("hosts", {})) - known else {}
+    )
     for ip, observed in state.get("hosts", {}).items():
         if ip in known:
             continue
@@ -198,7 +200,11 @@ def model():
         except ValueError:
             subnet = "Unassigned"
         interface = local.get(ip)
-        if interface and observed.get("mac") and observed["mac"].lower() != interface["mac"]:
+        if (
+            interface
+            and observed.get("mac")
+            and observed["mac"].lower() != interface["mac"]
+        ):
             interface = None
         hosts.append(
             {
@@ -213,7 +219,17 @@ def model():
                 "observed_ports": observed.get("ports", []),
                 "last_seen": state.get("scanned_at", ""),
                 "status": "local interface" if interface else "unmanaged",
-                **({"source": "Local macvlan interface", "interface": interface["interface"], "mac": interface["mac"], "description": "Local macvlan interface " + interface["interface"]} if interface else {}),
+                **(
+                    {
+                        "source": "Local macvlan interface",
+                        "interface": interface["interface"],
+                        "mac": interface["mac"],
+                        "description": "Local macvlan interface "
+                        + interface["interface"],
+                    }
+                    if interface
+                    else {}
+                ),
             }
         )
     catalogs = {}
@@ -346,7 +362,16 @@ def render(tab, data):
                     i.get("device_class", "device"),
                     i.get("last_seen") or "Never observed",
                     ", ".join(i.get("flags", [])),
-                    i["status"] + (" (shared namespace)" if i.get("address_relationship") == "expected_shared_namespace" else " (ambiguous address)" if i.get("address_relationship") == "ambiguous" else ""),
+                    i["status"]
+                    + (
+                        " (shared namespace)"
+                        if i.get("address_relationship") == "expected_shared_namespace"
+                        else (
+                            " (ambiguous address)"
+                            if i.get("address_relationship") == "ambiguous"
+                            else ""
+                        )
+                    ),
                 ]
                 for i in sorted(
                     hosts, key=lambda a: (address_key(a["ipv4"]), a["hostname"])

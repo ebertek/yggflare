@@ -426,7 +426,14 @@ def local_macvlan_interfaces(network):
                     duplicates.add(key)
                 found[key] = {"interface": name, "mac": mac}
         return {key: value for key, value in found.items() if key not in duplicates}
-    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        subprocess.SubprocessError,
+    ):
         return {}
 
 
