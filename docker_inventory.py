@@ -250,8 +250,16 @@ def collect(root, network, domain):
             and r["project"] == labels.get("com.docker.compose.project")
             and r["service"] == labels.get("com.docker.compose.service")
         ]
-        both = [r for r in by_name if r in by_service]
-        matches = both if by_name and by_service else by_name or by_service
+        if labels.get("com.docker.compose.project") and labels.get(
+            "com.docker.compose.service"
+        ):
+            # A container name can recur on other deployment hosts. Prefer the
+            # explicit Compose identity; never merge into an unrelated project.
+            matches = by_service
+            if len(matches) > 1:
+                matches = [r for r in matches if r["name"] == name]
+        else:
+            matches = by_name
         record = matches[0] if len(matches) == 1 else None
         live = metadata(config, name, domain, runtime=True)
         for port in container.get("NetworkSettings", {}).get("Ports") or {}:
