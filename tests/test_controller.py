@@ -205,6 +205,34 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 controller.cloudflare_run()
 
+    def test_mcp_disabled_does_not_construct_listener(self):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(controller, "DATA", Path(folder)),
+            patch.object(controller, "mcp_enabled", return_value=False),
+            patch.object(controller, "HTTPListener") as listener,
+            patch.object(controller, "run_scheduler") as scheduler,
+            patch.object(controller.signal, "signal"),
+        ):
+            controller.main()
+            listener.assert_not_called()
+            scheduler.assert_called_once_with(None)
+
+    def test_mcp_listener_stops_on_scheduler_shutdown(self):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(controller, "DATA", Path(folder)),
+            patch.object(controller, "mcp_enabled", return_value=True),
+            patch.object(controller, "mcp_settings"),
+            patch.object(controller, "HTTPListener") as listener,
+            patch.object(controller, "run_scheduler", side_effect=RuntimeError),
+            patch.object(controller.signal, "signal"),
+        ):
+            with self.assertRaises(RuntimeError):
+                controller.main()
+            listener.return_value.start.assert_called_once()
+            listener.return_value.stop.assert_called_once()
+
     def test_view_refresh_uses_only_read_only_audit(self):
         with (
             tempfile.TemporaryDirectory() as tmp,
