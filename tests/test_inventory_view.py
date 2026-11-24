@@ -99,6 +99,10 @@ class InventoryViewTests(unittest.TestCase):
         classify_addresses(rows)
         self.assertTrue(all(r["address_relationship"] == "ambiguous" for r in rows))
         child["mac"] = parent["mac"]
+        classify_addresses(
+            rows, {"hosts": {"192.0.2.10": {"mac": "02:00:00:00:00:12"}}}
+        )
+        self.assertEqual(parent["address_relationship"], "ambiguous")
         child["network_owner"] = "other"
         classify_addresses(rows)
         self.assertEqual(parent["address_relationship"], "ambiguous")
