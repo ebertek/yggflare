@@ -1,6 +1,7 @@
 """Read-only MCP tools over Yggflare's existing presentation model."""
 
 from collections.abc import Callable
+from typing import Any
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -115,7 +116,7 @@ class InventoryTools:
     def __init__(self, loader: Callable = load_model):
         self.loader = loader
 
-    def get_inventory_status(self) -> dict:
+    def get_inventory_status(self) -> dict[str, Any]:
         """Summarize inventory and snapshot freshness without refreshing anything."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -136,7 +137,7 @@ class InventoryTools:
         unknown_only: bool = False,
         offset: int = 0,
         limit: int = 25,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """List declared/discovered devices and Docker services; filter by name or address."""
         data = self.loader()
         needle = query.casefold().strip()
@@ -148,7 +149,7 @@ class InventoryTools:
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
-    def get_device(self, identifier: str, offset: int = 0, limit: int = 25) -> dict:
+    def get_device(self, identifier: str, offset: int = 0, limit: int = 25) -> dict[str, Any]:
         """Find exact hostname, alias, IP or MAC matches and saved identity evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
@@ -182,14 +183,14 @@ class InventoryTools:
             "ambiguous": len(matches) > 1,
         }
 
-    def get_inventory_drift(self, offset: int = 0, limit: int = 25) -> dict:
+    def get_inventory_drift(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
         """Compare declared inventory and saved observations; missing evidence is unknown."""
         data = self.loader()
         fields = ("hostname", "ipv4", "field", "expected", "observed", "severity")
         rows = [project(item, fields) for item in data.get("diffs", [])]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
-    def get_discovery_changes(self, offset: int = 0, limit: int = 25) -> dict:
+    def get_discovery_changes(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
         """Read recent saved discovery events, newest first, including baseline flags."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -206,7 +207,7 @@ class InventoryTools:
 
     def get_cloudflare_lifecycle(
         self, hostname: str = "", offset: int = 0, limit: int = 25
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Read saved Cloudflare lifecycle and DNS/Access/Tunnel presence, not policy rules."""
         data = self.loader()
         rows = []
@@ -221,7 +222,7 @@ class InventoryTools:
 
     def get_service_exposure(
         self, identifier: str, offset: int = 0, limit: int = 25
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Correlate a Docker hostname/alias/IP with saved Cloudflare lifecycle evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
@@ -272,6 +273,7 @@ def build_server(loader: Callable = load_model):
     tools = InventoryTools(loader)
     for name in TOOL_NAMES:
         server.tool(
+            structured_output=True,
             annotations=ToolAnnotations(
                 read_only_hint=True,
                 destructive_hint=False,
