@@ -5,7 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cloudflare_view import audit_projection, begin, project, publish
+from cloudflare_view import (
+    audit_projection,
+    begin,
+    configuration_projection,
+    project,
+    publish,
+)
 
 
 class CloudflareViewTests(unittest.TestCase):
@@ -90,6 +96,30 @@ class CloudflareViewTests(unittest.TestCase):
         self.assertNotIn("SECRET", json.dumps(result))
         self.assertIn("192.0.2.2", json.dumps(result))
         self.assertTrue(result["internal_dns_enabled"])
+
+    def test_configuration_projection_never_exports_selectors_or_payloads(self):
+        result = configuration_projection(
+            {"example.invalid": ["one", "two"]},
+            [{"domain": "example.invalid", "type": "self_hosted",
+              "policies": [{"id": "two", "precedence": 2}, {"id": "one", "precedence": 1}]}],
+            [{"id": "one", "decision": "bypass", "include": ["SECRET"]},
+             {"id": "two", "decision": "deny"}],
+            [{"name": "example.invalid", "type": "CNAME", "content": "tunnel.cfargotunnel.com"}],
+            [{"name": "txt.invalid", "type": "TXT", "content": "SECRET"}],
+            [{"hostname": "example.invalid", "service": "https://origin.invalid:443/SECRET?token=SECRET"},
+             {"hostname": "other.invalid", "service": "https://user:SECRET@origin.invalid"},
+             {"service": "http_status:404"}],
+            "tunnel",
+            internal_dns_collected=True,
+        )
+        self.assertNotIn("SECRET", json.dumps(result))
+        row = result["access"]["items"][0]
+        self.assertEqual(row["observed_decisions"], ["bypass", "deny"])
+        self.assertEqual(row["status"], "matched")
+        self.assertTrue(result["dns"]["items"][0]["matches_configured_tunnel"])
+        routes = result["tunnel"]["items"]
+        self.assertEqual(routes[0]["origin_host"], "origin.invalid")
+        self.assertNotIn("origin_host", routes[1])
 
     def test_failed_refresh_preserves_last_complete_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:

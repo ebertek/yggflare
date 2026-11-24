@@ -307,7 +307,7 @@ protect the listener.
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same fifteen read-only tools. HTTP is disabled by default.
+use the same nineteen read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -362,6 +362,9 @@ in the repository.
 | `get_cloudflare_lifecycle` | Saved DNS, Access and Tunnel resource presence |
 | `get_service_exposure` | Correlate Docker aliases with saved Cloudflare lifecycle |
 | `get_cloudflare_audit` | Saved proposed, blocked, static DNS and review-only DNS findings |
+| `get_cloudflare_access` | Ordered decisions and expected assignment match, not selectors |
+| `get_cloudflare_dns` | DNS metadata, numeric addresses and configured tunnel match |
+| `get_cloudflare_tunnel` | Ordered routes and sanitized origin metadata, not connector health |
 | `get_discovery_status` | Saved collector observation counts and freshness |
 | `get_discovery_evidence` | Supplemental observations by address or source |
 | `get_identity_conflicts` | Competing MAC/address evidence |
@@ -369,9 +372,14 @@ in the repository.
 | `get_identity_changes` | Retained identity timeline |
 | `list_network_services` | Scan-confirmed ports and separate DNS-SD advertisements |
 | `get_pending_network_findings` | Findings awaiting confirmation |
+| `get_network_findings` | Latest reported stable finding keys |
 
 The audit snapshot is available after the next successful presentation refresh;
-older snapshots report `audit_available=false`. Findings are not executable
+older snapshots report `audit_available=false` or
+`configuration_available=false`. Access assignment match is not a proof of
+safe selectors or policy enforcement. DNS payloads other than numeric addresses
+are omitted; configured Tunnel targets are compared without returning IDs.
+Origin userinfo, paths and queries are never returned. Findings are not executable
 plans, omit policy IDs/selectors and arbitrary DNS payloads, and are capped at
 2,000 with explicit truncation metadata. Supplemental source counts describe
 observations, not collector coverage or success. Pending findings are distinct

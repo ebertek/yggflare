@@ -363,6 +363,57 @@ class InventoryTools:
             **page(rows, offset, limit),
         }
 
+    def _cloudflare_configuration(self, section, hostname, offset, limit):
+        data = self.loader()
+        config = data.get("cloudflare_view", {}).get("configuration", {})
+        available = config.get("version") == 1
+        dataset = config.get(section, {}) if available else {}
+        fields = {
+            "access": (
+                "hostname", "declared", "app_count", "status", "expected_decisions",
+                "observed_decisions", "policy_list_truncated",
+            ),
+            "dns": (
+                "hostname", "zone", "type", "proxied", "address",
+                "matches_configured_tunnel",
+            ),
+            "tunnel": (
+                "hostname", "precedence", "has_path_match", "declared",
+                "origin_scheme", "origin_host", "origin_port", "origin_status",
+            ),
+        }
+        rows = [
+            project(item, fields[section])
+            for item in dataset.get("items", [])
+            if not hostname or item.get("hostname", "").casefold() == hostname.casefold()
+        ]
+        return {
+            **cloudflare_context(data),
+            "configuration_available": available,
+            "internal_dns_collected": config.get("internal_dns_collected") if available else None,
+            "snapshot_total": dataset.get("total"),
+            "snapshot_truncated": dataset.get("truncated"),
+            **page(rows, offset, limit),
+        }
+
+    def get_cloudflare_access(
+        self, hostname: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read ordered Access decisions and assignment match, never policy selectors."""
+        return self._cloudflare_configuration("access", hostname, offset, limit)
+
+    def get_cloudflare_dns(
+        self, hostname: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read saved DNS metadata, numeric addresses and configured tunnel match."""
+        return self._cloudflare_configuration("dns", hostname, offset, limit)
+
+    def get_cloudflare_tunnel(
+        self, hostname: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read ordered saved routes and sanitized origin metadata, not connector health."""
+        return self._cloudflare_configuration("tunnel", hostname, offset, limit)
+
     def get_discovery_status(self) -> dict[str, Any]:
         """Summarize saved collector evidence; zero observations do not prove coverage."""
         data = self.loader()
@@ -469,8 +520,18 @@ class InventoryTools:
                         **project(details, ("name", "product", "version", "method")),
                     }
                 )
-        for item in state.get("advertisements", []):
-            # The persisted alert identities are pipe-delimited, not raw TXT data.
+        details = state.get("advertisement_details")
+        if isinstance(details, list) and details:
+            for item in details:
+                addresses = item.get("addresses", [])
+                if address and address not in addresses and address != item.get("host"):
+                    continue
+                rows.append({
+                    "source": "dns_sd",
+                    **project(item, ("host", "service", "name", "port", "addresses")),
+                })
+        for item in state.get("advertisements", []) if not details else []:
+            # Older snapshots only retain the pipe-delimited alert identities.
             if not isinstance(item, str):
                 continue
             parts = item.split("|")
@@ -493,6 +554,18 @@ class InventoryTools:
             "dns_sd_scanned_at": state.get("dns_sd_scanned_at"),
             **page(rows, offset, limit),
         }
+
+    def get_network_findings(
+        self, offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read latest reported finding keys; absence does not establish resolution."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        rows = [
+            {"finding_id": bounded(key), "message": bounded(message)}
+            for key, message in sorted(state.get("reported", {}).items())
+        ]
+        return {**snapshot_context(data), **page(rows, offset, limit)}
 
     def get_pending_network_findings(
         self, offset: int = 0, limit: int = 25
@@ -546,6 +619,9 @@ TOOL_NAMES = (
     "get_cloudflare_lifecycle",
     "get_service_exposure",
     "get_cloudflare_audit",
+    "get_cloudflare_access",
+    "get_cloudflare_dns",
+    "get_cloudflare_tunnel",
     "get_discovery_status",
     "get_discovery_evidence",
     "get_identity_conflicts",
@@ -553,6 +629,7 @@ TOOL_NAMES = (
     "get_identity_changes",
     "list_network_services",
     "get_pending_network_findings",
+    "get_network_findings",
 )
 
 

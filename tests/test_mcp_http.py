@@ -130,7 +130,7 @@ class HTTPTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200, response.text)
             tools = response.json()["result"]["tools"]
-            self.assertEqual(len(tools), 15)
+            self.assertEqual(len(tools), 19)
             self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in tools))
             self.assertTrue(all(t["outputSchema"]["type"] == "object" for t in tools))
             response = client.post(
