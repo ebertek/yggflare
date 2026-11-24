@@ -159,7 +159,9 @@ class HTTPListener:
             self.socket.bind((config.bind, config.port))
         except OSError:
             self.socket.close()
-            raise ValueError("MCP listener could not bind its configured address") from None
+            raise ValueError(
+                "MCP listener could not bind its configured address"
+            ) from None
         self.thread = threading.Thread(
             target=self.server.run,
             kwargs={"sockets": [self.socket]},
