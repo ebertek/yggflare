@@ -132,6 +132,7 @@ class HTTPTests(unittest.TestCase):
             tools = response.json()["result"]["tools"]
             self.assertEqual(len(tools), 7)
             self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in tools))
+            self.assertTrue(all(t["outputSchema"]["type"] == "object" for t in tools))
             response = client.post(
                 "/mcp",
                 headers=headers,
@@ -143,7 +144,9 @@ class HTTPTests(unittest.TestCase):
                 },
             )
             self.assertEqual(response.status_code, 200, response.text)
-            self.assertFalse(response.json()["result"].get("isError", False))
+            result = response.json()["result"]
+            self.assertFalse(result.get("isError", False))
+            self.assertEqual(result["structuredContent"]["inventory_rows"], 0)
 
 
 if __name__ == "__main__":
