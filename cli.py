@@ -56,6 +56,8 @@ def main(argv=None):
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
         parser.error("--details and --json require network status")
+    if args.operation == "serve" and args.component != "mcp":
+        parser.error("serve requires mcp")
     if args.component == "mcp":
         if (
             args.operation != "serve"
