@@ -108,18 +108,29 @@ class HTTPTests(unittest.TestCase):
             response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertIn("result", response.json())
+            version = response.json()["result"]["protocolVersion"]
+            headers = {**HEADERS, "MCP-Protocol-Version": version}
             response = client.post(
                 "/mcp",
-                headers={
-                    **HEADERS,
-                    "MCP-Protocol-Version": response.json()["result"]["protocolVersion"],
-                },
+                headers=headers,
                 json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
             )
             self.assertEqual(response.status_code, 200, response.text)
             tools = response.json()["result"]["tools"]
             self.assertEqual(len(tools), 7)
             self.assertTrue(all(t["annotations"]["readOnlyHint"] for t in tools))
+            response = client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "get_inventory_status", "arguments": {}},
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertFalse(response.json()["result"].get("isError", False))
 
 
 if __name__ == "__main__":
