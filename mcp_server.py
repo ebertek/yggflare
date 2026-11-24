@@ -128,7 +128,11 @@ class InventoryTools:
         }
 
     def list_devices(
-        self, query: str = "", unknown_only: bool = False, offset: int = 0, limit: int = 25
+        self,
+        query: str = "",
+        unknown_only: bool = False,
+        offset: int = 0,
+        limit: int = 25,
     ) -> dict:
         """List declared/discovered devices and Docker services; filter by name or address."""
         data = self.loader()
@@ -147,9 +151,7 @@ class InventoryTools:
         if not identifier:
             raise ValueError("identifier must not be empty")
         data = self.loader()
-        matches = [
-            host for host in data.get("hosts", []) if identifier in terms(host)
-        ]
+        matches = [host for host in data.get("hosts", []) if identifier in terms(host)]
         state = data.get("network_state", {})
         addresses = {
             str(host.get(key, "")).casefold()
