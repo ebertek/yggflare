@@ -320,22 +320,33 @@ class InventoryToolTests(unittest.TestCase):
             "version": 1,
             "jobs": {
                 "backup": {
-                    "status": "succeeded", "last_success_at": "sample",
-                    "history": [{"status": "succeeded", "started_at": "sample", "secret": "never-export"}],
+                    "status": "succeeded",
+                    "last_success_at": "sample",
+                    "history": [
+                        {
+                            "status": "succeeded",
+                            "started_at": "sample",
+                            "secret": "never-export",
+                        }
+                    ],
                 }
             },
         }
         self.assertTrue(self.tools.get_job_status()["available"])
         self.assertEqual(self.tools.get_job_history("backup")["total"], 1)
         self.assertNotIn("never-export", str(self.tools.get_job_history()))
-        self.assertIsNone(self.tools.get_notification_status()["recipient_receipt_verified"])
+        self.assertIsNone(
+            self.tools.get_notification_status()["recipient_receipt_verified"]
+        )
 
     def test_scheduler_evidence_and_archive_metadata(self):
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)
             self.assertIsNone(read_jobs(data))
             with track(data, "backup", self.fail):
-                self.assertEqual(read_jobs(data)["jobs"]["backup"]["status"], "completion_unknown")
+                self.assertEqual(
+                    read_jobs(data)["jobs"]["backup"]["status"], "completion_unknown"
+                )
             success = read_jobs(data)["jobs"]["backup"]["last_success_at"]
             with self.assertRaisesRegex(RuntimeError, "SECRET"):
                 with track(data, "backup", self.fail):

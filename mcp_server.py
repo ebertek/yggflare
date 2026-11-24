@@ -1,12 +1,11 @@
 """Read-only MCP tools over Yggflare's existing presentation model."""
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
-
-from pathlib import Path
 
 from job_status import JOBS, artifact_status
 
@@ -609,9 +608,10 @@ class InventoryTools:
         """Read controller heartbeat, build identity and saved snapshot context."""
         data = self.loader()
         return {
-            **project(data.get("controller_health", {}), (
-                "version", "revision", "heartbeat_age_seconds", "heartbeat_fresh"
-            )),
+            **project(
+                data.get("controller_health", {}),
+                ("version", "revision", "heartbeat_age_seconds", "heartbeat_fresh"),
+            ),
             **snapshot_context(data),
             "cloudflare": cloudflare_context(data),
             "job_evidence_available": data.get("job_status") is not None,
@@ -621,12 +621,17 @@ class InventoryTools:
         """Read last scheduler attempts and successes, not logs or commands."""
         document = self.loader().get("job_status")
         jobs = (document or {}).get("jobs", {})
-        fields = ("started_at", "finished_at", "duration_seconds", "status", "last_success_at")
+        fields = (
+            "started_at",
+            "finished_at",
+            "duration_seconds",
+            "status",
+            "last_success_at",
+        )
         return {
             "available": document is not None,
             "jobs": [
-                {"job": name, **project(jobs.get(name, {}), fields)}
-                for name in JOBS
+                {"job": name, **project(jobs.get(name, {}), fields)} for name in JOBS
             ],
         }
 
@@ -639,7 +644,12 @@ class InventoryTools:
         document = self.loader().get("job_status")
         jobs = (document or {}).get("jobs", {})
         rows = [
-            {"job": name, **project(item, ("started_at", "finished_at", "duration_seconds", "status"))}
+            {
+                "job": name,
+                **project(
+                    item, ("started_at", "finished_at", "duration_seconds", "status")
+                ),
+            }
             for name in JOBS
             if not job or name == job
             for item in jobs.get(name, {}).get("history", [])
@@ -656,7 +666,9 @@ class InventoryTools:
         return {
             **project(artifacts, ("available", "archive_count")),
             "latest": artifacts.get("latest"),
-            "scheduler": project(jobs.get("backup", {}), ("status", "started_at", "last_success_at")),
+            "scheduler": project(
+                jobs.get("backup", {}), ("status", "started_at", "last_success_at")
+            ),
             "integrity_verified": None,
             "restore_verified": None,
             "off_host_copy_verified": None,

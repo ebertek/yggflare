@@ -63,10 +63,12 @@ def track(data, job, warn):
     if not isinstance(history, list):
         history = []
     if previous.get("status") == "completion_unknown":
-        history = history + [{
-            "started_at": previous.get("started_at"),
-            "status": "completion_unknown",
-        }]
+        history = history + [
+            {
+                "started_at": previous.get("started_at"),
+                "status": "completion_unknown",
+            }
+        ]
     row = {
         "started_at": now(),
         "status": "completion_unknown",
@@ -96,10 +98,18 @@ def track(data, job, warn):
         if row["status"] == "succeeded":
             row["last_success_at"] = row["finished_at"]
         row["history"] = (
-            row["history"] + [{
-                field: row[field]
-                for field in ("started_at", "finished_at", "duration_seconds", "status")
-            }]
+            row["history"]
+            + [
+                {
+                    field: row[field]
+                    for field in (
+                        "started_at",
+                        "finished_at",
+                        "duration_seconds",
+                        "status",
+                    )
+                }
+            ]
         )[-MAX_HISTORY:]
         persist()
 
@@ -120,7 +130,9 @@ def artifact_status(backup):
                 latest = {
                     "name": path.name,
                     "bytes": info.st_size,
-                    "modified_at": datetime.fromtimestamp(info.st_mtime, UTC).isoformat(),
+                    "modified_at": datetime.fromtimestamp(
+                        info.st_mtime, UTC
+                    ).isoformat(),
                 }
     except OSError:
         return {"available": False}
