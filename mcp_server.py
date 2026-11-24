@@ -149,7 +149,9 @@ class InventoryTools:
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
-    def get_device(self, identifier: str, offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_device(
+        self, identifier: str, offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Find exact hostname, alias, IP or MAC matches and saved identity evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
@@ -279,7 +281,7 @@ def build_server(loader: Callable = load_model):
                 destructive_hint=False,
                 idempotent_hint=True,
                 open_world_hint=False,
-            )
+            ),
         )(getattr(tools, name))
     return server
 
