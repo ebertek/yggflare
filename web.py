@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from docker_inventory import address_key, snapshot
+from docker_inventory import address_key, local_macvlan_interfaces, snapshot
 from inventory_catalog import records as catalog_records
 from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
@@ -189,6 +189,7 @@ def model():
                 "last_seen": state.get("scanned_at", "") if observed else "",
             }
         )
+    local = local_macvlan_interfaces(NETWORK) if set(state.get("hosts", {})) - known else {}
     for ip, observed in state.get("hosts", {}).items():
         if ip in known:
             continue
@@ -196,6 +197,9 @@ def model():
             subnet = str(ipaddress.ip_network(f"{ip}/27", strict=False))
         except ValueError:
             subnet = "Unassigned"
+        interface = local.get(ip)
+        if interface and observed.get("mac") and observed["mac"].lower() != interface["mac"]:
+            interface = None
         hosts.append(
             {
                 "hostname": "",
@@ -208,7 +212,8 @@ def model():
                 "ports": [],
                 "observed_ports": observed.get("ports", []),
                 "last_seen": state.get("scanned_at", ""),
-                "status": "unmanaged",
+                "status": "local interface" if interface else "unmanaged",
+                **({"source": "Local macvlan interface", "interface": interface["interface"], "mac": interface["mac"], "description": "Local macvlan interface " + interface["interface"]} if interface else {}),
             }
         )
     catalogs = {}
@@ -341,7 +346,7 @@ def render(tab, data):
                     i.get("device_class", "device"),
                     i.get("last_seen") or "Never observed",
                     ", ".join(i.get("flags", [])),
-                    i["status"],
+                    i["status"] + (" (shared namespace)" if i.get("address_relationship") == "expected_shared_namespace" else " (ambiguous address)" if i.get("address_relationship") == "ambiguous" else ""),
                 ]
                 for i in sorted(
                     hosts, key=lambda a: (address_key(a["ipv4"]), a["hostname"])
