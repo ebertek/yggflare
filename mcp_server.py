@@ -81,7 +81,7 @@ def page(rows, offset, limit, expected_snapshot_id=""):
         raise ValueError("Result set changed; restart pagination at offset zero")
     items = []
     used = 0
-    for row in rows[offset:offset + limit]:
+    for row in rows[offset : offset + limit]:
         size = len(json.dumps(row, ensure_ascii=True).encode())
         if size > 256 * 1024:
             raise ValueError("Projected row exceeds response budget")
@@ -798,7 +798,11 @@ class InventoryTools:
         return context, rows
 
     def list_docker_services(
-        self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25,
+        self,
+        query: str = "",
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
         snapshot_id: str = "",
     ) -> dict[str, Any]:
         """List Compose and local runtime services including non-LAN services."""
@@ -879,7 +883,10 @@ class InventoryTools:
         return result
 
     def get_network_topology(
-        self, project_name: str = "", offset: int = 0, limit: int = 25,
+        self,
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
         snapshot_id: str = "",
     ) -> dict[str, Any]:
         """List declared and local runtime network relationships, not physical links."""
@@ -887,12 +894,20 @@ class InventoryTools:
         rows = []
         for row in services:
             identity = project(row, ("project", "service", "container_name"))
-            for field, source in (("declared_networks", "compose"), ("runtime_networks", "local_docker")):
+            for field, source in (
+                ("declared_networks", "compose"),
+                ("runtime_networks", "local_docker"),
+            ):
                 for network in row.get(field, []):
                     rows.append({**identity, "network": network, "source": source})
             if row.get("shared_network"):
-                rows.append({**identity, "network_owner": row["shared_network"],
-                             "source": "resolved_namespace"})
+                rows.append(
+                    {
+                        **identity,
+                        "network_owner": row["shared_network"],
+                        "source": "resolved_namespace",
+                    }
+                )
         return {**context, **page(rows, offset, limit, snapshot_id)}
 
     def get_ingress_path(
