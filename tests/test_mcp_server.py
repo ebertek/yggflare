@@ -5,8 +5,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 
 from mcp_server import TOOL_NAMES, InventoryTools, build_server
 
@@ -138,22 +137,33 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):
         script = Path(__file__).resolve().parents[1] / "mcp_server.py"
         parameters = StdioServerParameters(command=sys.executable, args=[str(script)])
-        async with stdio_client(parameters) as (reader, writer):
-            async with ClientSession(reader, writer) as session:
-                await session.initialize()
-                result = await session.list_tools()
-                self.assertEqual({tool.name for tool in result.tools}, set(TOOL_NAMES))
+        for mode in ("legacy", "auto"):
+            with self.subTest(mode=mode):
+                async with Client(parameters, mode=mode) as client:
+                    result = await client.list_tools()
+                    self.assertEqual(
+                        {tool.name for tool in result.tools}, set(TOOL_NAMES)
+                    )
 
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
-        tools = await server.list_tools()
-        self.assertEqual({tool.name for tool in tools}, set(TOOL_NAMES))
-        for tool in tools:
-            self.assertTrue(tool.annotations.readOnlyHint)
-            self.assertFalse(tool.annotations.destructiveHint)
-        result = await server.call_tool("list_devices", {"unknown_only": True})
-        self.assertIn("192.0.2.11", str(result))
-        self.assertNotIn("never-export", str(result))
+        async with Client(server, raise_exceptions=True) as client:
+            tools = (await client.list_tools()).tools
+            self.assertEqual({tool.name for tool in tools}, set(TOOL_NAMES))
+            for tool in tools:
+                self.assertIsNotNone(tool.annotations)
+                self.assertIsNotNone(tool.output_schema)
+                self.assertEqual(tool.output_schema["type"], "object")
+                self.assertTrue(tool.annotations.read_only_hint)
+                self.assertFalse(tool.annotations.destructive_hint)
+                self.assertTrue(tool.annotations.idempotent_hint)
+                self.assertFalse(tool.annotations.open_world_hint)
+            result = await client.call_tool("list_devices", {"unknown_only": True})
+            self.assertFalse(result.is_error)
+            self.assertIsNotNone(result.structured_content)
+            self.assertEqual(result.structured_content["total"], 1)
+            self.assertIn("192.0.2.11", str(result.structured_content))
+            self.assertNotIn("never-export", str(result))
 
 
 if __name__ == "__main__":

@@ -14,6 +14,9 @@ import time
 from pathlib import Path
 
 from backup import create_snapshot, prune_snapshots
+from mcp_http import HTTPListener
+from mcp_http import enabled as mcp_enabled
+from mcp_http import settings as mcp_settings
 from watchers import start as start_watchers
 
 CONFIG = Path("/config")
@@ -291,8 +294,21 @@ def main():
     signal.signal(signal.SIGINT, on_shutdown)
     log_startup()
     DATA.mkdir(parents=True, exist_ok=True)
+    listener = HTTPListener(mcp_settings()) if mcp_enabled() else None
+    try:
+        if listener is not None:
+            listener.start()
+            log("info", "mcp", "Authenticated Streamable HTTP interface enabled")
+        run_scheduler(listener)
+    finally:
+        if listener is not None:
+            listener.stop()
+
+
+def run_scheduler(listener=None):
     threading.Thread(target=heartbeat_loop, daemon=True).start()
-    if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":
+    web_enabled = os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true"
+    if web_enabled:
         from web import serve  # pylint: disable=import-outside-toplevel
 
         threading.Thread(target=serve, daemon=True, name="yggflare-web").start()
@@ -313,6 +329,8 @@ def main():
         else None
     )
     while True:
+        if listener is not None and not listener.is_alive():
+            raise RuntimeError("MCP listener stopped unexpectedly")
         now = dt.datetime.now(dt.timezone.utc)
         periodic = now >= next_cloud
         reasons = (
@@ -330,13 +348,13 @@ def main():
                 cloudflare_run()
             except Exception as error:
                 log("error", "cloudflare", f"Cycle failed: {error}")
-            if os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true":
+            if web_enabled or listener is not None:
                 try:
                     refresh_cloudflare_view()
                 except Exception:
                     log(
                         "warning",
-                        "web",
+                        "controller",
                         "Cloudflare view refresh failed; previous snapshot retained",
                     )
             last_cloud_completed = time.monotonic()
