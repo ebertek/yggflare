@@ -129,10 +129,8 @@ def build_http_app(config, token, loader=None):
             allowed_origins=[],
         ),
     }
-    server = (
-        build_server(**options) if loader is None else build_server(loader, **options)
-    )
-    return ProtectedApp(server.streamable_http_app(), config, token)
+    server = build_server() if loader is None else build_server(loader)
+    return ProtectedApp(server.streamable_http_app(**options), config, token)
 
 
 class HTTPListener:
