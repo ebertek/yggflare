@@ -7,7 +7,7 @@ drift and, when explicitly enabled, reconcile managed resources.
 It also provides vendor-neutral LAN discovery, a read-only inventory UI, Discord
 alerts, Prometheus metrics and local backups.
 
-**Default posture:** Cloudflare writes, orphan deletion and the web listener are
+**Default posture:** Cloudflare writes, orphan deletion and the web/MCP HTTP listeners are
 disabled. Discovery never changes authoritative DNS or inventory files.
 
 ## Quick start
@@ -306,9 +306,12 @@ protect the listener.
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
-Cloudflare lifecycle snapshots. No HTTP listener is opened and there is
-nothing to enable in the controller configuration. The server runs only
-when explicitly invoked:
+Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
+use the same seven read-only tools. HTTP is disabled by default.
+
+### Stdio transport
+
+The stdio server runs when explicitly invoked:
 
 ```sh
 docker exec -i yggflare yggflare mcp serve
@@ -365,8 +368,75 @@ Docker metadata using its existing sanitized projection. Results contain
 private infrastructure metadata; only connect trusted clients. Cloudflare
 lifecycle data does not prove external reachability or describe Access
 policy selectors. Check freshness and pagination; missing observations
-are not proof that a device is offline. This initial transport is stdio
-only; a remote HTTP/OAuth endpoint is intentionally not enabled.
+are not proof that a device is offline.
+
+### Streamable HTTP transport
+
+The optional listener is independent of the inventory web UI and serves
+`/mcp`. The controller refreshes Cloudflare lifecycle snapshots when either
+interface is enabled. HTTP is stateless with JSON responses; native clients
+must send a bearer token. Browser origins are rejected (no browser CORS).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `YGGFLARE_MCP_ENABLED` | `false` | Start the HTTP listener at controller startup |
+| `YGGFLARE_MCP_BIND` | `127.0.0.1` | Specific numeric local address; wildcard binds are rejected |
+| `YGGFLARE_MCP_PORT` | `8788` | Dedicated MCP listener port |
+| `YGGFLARE_MCP_TOKEN_FILE` | `/config/mcp-token.txt` | File containing a random bearer token |
+| `YGGFLARE_MCP_ALLOWED_HOSTS` | Bind address and port (also localhost on loopback) | Optional comma-separated exact HTTP Host values |
+
+Generate a secret in the private host-mounted configuration directory
+before enabling HTTP. For the example Compose deployment:
+
+```sh
+umask 077
+openssl rand -hex 32 > "$YGGFLARE_HOME/config/mcp-token.txt"
+```
+
+Enable `YGGFLARE_MCP_ENABLED=true` and recreate the container using your
+normal deployment process. The listener refuses to start with a missing,
+invalid or unreadable token, invalid configuration or occupied port.
+Rotate the token by replacing the file and recreating the container.
+The token is private and may be included in protected backup archives.
+
+With default settings the URL is `http://127.0.0.1:8788/mcp` on the Docker
+host. For access from a workstation use an SSH tunnel:
+
+```sh
+ssh -N -L 8788:127.0.0.1:8788 my-yggflare-host
+```
+
+Example VS Code configuration:
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "yggflare-mcp-token",
+      "description": "Yggflare MCP bearer token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "yggflare": {
+      "type": "http",
+      "url": "http://127.0.0.1:8788/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:yggflare-mcp-token}"
+      }
+    }
+  }
+}
+```
+
+For a reverse proxy, use TLS, preserve the bearer authorization header,
+restrict backend network access, and explicitly allow its forwarded Host
+value. Never send the token over unencrypted remote HTTP. An explicit
+non-loopback bind is an advanced option; firewall rules and TLS termination
+are the operator's responsibility. OAuth and automatic proxy/Cloudflare
+configuration are not included. No additional MCP tool permissions are
+introduced.
 
 ## Scheduling, backups and diagnostics
 
