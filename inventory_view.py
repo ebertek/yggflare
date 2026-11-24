@@ -35,7 +35,9 @@ def decorate(hosts, inventory, state):
         host["missing_fields"] = missing
         if missing:
             flags.append("missing")
-        if host.get("source") in ("Docker", "Compose", "Compose + Docker"):
+        if host.get("source") == "Local macvlan interface":
+            host["device_class"] = "network"
+        elif host.get("source") in ("Docker", "Compose", "Compose + Docker"):
             host["device_class"] = "docker"
         elif declared:
             host["device_class"] = (
@@ -125,7 +127,34 @@ def decorate(hosts, inventory, state):
                 host["differences"].append(diffs[-1])
                 flags.append("drift")
         host["flags"] = flags
+    classify_addresses(hosts)
     return diffs
+
+
+def classify_addresses(hosts):
+    """Multiple services may share one explicitly resolved network namespace."""
+    groups = {}
+    for host in hosts:
+        if host.get("ipv4"):
+            groups.setdefault(host["ipv4"], []).append(host)
+    for rows in groups.values():
+        owners = {row.get("network_owner") for row in rows}
+        macs = {row["mac"].lower() for row in rows if row.get("mac")}
+        shared = (
+            len(rows) > 1
+            and len(owners) == 1
+            and None not in owners
+            and "" not in owners
+            and len(macs) <= 1
+            and all(row.get("device_class") == "docker" for row in rows)
+            and any(row.get("shared_network") for row in rows)
+        )
+        relationship = (
+            "expected_shared_namespace" if shared else
+            "ambiguous" if len(rows) > 1 else "single"
+        )
+        for row in rows:
+            row["address_relationship"] = relationship
 
 
 def diff_view(data, table):
@@ -141,8 +170,9 @@ def diff_view(data, table):
         for d in data.get("diffs", [])
     ]
     text = '<p class="muted">Static declarations versus the latest scan. Missing observations are unknown, not proof that a device or port is gone. Accepted alternate MACs are not drift.</p>'
-    return text + (
-        table(["Host", "IP", "Field", "Declared", "Observed", "Assessment"], rows)
-        if rows
-        else "<p>No differences in the available static/observed comparison.</p>"
-    )
+    for severity, heading in (("drift", "Observed discrepancies"), ("unknown", "Inconclusive observations")):
+        selected = [row for row in rows if row[-1] == severity]
+        text += f"<h2>{heading} ({len(selected)})</h2>"
+        text += (table(["Host", "IP", "Field", "Declared", "Observed", "Assessment"], selected)
+                 if selected else "<p>None in the saved comparison.</p>")
+    return text
