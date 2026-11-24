@@ -120,9 +120,7 @@ class InventoryToolTests(unittest.TestCase):
             "example.invalid",
         )
         self.data["cloudflare_view_status"]["ok"] = False
-        self.assertFalse(
-            self.tools.get_cloudflare_lifecycle()["last_refresh_verified"]
-        )
+        self.assertFalse(self.tools.get_cloudflare_lifecycle()["last_refresh_verified"])
 
     def test_missing_observations(self):
         status = InventoryTools(lambda: {}).get_inventory_status()
