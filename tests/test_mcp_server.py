@@ -1,7 +1,12 @@
 """Regression tests for the read-only MCP interface."""
 
+import sys
 import unittest
 from copy import deepcopy
+from pathlib import Path
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from mcp_server import TOOL_NAMES, InventoryTools, build_server
 
@@ -130,6 +135,15 @@ class InventoryToolTests(unittest.TestCase):
 
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stdio_protocol_handshake(self):
+        script = Path(__file__).resolve().parents[1] / "mcp_server.py"
+        parameters = StdioServerParameters(command=sys.executable, args=[str(script)])
+        async with stdio_client(parameters) as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                await session.initialize()
+                result = await session.list_tools()
+                self.assertEqual({tool.name for tool in result.tools}, set(TOOL_NAMES))
+
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
         tools = await server.list_tools()
