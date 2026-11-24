@@ -127,19 +127,23 @@ def decorate(hosts, inventory, state):
                 host["differences"].append(diffs[-1])
                 flags.append("drift")
         host["flags"] = flags
-    classify_addresses(hosts)
+    classify_addresses(hosts, state)
     return diffs
 
 
-def classify_addresses(hosts):
+def classify_addresses(hosts, state=None):
     """Multiple services may share one explicitly resolved network namespace."""
     groups = {}
     for host in hosts:
         if host.get("ipv4"):
             groups.setdefault(host["ipv4"], []).append(host)
-    for rows in groups.values():
+    observations = (state or {}).get("hosts", {})
+    for ip, rows in groups.items():
         owners = {row.get("network_owner") for row in rows}
         macs = {row["mac"].lower() for row in rows if row.get("mac")}
+        observed_mac = observations.get(ip, {}).get("mac")
+        if observed_mac:
+            macs.add(str(observed_mac).lower())
         shared = (
             len(rows) > 1
             and len(owners) == 1
