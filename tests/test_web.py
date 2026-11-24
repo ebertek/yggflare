@@ -36,7 +36,9 @@ class WebTests(unittest.TestCase):
                 ):
                     with self.subTest(mac=mac):
                         state.write_text(
-                            json.dumps({"hosts": {ip: {"mac": mac, "ports": ["tcp/22"]}}})
+                            json.dumps(
+                                {"hosts": {ip: {"mac": mac, "ports": ["tcp/22"]}}}
+                            )
                         )
                         host = web.model()["hosts"][0]
                         self.assertEqual(host["status"], status)
