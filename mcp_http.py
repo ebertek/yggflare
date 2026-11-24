@@ -55,7 +55,7 @@ def settings(env=None):
         default_hosts += f",localhost:{port}"
     hosts = tuple(
         item.strip().lower()
-        for item in env.get("YGGFLARE_MCP_ALLOWED_HOSTS", default_hosts).split(",")
+        for item in (env.get("YGGFLARE_MCP_ALLOWED_HOSTS") or default_hosts).split(",")
     )
     if not all(HOST_PATTERN.fullmatch(item) for item in hosts):
         raise ValueError("MCP requires explicit allowed Host values; no wildcards")
@@ -71,7 +71,10 @@ def read_token(path):
     """Read only the configured secret, never include it in diagnostics."""
     try:
         with path.open("r", encoding="ascii") as handle:
-            token = handle.read(260).strip()
+            raw = handle.read(261)
+            if len(raw) > 260:
+                raise ValueError("MCP token file exceeds maximum length")
+            token = raw.strip()
     except (OSError, UnicodeError):
         raise ValueError("MCP token file is missing or unreadable") from None
     if not TOKEN_PATTERN.fullmatch(token):
