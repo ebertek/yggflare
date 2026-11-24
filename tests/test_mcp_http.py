@@ -37,6 +37,19 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             enabled({"YGGFLARE_MCP_ENABLED": "yes"})
 
+    def test_valid_ipv4_ipv6_and_explicit_hosts(self):
+        ipv4 = settings({})
+        self.assertEqual(ipv4.hosts, ("127.0.0.1:8788", "localhost:8788"))
+        ipv6 = settings({"YGGFLARE_MCP_BIND": "::1"})
+        self.assertEqual(ipv6.hosts, ("[::1]:8788", "localhost:8788"))
+        explicit = settings(
+            {"YGGFLARE_MCP_ALLOWED_HOSTS": "Yggflare.example.net,localhost:8788"}
+        )
+        self.assertEqual(explicit.hosts, ("yggflare.example.net", "localhost:8788"))
+        for invalid in ("bad/host", r"bad\host", "*.example.net", "a b"):
+            with self.subTest(host=invalid), self.assertRaises(ValueError):
+                settings({"YGGFLARE_MCP_ALLOWED_HOSTS": invalid})
+
     def test_reject_wildcards_and_invalid_ports(self):
         for env in (
             {"YGGFLARE_MCP_BIND": "0.0.0.0"},
