@@ -1,7 +1,7 @@
 # Required to parse Compose YAML in the Cloudflare reconcilers.
 ruamel.yaml>=0.18,<0.20
-# Native MCP stdio and Streamable HTTP server; keep the supported v1 SDK API until migrated.
-mcp>=1.28,<2
+# Native MCP stdio and Streamable HTTP server (v2 SDK).
+mcp>=2.3,<3
 
 # ASGI runtime for the optional MCP HTTP listener.
 uvicorn>=0.34,<1
