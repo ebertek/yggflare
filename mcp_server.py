@@ -2,6 +2,9 @@
 
 from collections.abc import Callable
 
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
+
 MAX_PAGE = 50
 MAX_TEXT = 512
 MAX_VALUES = 64
@@ -258,9 +261,6 @@ TOOL_NAMES = (
 
 def build_server(loader: Callable = load_model):
     """Register only the explicit read-only tool allowlist."""
-    from mcp.server.fastmcp import FastMCP
-    from mcp.types import ToolAnnotations
-
     server = FastMCP(
         "Yggflare",
         instructions=(
