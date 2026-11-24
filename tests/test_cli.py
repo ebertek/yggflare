@@ -88,6 +88,37 @@ class CommandTests(unittest.TestCase):
                     cli.main(arguments)
                 self.assertEqual(error.exception.code, 2)
 
+    def test_mcp_serve_does_not_take_a_controller_snapshot(self):
+        with (
+            patch.object(cli.controller, "snapshot") as snapshot,
+            patch.object(cli.subprocess, "run") as run,
+        ):
+            run.return_value = SimpleNamespace(returncode=0)
+            self.assertEqual(cli.main(["mcp", "serve"]), 0)
+            snapshot.assert_not_called()
+            run.assert_called_once_with(
+                [cli.sys.executable, "/app/mcp_server.py"], check=False
+            )
+
+    def test_mcp_rejects_other_operations_and_arguments(self):
+        for args in (
+            ["mcp", "apply"],
+            ["mcp", "serve", "unexpected"],
+            ["mcp", "serve", "--details"],
+            ["cloudflare", "serve"],
+        ):
+            with (
+                self.subTest(args=args),
+                contextlib.redirect_stderr(io.StringIO()),
+                patch.object(cli.subprocess, "run") as run,
+                patch.object(cli.controller, "snapshot") as snapshot,
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    cli.main(args)
+                self.assertEqual(error.exception.code, 2)
+                run.assert_not_called()
+                snapshot.assert_not_called()
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)

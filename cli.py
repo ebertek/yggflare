@@ -22,7 +22,7 @@ def main(argv=None):
         "--version", action="version", version=controller.version_string()
     )
     parser.add_argument(
-        "component", choices=("cloudflare", "doctor", "backup", "network")
+        "component", choices=("cloudflare", "doctor", "backup", "network", "mcp")
     )
     parser.add_argument(
         "operation",
@@ -39,6 +39,7 @@ def main(argv=None):
             "run",
             "discord-test",
             "status",
+            "serve",
         ),
     )
     parser.add_argument("argument", nargs="?")
@@ -55,6 +56,19 @@ def main(argv=None):
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
         parser.error("--details and --json require network status")
+    if args.operation == "serve" and args.component != "mcp":
+        parser.error("serve requires mcp")
+    if args.component == "mcp":
+        if (
+            args.operation != "serve"
+            or args.argument is not None
+            or args.approval is not None
+            or args.max_operations != 0
+        ):
+            parser.error("mcp accepts only serve with no additional arguments")
+        return subprocess.run(
+            [sys.executable, "/app/mcp_server.py"], check=False
+        ).returncode
     if network_status:
         if args.argument or args.approval or args.max_operations != 0:
             parser.error("network status accepts no additional positional arguments")
