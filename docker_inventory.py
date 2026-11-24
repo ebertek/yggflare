@@ -350,6 +350,9 @@ def collect(root, network, domain):
         return endpoints, root or parent["name"]
 
     hosts = []
+    name_counts = {}
+    for record in records:
+        name_counts[record["name"]] = name_counts.get(record["name"], 0) + 1
     for record in records:
         endpoints, shared = resolve(record, set())
         if not endpoints:
@@ -368,7 +371,11 @@ def collect(root, network, domain):
                     "hostname": record["hostname"],
                     "shared_network": shared,
                     "container_name": record["name"],
-                    "network_owner": shared or record["name"],
+                    "network_owner": (
+                        shared or record["name"]
+                        if name_counts[shared or record["name"]] == 1
+                        else ""
+                    ),
                     "aliases": names(record["aliases"] + item["aliases"]),
                     "ports": list(evidence),
                     "port_sources": evidence,
@@ -380,6 +387,47 @@ def collect(root, network, domain):
                 }
             )
     return hosts, sorted(set(warnings))
+
+
+def local_macvlan_interfaces(network):
+    """Identify actual local macvlan addresses, not guessed gateways."""
+    try:
+        result = subprocess.run(
+            ["ip", "-j", "-d", "address", "show"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
+        )
+        if len(result.stdout) > MAX_BYTES:
+            return {}
+        links = json.loads(result.stdout)
+        if not isinstance(links, list):
+            return {}
+        found = {}
+        duplicates = set()
+        for link in links:
+            if link.get("linkinfo", {}).get("info_kind") != "macvlan":
+                continue
+            name = link.get("ifname", "")
+            mac = str(link.get("address", "")).lower()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", name):
+                continue
+            if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
+                continue
+            for address in link.get("addr_info", []):
+                if address.get("family") != "inet":
+                    continue
+                ip = ipaddress.IPv4Address(address["local"])
+                if ip not in network:
+                    continue
+                key = str(ip)
+                if key in found:
+                    duplicates.add(key)
+                found[key] = {"interface": name, "mac": mac}
+        return {key: value for key, value in found.items() if key not in duplicates}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
+        return {}
 
 
 def snapshot(root, network, domain):
