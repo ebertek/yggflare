@@ -9,7 +9,7 @@ from unittest.mock import patch
 from urllib.request import urlopen
 
 import web
-from inventory_view import decorate
+from inventory_view import classify_addresses, decorate
 
 
 def fixture():
@@ -82,6 +82,27 @@ def fixture():
 
 
 class InventoryViewTests(unittest.TestCase):
+    def test_shared_namespace_requires_owner_and_no_competing_mac(self):
+        parent = {
+            "ipv4": "192.0.2.10",
+            "device_class": "docker",
+            "network_owner": "vpn",
+            "mac": "02:00:00:00:00:10",
+        }
+        child = {**parent, "shared_network": "vpn"}
+        rows = [parent, child]
+        classify_addresses(rows)
+        self.assertTrue(
+            all(r["address_relationship"] == "expected_shared_namespace" for r in rows)
+        )
+        child["mac"] = "02:00:00:00:00:11"
+        classify_addresses(rows)
+        self.assertTrue(all(r["address_relationship"] == "ambiguous" for r in rows))
+        child["mac"] = parent["mac"]
+        child["network_owner"] = "other"
+        classify_addresses(rows)
+        self.assertEqual(parent["address_relationship"], "ambiguous")
+
     def test_missing_new_retired_and_drift_are_evidence_based(self):
         hosts = fixture()["hosts"]
         hosts.append(
