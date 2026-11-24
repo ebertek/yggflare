@@ -307,7 +307,7 @@ protect the listener.
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same nineteen read-only tools. HTTP is disabled by default.
+use the same twenty-four read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -373,6 +373,18 @@ in the repository.
 | `list_network_services` | Scan-confirmed ports and separate DNS-SD advertisements |
 | `get_pending_network_findings` | Findings awaiting confirmation |
 | `get_network_findings` | Latest reported stable finding keys |
+| `get_yggflare_health` | Controller heartbeat and image revision |
+| `get_job_status` | Last attempt and last success for scheduled jobs |
+| `get_job_history` | Bounded scheduler execution history |
+| `get_backup_status` | Local archive metadata and backup job status |
+| `get_notification_status` | Saved pending delivery count; delivery remains unverified |
+
+Job evidence is retained for the last 20 completed/unknown attempts per
+scheduled job. A started attempt with no completion evidence is
+`completion_unknown`, not a confirmed running or successful job. Archive
+presence does not imply integrity or restoration; an empty notification queue
+does not establish recipient receipt. These tools do not run diagnostics,
+read archives, send notifications or execute jobs.
 
 The audit snapshot is available after the next successful presentation refresh;
 older snapshots report `audit_available=false` or

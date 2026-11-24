@@ -1,12 +1,14 @@
 """Regression tests for the read-only MCP interface."""
 
 import sys
+import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
 
 from mcp import Client, StdioServerParameters
 
+from job_status import artifact_status, read_jobs, track
 from mcp_server import TOOL_NAMES, InventoryTools, build_server
 
 
@@ -311,6 +313,46 @@ class InventoryToolTests(unittest.TestCase):
         result = self.tools.list_network_services(address="192.0.2.10")
         self.assertEqual(result["total"], 1)
         self.assertNotIn("never-export", str(result))
+
+    def test_operational_status(self):
+        self.assertFalse(self.tools.get_job_status()["available"])
+        self.data["job_status"] = {
+            "version": 1,
+            "jobs": {
+                "backup": {
+                    "status": "succeeded", "last_success_at": "sample",
+                    "history": [{"status": "succeeded", "started_at": "sample", "secret": "never-export"}],
+                }
+            },
+        }
+        self.assertTrue(self.tools.get_job_status()["available"])
+        self.assertEqual(self.tools.get_job_history("backup")["total"], 1)
+        self.assertNotIn("never-export", str(self.tools.get_job_history()))
+        self.assertIsNone(self.tools.get_notification_status()["recipient_receipt_verified"])
+
+    def test_scheduler_evidence_and_archive_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            self.assertIsNone(read_jobs(data))
+            with track(data, "backup", self.fail):
+                self.assertEqual(read_jobs(data)["jobs"]["backup"]["status"], "completion_unknown")
+            success = read_jobs(data)["jobs"]["backup"]["last_success_at"]
+            with self.assertRaisesRegex(RuntimeError, "SECRET"):
+                with track(data, "backup", self.fail):
+                    raise RuntimeError("SECRET")
+            row = read_jobs(data)["jobs"]["backup"]
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["last_success_at"], success)
+            self.assertNotIn("SECRET", str(row))
+            for _ in range(25):
+                with track(data, "backup", self.fail):
+                    pass
+            self.assertEqual(len(read_jobs(data)["jobs"]["backup"]["history"]), 20)
+            (data / "yggflare-20260101T000000Z.tar.gz").write_bytes(b"test")
+            (data / "yggflare-20260102T000000Z.tar.gz").symlink_to("/etc/passwd")
+            result = artifact_status(data)
+            self.assertEqual(result["archive_count"], 1)
+            self.assertEqual(result["latest"]["bytes"], 4)
 
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):

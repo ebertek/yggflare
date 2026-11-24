@@ -6,6 +6,10 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from pathlib import Path
+
+from job_status import JOBS, artifact_status
+
 MAX_PAGE = 50
 MAX_TEXT = 512
 MAX_VALUES = 64
@@ -601,6 +605,74 @@ class InventoryTools:
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
+    def get_yggflare_health(self) -> dict[str, Any]:
+        """Read controller heartbeat, build identity and saved snapshot context."""
+        data = self.loader()
+        return {
+            **project(data.get("controller_health", {}), (
+                "version", "revision", "heartbeat_age_seconds", "heartbeat_fresh"
+            )),
+            **snapshot_context(data),
+            "cloudflare": cloudflare_context(data),
+            "job_evidence_available": data.get("job_status") is not None,
+        }
+
+    def get_job_status(self) -> dict[str, Any]:
+        """Read last scheduler attempts and successes, not logs or commands."""
+        document = self.loader().get("job_status")
+        jobs = (document or {}).get("jobs", {})
+        fields = ("started_at", "finished_at", "duration_seconds", "status", "last_success_at")
+        return {
+            "available": document is not None,
+            "jobs": [
+                {"job": name, **project(jobs.get(name, {}), fields)}
+                for name in JOBS
+            ],
+        }
+
+    def get_job_history(
+        self, job: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Page retained scheduler outcomes without reading logs or executing jobs."""
+        if job and job not in JOBS:
+            raise ValueError("Unknown scheduled job")
+        document = self.loader().get("job_status")
+        jobs = (document or {}).get("jobs", {})
+        rows = [
+            {"job": name, **project(item, ("started_at", "finished_at", "duration_seconds", "status"))}
+            for name in JOBS
+            if not job or name == job
+            for item in jobs.get(name, {}).get("history", [])
+            if isinstance(item, dict)
+        ]
+        rows.sort(key=lambda row: str(row.get("started_at") or ""), reverse=True)
+        return {"available": document is not None, **page(rows, offset, limit)}
+
+    def get_backup_status(self) -> dict[str, Any]:
+        """Read local archive metadata; never verify, extract or claim restore assurance."""
+        data = self.loader()
+        artifacts = artifact_status(Path("/backup"))
+        jobs = (data.get("job_status") or {}).get("jobs", {})
+        return {
+            **project(artifacts, ("available", "archive_count")),
+            "latest": artifacts.get("latest"),
+            "scheduler": project(jobs.get("backup", {}), ("status", "started_at", "last_success_at")),
+            "integrity_verified": None,
+            "restore_verified": None,
+            "off_host_copy_verified": None,
+        }
+
+    def get_notification_status(self) -> dict[str, Any]:
+        """Read saved queue depth; successful submission and receipt are unverified."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        return {
+            **snapshot_context(data),
+            "pending_deliveries": len(state.get("pending_discord_events", [])),
+            "last_success_at": None,
+            "recipient_receipt_verified": None,
+        }
+
     def get_service_exposure(
         self, identifier: str, offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
@@ -650,6 +722,11 @@ TOOL_NAMES = (
     "list_network_services",
     "get_pending_network_findings",
     "get_network_findings",
+    "get_yggflare_health",
+    "get_job_status",
+    "get_job_history",
+    "get_backup_status",
+    "get_notification_status",
 )
 
 
