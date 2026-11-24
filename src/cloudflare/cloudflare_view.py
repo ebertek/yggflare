@@ -107,9 +107,7 @@ def audit_projection(report):
                 row[key] = value
         if "reason" in fields and item.get("reason"):
             reason = item["reason"]
-            row["reason"] = (
-                reason if reason in BLOCK_REASONS else "validation failed"
-            )
+            row["reason"] = reason if reason in BLOCK_REASONS else "validation failed"
         # Only numeric IP values may leave the DNS comparison.
         for key in ("expected", "actual", "before", "content"):
             if key not in fields:

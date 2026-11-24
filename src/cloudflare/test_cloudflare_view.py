@@ -55,14 +55,34 @@ class CloudflareViewTests(unittest.TestCase):
         result = audit_projection(
             {
                 "actions": [
-                    {"hostname": "example.invalid", "kind": "create_dns_cname", "content": "SECRET", "policies": ["SECRET"]},
-                    {"hostname": "internal.invalid", "kind": "update_docker_dns_a", "before": "192.0.2.1", "content": "192.0.2.2"},
+                    {
+                        "hostname": "example.invalid",
+                        "kind": "create_dns_cname",
+                        "content": "SECRET",
+                        "policies": ["SECRET"],
+                    },
+                    {
+                        "hostname": "internal.invalid",
+                        "kind": "update_docker_dns_a",
+                        "before": "192.0.2.1",
+                        "content": "192.0.2.2",
+                    },
                 ],
                 "blocked": [{"hostname": "example.invalid", "reason": "SECRET"}],
                 "unaccounted_ygg_dns": {
                     "enabled": True,
-                    "findings": [{"hostname": "txt.invalid", "type": "TXT", "content": "SECRET"}],
-                    "retained": {"missing": [{"hostname": "txt.invalid", "type": "TXT", "content": "SECRET"}]},
+                    "findings": [
+                        {"hostname": "txt.invalid", "type": "TXT", "content": "SECRET"}
+                    ],
+                    "retained": {
+                        "missing": [
+                            {
+                                "hostname": "txt.invalid",
+                                "type": "TXT",
+                                "content": "SECRET",
+                            }
+                        ]
+                    },
                 },
             }
         )

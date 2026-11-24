@@ -177,20 +177,42 @@ class InventoryToolTests(unittest.TestCase):
         state["supplemental"] = {
             "observed_at": "sample",
             "records": [
-                {"ip": "", "source": "IPv6 router advertisement", "detail": "prefix", "secret": "never-export"},
+                {
+                    "ip": "",
+                    "source": "IPv6 router advertisement",
+                    "detail": "prefix",
+                    "secret": "never-export",
+                },
                 {"ip": "192.0.2.10", "source": "ARP reply", "detail": "mac"},
             ],
         }
         state["identity_conflicts"] = [
-            {"address": "192.0.2.10", "macs": ["one", "two"], "reasons": ["conflict"], "secret": "never-export"}
+            {
+                "address": "192.0.2.10",
+                "macs": ["one", "two"],
+                "reasons": ["conflict"],
+                "secret": "never-export",
+            }
         ]
         state["identity_history"]["example"]["macs"] = ["02:00:00:00:00:10"]
         state["identity_changes"] = [{"identity": "example", "kind": "first-observed"}]
-        state["hosts"] = {"192.0.2.10": {"ports": ["tcp/80"], "services": {"tcp/80": {"name": "http", "secret": "never-export"}}}}
+        state["hosts"] = {
+            "192.0.2.10": {
+                "ports": ["tcp/80"],
+                "services": {"tcp/80": {"name": "http", "secret": "never-export"}},
+            }
+        }
         state["advertisements"] = ["example.local|_http._tcp|80"]
         state["alert_pending_confirmations"] = ["candidate"]
-        self.assertEqual(self.tools.get_discovery_status()["supplemental_source_counts"]["ARP reply"], 1)
-        self.assertEqual(self.tools.get_discovery_evidence(source="ARP reply")["total"], 1)
+        self.assertEqual(
+            self.tools.get_discovery_status()["supplemental_source_counts"][
+                "ARP reply"
+            ],
+            1,
+        )
+        self.assertEqual(
+            self.tools.get_discovery_evidence(source="ARP reply")["total"], 1
+        )
         self.assertNotIn("never-export", str(self.tools.get_discovery_evidence()))
         self.assertNotIn("never-export", str(self.tools.get_identity_conflicts()))
         self.assertEqual(self.tools.get_device_history("02:00:00:00:00:10")["total"], 1)
@@ -207,8 +229,17 @@ class InventoryToolTests(unittest.TestCase):
             "total_findings": 2,
             "truncated": False,
             "findings": [
-                {"section": "blocked", "hostname": "example.invalid", "reason": "multiple Access apps", "secret": "never-export"},
-                {"section": "proposed", "hostname": "other.invalid", "kind": "create_dns_cname"},
+                {
+                    "section": "blocked",
+                    "hostname": "example.invalid",
+                    "reason": "multiple Access apps",
+                    "secret": "never-export",
+                },
+                {
+                    "section": "proposed",
+                    "hostname": "other.invalid",
+                    "kind": "create_dns_cname",
+                },
             ],
         }
         result = self.tools.get_cloudflare_audit(section="blocked")

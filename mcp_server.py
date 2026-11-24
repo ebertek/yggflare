@@ -309,7 +309,13 @@ class InventoryTools:
         self, hostname: str = "", section: str = "", offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
         """Read saved configuration discrepancies, not an executable write plan."""
-        sections = ("proposed", "blocked", "static_dns", "unaccounted_dns", "retained_missing")
+        sections = (
+            "proposed",
+            "blocked",
+            "static_dns",
+            "unaccounted_dns",
+            "retained_missing",
+        )
         if section and section not in sections:
             raise ValueError("Unknown audit section")
         data = self.loader()
@@ -319,21 +325,40 @@ class InventoryTools:
             project(
                 item,
                 (
-                    "section", "hostname", "kind", "reason", "status", "type",
-                    "category", "proxied", "expected", "actual", "before", "content",
+                    "section",
+                    "hostname",
+                    "kind",
+                    "reason",
+                    "status",
+                    "type",
+                    "category",
+                    "proxied",
+                    "expected",
+                    "actual",
+                    "before",
+                    "content",
                 ),
             )
             for item in audit.get("findings", [])
             if available
             and (not section or item.get("section") == section)
-            and (not hostname or item.get("hostname", "").casefold() == hostname.casefold())
+            and (
+                not hostname
+                or item.get("hostname", "").casefold() == hostname.casefold()
+            )
         ]
         return {
             **cloudflare_context(data),
             "audit_available": available,
-            "static_dns_enabled": audit.get("static_dns_enabled") if available else None,
-            "internal_dns_enabled": audit.get("internal_dns_enabled") if available else None,
-            "snapshot_total_findings": audit.get("total_findings") if available else None,
+            "static_dns_enabled": (
+                audit.get("static_dns_enabled") if available else None
+            ),
+            "internal_dns_enabled": (
+                audit.get("internal_dns_enabled") if available else None
+            ),
+            "snapshot_total_findings": (
+                audit.get("total_findings") if available else None
+            ),
             "snapshot_truncated": audit.get("truncated") if available else None,
             **page(rows, offset, limit),
         }
@@ -405,7 +430,9 @@ class InventoryTools:
             for field in ("addresses", "current_addresses", "macs"):
                 values.extend(item.get(field, []))
             if not needle or needle in {str(value).casefold() for value in values}:
-                rows.append({"identity": bounded(key), **project(item, IDENTITY_FIELDS)})
+                rows.append(
+                    {"identity": bounded(key), **project(item, IDENTITY_FIELDS)}
+                )
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
     def get_identity_changes(
@@ -415,7 +442,9 @@ class InventoryTools:
         data = self.loader()
         rows = [
             project(item, ("observed_at", "identity", "kind", "description"))
-            for item in reversed(data.get("network_state", {}).get("identity_changes", []))
+            for item in reversed(
+                data.get("network_state", {}).get("identity_changes", [])
+            )
             if not identity or item.get("identity") == identity
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
@@ -472,7 +501,9 @@ class InventoryTools:
         data = self.loader()
         rows = [
             {"candidate": bounded(item)}
-            for item in data.get("network_state", {}).get("alert_pending_confirmations", [])
+            for item in data.get("network_state", {}).get(
+                "alert_pending_confirmations", []
+            )
             if isinstance(item, str)
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
