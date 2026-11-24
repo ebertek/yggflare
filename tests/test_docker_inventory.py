@@ -312,6 +312,31 @@ services:
             "10.4.21.9",
         )
 
+    def test_service_projection_includes_host_mode_and_local_scope(self):
+        container = live()
+        container["Config"]["Image"] = "example/dns:2"
+        container["State"]["Health"] = {
+            "Status": "healthy",
+            "Log": ["never-export-this"],
+        }
+        view = {}
+        with patch.object(inventory, "inspect_containers", return_value=[container]):
+            hosts, _ = inventory.collect(
+                self.root, NETWORK, "home.example", service_view=view
+            )
+        self.assertEqual(len(hosts), 1)
+        self.assertEqual(view["total"], 2)
+        dns, host = view["items"]
+        self.assertEqual(dns["health"], "healthy")
+        self.assertEqual(dns["runtime_image"], "example/dns:2")
+        self.assertEqual(host["network_mode_kind"], "host")
+        self.assertEqual(host["presence"], "not_observed_local_project")
+        self.assertNotIn("never-export-this", json.dumps(view))
+        with patch.object(inventory, "inspect_containers", side_effect=OSError):
+            inventory.collect(self.root, NETWORK, "", service_view=view)
+        self.assertFalse(view["runtime_available"])
+        self.assertTrue(all(row["presence"] == "unknown" for row in view["items"]))
+
     def test_cache_avoids_docker_call_per_request(self):
         inventory._CACHE.clear()
         self.addCleanup(inventory._CACHE.clear)

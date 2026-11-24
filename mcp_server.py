@@ -1,5 +1,7 @@
 """Read-only MCP tools over Yggflare's existing presentation model."""
 
+import hashlib
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -7,7 +9,7 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from job_status import JOBS, artifact_status
+from job_status import JOBS, artifact_status, backup_checks
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -68,15 +70,32 @@ def project(record, fields):
     return {key: bounded(record[key]) for key in fields if key in record}
 
 
-def page(rows, offset, limit):
+def page(rows, offset, limit, expected_snapshot_id=""):
     if offset < 0 or not 1 <= limit <= MAX_PAGE:
         raise ValueError("offset must be nonnegative; limit must be between 1 and 50")
-    end = offset + limit
+    # Fingerprint projected, filtered rows; do not retain private copies.
+    digest = hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if expected_snapshot_id and expected_snapshot_id != digest:
+        raise ValueError("Result set changed; restart pagination at offset zero")
+    items = []
+    used = 0
+    for row in rows[offset : offset + limit]:
+        size = len(json.dumps(row, ensure_ascii=True).encode())
+        if size > 256 * 1024:
+            raise ValueError("Projected row exceeds response budget")
+        if used + size > 256 * 1024:
+            break
+        items.append(row)
+        used += size
+    end = offset + len(items)
     return {
         "total": len(rows),
         "offset": offset,
         "next_offset": end if end < len(rows) else None,
-        "items": rows[offset:end],
+        "snapshot_id": digest,
+        "items": items,
     }
 
 
@@ -131,11 +150,59 @@ def load_model():
     return model()
 
 
+SERVICE_FIELDS = (
+    "project",
+    "service",
+    "container_name",
+    "hostname",
+    "aliases",
+    "declared",
+    "runtime_observed",
+    "runtime_scope",
+    "local_project_observed",
+    "runtime_state",
+    "health",
+    "restart_count",
+    "declared_image",
+    "runtime_image",
+    "image_reference_match",
+    "declared_networks",
+    "runtime_networks",
+    "declared_dependencies",
+    "profiles",
+    "declared_addresses",
+    "runtime_addresses",
+    "lan_endpoints",
+    "network_mode_kind",
+    "shared_network",
+    "ports",
+    "port_list_truncated",
+    "presence",
+    "declaration_status",
+)
+
+
+def load_services():
+    import os
+
+    from docker_inventory import service_snapshot
+    from web import NETWORK, SOURCE
+
+    return service_snapshot(
+        SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", "")
+    )
+
+
 class InventoryTools:
     """No command execution, arbitrary paths, credential reads or write tools."""
 
-    def __init__(self, loader: Callable = load_model):
+    def __init__(
+        self, loader: Callable = load_model, service_loader: Callable | None = None
+    ):
         self.loader = loader
+        self.service_loader = service_loader or (
+            load_services if loader is load_model else lambda: {}
+        )
 
     def get_inventory_status(self) -> dict[str, Any]:
         """Summarize inventory and snapshot freshness without refreshing anything."""
@@ -659,30 +726,252 @@ class InventoryTools:
         return {"available": document is not None, **page(rows, offset, limit)}
 
     def get_backup_status(self) -> dict[str, Any]:
-        """Read local archive metadata; never verify, extract or claim restore assurance."""
+        """Read archive metadata and recorded explicit checks; never open archives."""
         data = self.loader()
         artifacts = artifact_status(Path("/backup"))
         jobs = (data.get("job_status") or {}).get("jobs", {})
+        latest = artifacts.get("latest")
+        checks = backup_checks(
+            Path("/data"), Path("/backup") / latest["name"] if latest else None
+        )
         return {
             **project(artifacts, ("available", "archive_count")),
             "latest": artifacts.get("latest"),
             "scheduler": project(
                 jobs.get("backup", {}), ("status", "started_at", "last_success_at")
             ),
-            "integrity_verified": None,
-            "restore_verified": None,
+            "integrity_verified": checks.get("integrity", {}).get("succeeded"),
+            "restore_verified": checks.get("restore", {}).get("succeeded"),
+            "integrity_checked_at": checks.get("integrity", {}).get("checked_at"),
+            "restore_checked_at": checks.get("restore", {}).get("checked_at"),
             "off_host_copy_verified": None,
         }
 
     def get_notification_status(self) -> dict[str, Any]:
-        """Read saved queue depth; successful submission and receipt are unverified."""
+        """Read saved queue and webhook submission evidence; receipt remains unknown."""
         data = self.loader()
         state = data.get("network_state", {})
         return {
             **snapshot_context(data),
             "pending_deliveries": len(state.get("pending_discord_events", [])),
-            "last_success_at": None,
+            "last_success_at": state.get("notification_status", {}).get(
+                "last_success_at"
+            ),
+            **project(
+                state.get("notification_status", {}), ("status", "last_attempt_at")
+            ),
             "recipient_receipt_verified": None,
+        }
+
+    def _service_rows(self, query, project_name):
+        view = self.service_loader()
+        needle = query.strip().casefold()
+        rows = [
+            project(item, SERVICE_FIELDS)
+            for item in view.get("items", [])
+            if (
+                not project_name
+                or item.get("project", "").casefold() == project_name.casefold()
+            )
+            and (
+                not needle
+                or any(
+                    needle in str(value).casefold()
+                    for value in (
+                        item.get("service"),
+                        item.get("container_name"),
+                        item.get("hostname"),
+                        *item.get("aliases", []),
+                        *item.get("lan_endpoints", []),
+                    )
+                )
+            )
+        ]
+        context = {
+            "observed_at": view.get("observed_at"),
+            "runtime_available": view.get("runtime_available"),
+            "compose_complete": view.get("compose_complete"),
+            "snapshot_total": view.get("total"),
+            "snapshot_truncated": view.get("truncated"),
+            "caveat": "Local Docker engine only; declarations can target other hosts or inactive profiles. Absence is not a failure.",
+        }
+        return context, rows
+
+    def list_docker_services(
+        self,
+        query: str = "",
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> dict[str, Any]:
+        """List Compose and local runtime services including non-LAN services."""
+        context, rows = self._service_rows(query, project_name)
+        return {**context, **page(rows, offset, limit, snapshot_id)}
+
+    def get_docker_service(
+        self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Exact service, container, hostname, alias or LAN endpoint lookup."""
+        if not identifier.strip():
+            raise ValueError("identifier must not be empty")
+        context, rows = self._service_rows(identifier, project_name)
+        needle = identifier.strip().casefold()
+        rows = [
+            row
+            for row in rows
+            if needle
+            in {
+                str(value).casefold()
+                for value in (
+                    row.get("service"),
+                    row.get("container_name"),
+                    row.get("hostname"),
+                    *row.get("aliases", []),
+                    *row.get("lan_endpoints", []),
+                )
+            }
+        ]
+        return {**context, "ambiguous": len(rows) > 1, **page(rows, offset, limit)}
+
+    def get_compose_drift(
+        self, project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Review candidate discrepancies without assuming absent services are required locally."""
+        context, rows = self._service_rows("", project_name)
+        findings = []
+        for row in rows:
+            kinds = []
+            if row.get("image_reference_match") is False:
+                kinds.append("image_reference_mismatch")
+            if row.get("runtime_state") in {"exited", "dead", "restarting"}:
+                kinds.append("runtime_state_review")
+            if row.get("health") == "unhealthy":
+                kinds.append("unhealthy")
+            if row.get("presence") == "not_observed_local_project":
+                kinds.append("not_observed_local_project")
+            if row.get("declaration_status") == "not_in_read_source":
+                kinds.append("runtime_not_in_read_source")
+            if (
+                row.get("runtime_observed")
+                and row.get("runtime_state") == "running"
+                and row.get("declared_addresses")
+                and row.get("runtime_addresses")
+                and set(row["declared_addresses"]) != set(row["runtime_addresses"])
+            ):
+                kinds.append("lan_address_mismatch")
+            if kinds:
+                findings.append({**row, "review_reasons": kinds})
+        return {**context, **page(findings, offset, limit)}
+
+    def get_service_dependencies(
+        self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read explicit Compose depends_on and namespace evidence, not inferred traffic."""
+        result = self.get_docker_service(identifier, project_name, offset, limit)
+        fields = (
+            "project",
+            "service",
+            "container_name",
+            "declared_dependencies",
+            "shared_network",
+            "network_mode_kind",
+            "declared_networks",
+            "runtime_networks",
+        )
+        result["items"] = [project(row, fields) for row in result["items"]]
+        return result
+
+    def get_network_topology(
+        self,
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> dict[str, Any]:
+        """List declared and local runtime network relationships, not physical links."""
+        context, services = self._service_rows("", project_name)
+        rows = []
+        for row in services:
+            identity = project(row, ("project", "service", "container_name"))
+            for field, source in (
+                ("declared_networks", "compose"),
+                ("runtime_networks", "local_docker"),
+            ):
+                for network in row.get(field, []):
+                    rows.append({**identity, "network": network, "source": source})
+            if row.get("shared_network"):
+                rows.append(
+                    {
+                        **identity,
+                        "network_owner": row["shared_network"],
+                        "source": "resolved_namespace",
+                    }
+                )
+        return {**context, **page(rows, offset, limit, snapshot_id)}
+
+    def get_ingress_path(
+        self, hostname: str, offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Correlate exact aliases and saved Cloudflare configuration, not reachability."""
+        if not hostname.strip():
+            raise ValueError("hostname must not be empty")
+        context, rows = self._service_rows(hostname, "")
+        needle = hostname.strip().casefold()
+        rows = [
+            row
+            for row in rows
+            if needle in {str(v).casefold() for v in row.get("aliases", [])}
+        ]
+        data = self.loader()
+        config = data.get("cloudflare_view", {}).get("configuration", {})
+        layers = {}
+        for section, fields in (
+            (
+                "access",
+                ("hostname", "status", "expected_decisions", "observed_decisions"),
+            ),
+            (
+                "dns",
+                (
+                    "hostname",
+                    "zone",
+                    "type",
+                    "address",
+                    "proxied",
+                    "matches_configured_tunnel",
+                ),
+            ),
+            (
+                "tunnel",
+                (
+                    "hostname",
+                    "precedence",
+                    "origin_scheme",
+                    "origin_host",
+                    "origin_port",
+                    "has_path_match",
+                ),
+            ),
+        ):
+            dataset = config.get(section, {})
+            matching = [
+                project(item, fields)
+                for item in dataset.get("items", [])
+                if item.get("hostname", "").casefold() == needle
+            ]
+            layers[section] = {
+                **page(matching, 0, MAX_PAGE),
+                "source_truncated": dataset.get("truncated"),
+            }
+        return {
+            **context,
+            "cloudflare": cloudflare_context(data),
+            "configuration_available": config.get("version") == 1,
+            "layers": layers,
+            "traefik_runtime_verified": None,
+            "reachability_verified": None,
+            **page(rows, offset, limit),
         }
 
     def get_service_exposure(
@@ -739,6 +1028,12 @@ TOOL_NAMES = (
     "get_job_history",
     "get_backup_status",
     "get_notification_status",
+    "list_docker_services",
+    "get_docker_service",
+    "get_compose_drift",
+    "get_service_dependencies",
+    "get_ingress_path",
+    "get_network_topology",
 )
 
 

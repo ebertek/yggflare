@@ -10,6 +10,7 @@ import re
 import subprocess
 import threading
 import time
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from ruamel.yaml import YAML
@@ -18,6 +19,7 @@ from ruamel.yaml.error import YAMLError
 MAX_BYTES = 4 * 1024 * 1024
 _LOCK = threading.Lock()
 _CACHE = {}
+_SERVICE_CACHE = {}
 
 
 def address_key(value):
@@ -158,6 +160,17 @@ def endpoint(ip, ipv6, mac, aliases, network):
     }
 
 
+def image_reference(value):
+    """Only literal image references, not interpolation or URLs."""
+    if (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}", value)
+        and "://" not in value
+    ):
+        return value
+    return None
+
+
 def compose_records(root, network, domain):
     """Read source YAML, without executing Compose interpolation or env files."""
     records, warnings = [], []
@@ -193,6 +206,13 @@ def compose_records(root, network, domain):
                         "source": "Compose",
                         "mode": str(config.get("network_mode") or ""),
                         "labels": mapping(config.get("labels")),
+                        "declared_image": image_reference(config.get("image")),
+                        "declared_networks": names(config.get("networks") or []),
+                        "declared_dependencies": names(config.get("depends_on") or []),
+                        "profiles": names(config.get("profiles") or []),
+                        "declared_addresses": sorted(
+                            {item["ipv4"] for item in endpoints}
+                        ),
                     }
                 )
         except (OSError, ValueError, TypeError, AttributeError, YAMLError):
@@ -226,13 +246,16 @@ def inspect_containers():
     return json.loads(result.stdout)
 
 
-def collect(root, network, domain):
+def collect(root, network, domain, *, service_view=None):
     """Merge by explicit container name or unique Compose project/service identity."""
     records, warnings = compose_records(root, network, domain)
+    compose_complete = not warnings and bool(records)
+    runtime_available = True
     try:
         containers = inspect_containers()
     except (OSError, ValueError, subprocess.SubprocessError):
         containers = []
+        runtime_available = False
         warnings.append(
             "Docker metadata unavailable; showing Compose declarations and saved scans."
         )
@@ -287,6 +310,12 @@ def collect(root, network, domain):
                 "name": name,
                 "endpoints": [],
                 "source": "Docker",
+                "project": next(
+                    iter(names([labels.get("com.docker.compose.project", "")])), ""
+                ),
+                "service": next(
+                    iter(names([labels.get("com.docker.compose.service", "")])), ""
+                ),
                 "mode": str(
                     (container.get("HostConfig") or {}).get("NetworkMode") or ""
                 ),
@@ -298,6 +327,36 @@ def collect(root, network, domain):
             for port, sources in live["port_sources"].items():
                 record["port_sources"].setdefault(port, set()).update(sources)
         record["id"] = str(container.get("Id") or "")
+        record["runtime_observed"] = True
+        record["runtime_image"] = image_reference(config.get("Image"))
+        state = container.get("State") or {}
+        status = state.get("Status")
+        record["runtime_state"] = (
+            status
+            if status
+            in {
+                "created",
+                "running",
+                "paused",
+                "restarting",
+                "removing",
+                "exited",
+                "dead",
+            }
+            else "running" if state.get("Running") is True else "unknown"
+        )
+        status = (state.get("Health") or {}).get("Status")
+        record["health"] = (
+            status if status in {"healthy", "unhealthy", "starting"} else None
+        )
+        record["runtime_networks"] = names(
+            (container.get("NetworkSettings", {}).get("Networks") or {}).keys()
+        )
+        record["runtime_addresses"] = sorted({item["ipv4"] for item in endpoints})
+        restart_count = container.get("RestartCount")
+        record["restart_count"] = (
+            restart_count if type(restart_count) is int and restart_count >= 0 else None
+        )
         record["mode"] = str(
             (container.get("HostConfig") or {}).get("NetworkMode") or record["mode"]
         )
@@ -358,11 +417,28 @@ def collect(root, network, domain):
         return endpoints, root or parent["name"]
 
     hosts = []
+    services = []
+    local_projects = {
+        r.get("project")
+        for r in records
+        if r.get("runtime_observed") and r.get("project")
+    }
     name_counts = {}
     for record in records:
         name_counts[record["name"]] = name_counts.get(record["name"], 0) + 1
     for record in records:
         endpoints, shared = resolve(record, set())
+        if service_view is not None:
+            services.append(
+                service_record(
+                    record,
+                    endpoints,
+                    shared,
+                    local_projects,
+                    runtime_available,
+                    compose_complete,
+                )
+            )
         if not endpoints:
             continue
         evidence = {
@@ -394,7 +470,91 @@ def collect(root, network, domain):
                     "status": record["status"],
                 }
             )
+    if service_view is not None:
+        services.sort(
+            key=lambda row: (row["project"], row["service"], row["container_name"])
+        )
+        service_view.update(
+            observed_at=datetime.now(UTC).isoformat(),
+            runtime_available=runtime_available,
+            compose_complete=compose_complete,
+            total=len(services),
+            truncated=len(services) > 2000,
+            items=services[:2000],
+        )
     return hosts, sorted(set(warnings))
+
+
+def service_record(
+    record, endpoints, shared, local_projects, runtime_available, compose_complete
+):
+    """Project all services, including bridge/host-only declarations."""
+    project = record.get("project", "")
+    service = record.get("service", "")
+    observed = record.get("runtime_observed") is True
+    declared = record["source"] != "Docker"
+    local_project = bool(project and project in local_projects)
+    expected = record.get("declared_image")
+    actual = record.get("runtime_image")
+    mode = record.get("mode", "")
+    mode_kind = mode.split(":", 1)[0]
+    if mode_kind not in {"host", "none", "bridge", "default", "service", "container"}:
+        mode_kind = "named_network" if mode else "unspecified"
+    return {
+        "project": project,
+        "service": service,
+        "container_name": record["name"],
+        "hostname": record["hostname"],
+        "aliases": record["aliases"][:64],
+        "declared": declared,
+        "runtime_observed": observed,
+        "runtime_scope": "local_engine" if observed else "not_observed_locally",
+        "local_project_observed": local_project,
+        "runtime_state": record.get("runtime_state"),
+        "health": record.get("health"),
+        "restart_count": record.get("restart_count"),
+        "declared_image": expected,
+        "runtime_image": actual,
+        "image_reference_match": expected == actual if expected and actual else None,
+        "declared_networks": record.get("declared_networks", [])[:64],
+        "runtime_networks": record.get("runtime_networks", [])[:64],
+        "declared_dependencies": record.get("declared_dependencies", [])[:64],
+        "profiles": record.get("profiles", [])[:64],
+        "declared_addresses": record.get("declared_addresses", [])[:64],
+        "runtime_addresses": record.get("runtime_addresses", [])[:64],
+        "lan_endpoints": sorted({item["ipv4"] for item in endpoints})[:64],
+        "network_mode_kind": mode_kind,
+        "shared_network": shared or None,
+        "ports": sorted(record["port_sources"])[:64],
+        "port_list_truncated": len(record["port_sources"]) > 64,
+        "presence": (
+            "observed"
+            if observed
+            else (
+                "not_observed_local_project"
+                if runtime_available and local_project
+                else "unknown"
+            )
+        ),
+        "declaration_status": (
+            "declared"
+            if declared
+            else "not_in_read_source" if compose_complete else "unknown"
+        ),
+    }
+
+
+def service_snapshot(root, network, domain):
+    """Independent bounded cache for MCP service-level topology."""
+    key = str(root), str(network), domain
+    with _LOCK:
+        if _SERVICE_CACHE.get("key") != key or time.monotonic() >= _SERVICE_CACHE.get(
+            "expires", 0
+        ):
+            view = {}
+            collect(root, network, domain, service_view=view)
+            _SERVICE_CACHE.update(key=key, expires=time.monotonic() + 30, value=view)
+        return _SERVICE_CACHE["value"]
 
 
 def local_macvlan_interfaces(network):
