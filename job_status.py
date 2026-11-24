@@ -160,3 +160,72 @@ def health(data):
         "heartbeat_age_seconds": age,
         "heartbeat_fresh": age is not None and 0 <= age < 300,
     }
+
+
+BACKUP_CHECKS = ("integrity", "restore")
+
+
+def archive_identity(path):
+    """Bind verification evidence to an unchanged regular archive's metadata."""
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError("Backup must be a regular file")
+    return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def record_backup_check(data, archive, kind, identity, succeeded):
+    """Save the latest explicit check of each kind; never store archive contents."""
+    if kind not in BACKUP_CHECKS:
+        raise ValueError("Unknown backup check")
+    if archive_identity(archive) != identity:
+        raise ValueError("Archive changed during verification")
+    value = {
+        "version": 1,
+        "archive": archive.name,
+        "identity": identity,
+        "checked_at": now(),
+        "succeeded": succeeded,
+    }
+    name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=data, delete=False
+        ) as handle:
+            name = handle.name
+            json.dump(value, handle)
+        os.replace(name, data / f"backup-{kind}-evidence.json")
+    finally:
+        if name is not None:
+            Path(name).unlink(missing_ok=True)
+
+
+def backup_checks(data, archive):
+    """Return evidence for this exact archive; missing or changed is unknown."""
+    result = {}
+    if archive is None:
+        return result
+    try:
+        identity = archive_identity(archive)
+    except (OSError, ValueError):
+        return result
+    for kind in BACKUP_CHECKS:
+        try:
+            path = data / f"backup-{kind}-evidence.json"
+            if path.is_symlink() or path.stat().st_size > 4096:
+                continue
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                isinstance(value, dict)
+                and value.get("version") == 1
+                and value.get("archive") == archive.name
+                and value.get("identity") == identity
+                and type(value.get("succeeded")) is bool
+                and isinstance(value.get("checked_at"), str)
+            ):
+                result[kind] = {
+                    "checked_at": value["checked_at"],
+                    "succeeded": value["succeeded"],
+                }
+        except (OSError, ValueError, TypeError):
+            continue
+    return result

@@ -302,6 +302,9 @@ class NetworkAuditTests(unittest.TestCase):
                 self.assertTrue(failed["hosts"])
                 self.assertTrue(failed["reported"])
                 self.assertTrue(failed["pending_discord_events"])
+                self.assertEqual(failed["notification_status"]["status"], "deferred")
+                self.assertIn("last_attempt_at", failed["notification_status"])
+                self.assertNotIn("last_success_at", failed["notification_status"])
 
                 send.reset_mock(side_effect=True)
                 audit.main()  # No new observations; retry queued ones.
@@ -311,6 +314,8 @@ class NetworkAuditTests(unittest.TestCase):
                 )
                 recovered = json.loads((root / "state.json").read_text())
                 self.assertEqual(recovered["pending_discord_events"], [])
+                self.assertEqual(recovered["notification_status"]["status"], "submitted")
+                self.assertIn("last_success_at", recovered["notification_status"])
                 self.assertEqual(recovered["recent_events"], failed["recent_events"])
 
     def test_xml_only_counts_confirmed_open(self):

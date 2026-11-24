@@ -7,7 +7,7 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from job_status import JOBS, artifact_status
+from job_status import JOBS, artifact_status, backup_checks
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -711,25 +711,30 @@ class InventoryTools:
         data = self.loader()
         artifacts = artifact_status(Path("/backup"))
         jobs = (data.get("job_status") or {}).get("jobs", {})
+        latest = artifacts.get("latest")
+        checks = backup_checks(Path("/data"), Path("/backup") / latest["name"] if latest else None)
         return {
             **project(artifacts, ("available", "archive_count")),
             "latest": artifacts.get("latest"),
             "scheduler": project(
                 jobs.get("backup", {}), ("status", "started_at", "last_success_at")
             ),
-            "integrity_verified": None,
-            "restore_verified": None,
+            "integrity_verified": checks.get("integrity", {}).get("succeeded"),
+            "restore_verified": checks.get("restore", {}).get("succeeded"),
+            "integrity_checked_at": checks.get("integrity", {}).get("checked_at"),
+            "restore_checked_at": checks.get("restore", {}).get("checked_at"),
             "off_host_copy_verified": None,
         }
 
     def get_notification_status(self) -> dict[str, Any]:
-        """Read saved queue depth; successful submission and receipt are unverified."""
+        """Read saved queue and webhook submission evidence; receipt remains unknown."""
         data = self.loader()
         state = data.get("network_state", {})
         return {
             **snapshot_context(data),
             "pending_deliveries": len(state.get("pending_discord_events", [])),
-            "last_success_at": None,
+            "last_success_at": state.get("notification_status", {}).get("last_success_at"),
+            **project(state.get("notification_status", {}), ("status", "last_attempt_at")),
             "recipient_receipt_verified": None,
         }
 

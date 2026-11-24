@@ -608,6 +608,12 @@ def main():
         not isinstance(event, str) for event in prior_pending
     ):
         raise ValueError("Invalid pending Discord notification state")
+    prior_delivery = previous.get("notification_status", {})
+    snapshot["notification_status"] = {
+        key: prior_delivery[key]
+        for key in ("status", "last_attempt_at", "last_success_at")
+        if isinstance(prior_delivery, dict) and isinstance(prior_delivery.get(key), str)
+    }
     snapshot["pending_discord_events"] = (
         list(dict.fromkeys([*prior_pending, *events]))[-200:] if not bootstrap else []
     )
@@ -629,16 +635,27 @@ def main():
                 else ""
             )
             if webhook:
+                delivery = snapshot["notification_status"]
+                delivery.update(
+                    status="completion_unknown",
+                    last_attempt_at=datetime.now(UTC).isoformat(),
+                )
+                save_state(args.state_dir, snapshot)
                 notify_discord(webhook, snapshot["pending_discord_events"])
                 snapshot["pending_discord_events"] = []
-                save_state(args.state_dir, snapshot)
+                delivery.update(status="submitted", last_success_at=datetime.now(UTC).isoformat())
+            else:
+                snapshot["notification_status"]["status"] = "not_configured"
         except (RuntimeError, ValueError) as error:
+            snapshot["notification_status"]["status"] = "deferred"
             print(f"WARNING: Discord delivery deferred: {error}", file=sys.stderr)
         except (OSError, urllib.error.URLError):
+            snapshot["notification_status"]["status"] = "deferred"
             print(
                 "WARNING: Discord delivery deferred: transport or secret error",
                 file=sys.stderr,
             )
+        save_state(args.state_dir, snapshot)
     print(
         f"New confirmed findings: {len(events)}; "
         f"{len(pending_confirmation)} awaiting confirmation; "

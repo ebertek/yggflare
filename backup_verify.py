@@ -7,6 +7,7 @@ from pathlib import Path
 
 import controller
 from backup import restore_test, verify_archive
+from job_status import archive_identity, record_backup_check
 
 
 def main():
@@ -20,12 +21,24 @@ def main():
     candidate = controller.BACKUP / filename
     if candidate.is_symlink() or not candidate.is_file():
         parser.error("Archive must be an existing, regular non-symlink file")
+    kind = "restore" if args.restore_test else "integrity"
+    identity = archive_identity(candidate)
+    try:
+        result = (
+            restore_test(candidate, controller.DATA)
+            if args.restore_test else verify_archive(candidate)
+        )
+    except Exception:
+        try:
+            record_backup_check(controller.DATA, candidate, kind, identity, False)
+        except (OSError, ValueError):
+            print("WARNING: Backup check evidence unavailable.", file=sys.stderr)
+        raise
+    record_backup_check(controller.DATA, candidate, kind, identity, True)
+    print(json.dumps(result, sort_keys=True))
     if args.restore_test:
-        result = restore_test(candidate, controller.DATA)
-        print(json.dumps(result, sort_keys=True))
         print("Isolated restoration rehearsal passed; live files unchanged.")
     else:
-        print(json.dumps(verify_archive(candidate), sort_keys=True))
         print("Backup structurally verified; no files were restored.")
     return 0
 

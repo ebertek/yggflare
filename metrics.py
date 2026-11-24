@@ -8,6 +8,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from job_status import JOBS, read_jobs
+
 MAX_BYTES = 4 * 1024 * 1024
 STALE_CLOUDFLARE_SECONDS = 8 * 60 * 60
 
@@ -220,6 +222,20 @@ def render(config, data, now=None):
             orphan_count,
         ),
     ]
+    job_document = read_jobs(Path(data))
+    values.append(("yggflare_job_evidence_available", "Saved scheduler evidence is available", job_document is not None))
+    for job in JOBS:
+        row = (job_document or {}).get("jobs", {}).get(job, {})
+        status = row.get("status")
+        if status in {"succeeded", "failed", "interrupted", "completion_unknown"}:
+            values.extend([
+                (f"yggflare_job_{job}_last_attempt_timestamp_seconds", "Last scheduled attempt", epoch(row.get("started_at"))),
+                (f"yggflare_job_{job}_last_success_timestamp_seconds", "Last successful scheduled completion", epoch(row.get("last_success_at"))),
+                (f"yggflare_job_{job}_last_attempt_success", "Latest completed attempt succeeded; omitted if incomplete", None if status == "completion_unknown" else status == "succeeded"),
+                (f"yggflare_job_{job}_completion_unknown", "Latest attempt lacks a recorded completion", status == "completion_unknown"),
+            ])
+    delivery = as_object(scan.get("notification_status"))
+    values.append(("yggflare_network_discord_last_submission_timestamp_seconds", "Last successful webhook submission, not recipient receipt", epoch(delivery.get("last_success_at"))))
     output = "".join(
         metric(name, description, value) for name, description, value in values
     )
