@@ -307,7 +307,7 @@ protect the listener.
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same twenty-four read-only tools. HTTP is disabled by default.
+use the same twenty-nine read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -378,6 +378,18 @@ in the repository.
 | `get_job_history` | Bounded scheduler execution history |
 | `get_backup_status` | Local archive metadata and backup job status |
 | `get_notification_status` | Saved pending delivery count; delivery remains unverified |
+| `list_docker_services` | Compose and local runtime services, including non-LAN services |
+| `get_docker_service` | Exact project-scoped service or endpoint lookup |
+| `get_compose_drift` | Candidate image, address, health and presence discrepancies |
+| `get_service_dependencies` | Declared dependencies and shared-network evidence |
+| `get_ingress_path` | Correlate exact service aliases with saved Cloudflare configuration |
+
+Service topology uses a separate 30-second sanitized cache. It includes host
+and bridge-only declarations without inventing LAN addresses. Local Docker
+evidence does not establish remote deployment state; inactive profiles or
+remote declarations may explain absence. Image reference equality does not
+establish image digest equality. Ingress correlation is not a live Traefik
+or reachability check.
 
 Job evidence is retained for the last 20 completed/unknown attempts per
 scheduled job. A started attempt with no completion evidence is

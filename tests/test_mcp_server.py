@@ -365,6 +365,25 @@ class InventoryToolTests(unittest.TestCase):
             self.assertEqual(result["archive_count"], 1)
             self.assertEqual(result["latest"]["bytes"], 4)
 
+    def test_service_topology_and_ingress_are_scoped(self):
+        self.tools.service_loader = lambda: {
+            "runtime_available": True, "compose_complete": True,
+            "items": [
+                {"project": "local", "service": "dns", "container_name": "dns",
+                 "aliases": ["example.invalid"], "declared_dependencies": ["db"],
+                 "image_reference_match": False, "secret": "never-export"},
+                {"project": "remote", "service": "dns", "container_name": "dns"},
+            ],
+        }
+        self.assertTrue(self.tools.get_docker_service("dns")["ambiguous"])
+        self.assertEqual(self.tools.get_docker_service("dns", "local")["total"], 1)
+        self.assertEqual(self.tools.get_compose_drift()["total"], 1)
+        self.assertEqual(self.tools.get_service_dependencies("dns", "local")["items"][0]["declared_dependencies"], ["db"])
+        path = self.tools.get_ingress_path("example.invalid")
+        self.assertEqual(path["total"], 1)
+        self.assertIsNone(path["reachability_verified"])
+        self.assertNotIn("never-export", str(path))
+
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):
