@@ -17,7 +17,7 @@ from starlette.responses import PlainTextResponse
 from mcp_server import build_server
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9._~-]{32,256}")
-HOST_PATTERN = re.compile(r"[A-Za-z0-9.\\[\\]:-]{1,253}")
+HOST_PATTERN = re.compile(r"[A-Za-z0-9.:\[\]-]{1,253}")
 
 
 def enabled(env=None):
