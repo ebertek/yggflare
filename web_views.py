@@ -404,7 +404,9 @@ def drift_view(data, table):
             (
                 "Initial baseline (not notified)"
                 if item.get("baseline")
-                else "New finding"
+                else "Present in latest reported findings"
+                if item.get("message") in state.get("reported", {}).values()
+                else "Historical (not confirmed current)"
             ),
         ]
         for item in reversed(history)
@@ -504,7 +506,7 @@ def cloudflare_view(data, table):
                 timer.get("last", ""),
             ]
         )
-    content += '<p class="muted">Declared / unclaimed services exist in Compose but are not owned. Absence timestamps are observations only, not cleanup eligibility or a deletion countdown.</p>'
+    content += '<p class="muted">Declared / unclaimed services exist in Compose but are not owned; ownership status is not configuration drift or evidence of unsafe exposure. Absence timestamps are observations only, not cleanup eligibility or a deletion countdown.</p>'
     return content + table(
         [
             "Hostname",
