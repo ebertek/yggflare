@@ -80,6 +80,14 @@ def terms(record):
     return {str(value).casefold() for value in values if value}
 
 
+def discrepancy_counts(data):
+    diffs = data.get("diffs", [])
+    return {
+        "observed_discrepancies": sum(d.get("severity") == "drift" for d in diffs),
+        "inconclusive_observations": sum(d.get("severity") == "unknown" for d in diffs),
+    }
+
+
 def snapshot_context(data):
     state = data.get("network_state", {})
     return {
