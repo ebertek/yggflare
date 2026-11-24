@@ -240,16 +240,18 @@ def collect(root, network, domain):
         config = container.get("Config") or {}
         labels = config.get("Labels") or {}
         name = str(container.get("Name", "")).lstrip("/")
-        matches = [
+        # Match declarations only, not runtime-only records appended earlier.
+        declared = [r for r in records if r.get("service") and not r.get("id")]
+        by_name = [r for r in declared if r["name"] == name]
+        by_service = [
             r
-            for r in records
-            if r["name"] == name
-            or (
-                r.get("project")
-                and r["project"] == labels.get("com.docker.compose.project")
-                and r["service"] == labels.get("com.docker.compose.service")
-            )
+            for r in declared
+            if r.get("project")
+            and r["project"] == labels.get("com.docker.compose.project")
+            and r["service"] == labels.get("com.docker.compose.service")
         ]
+        both = [r for r in by_name if r in by_service]
+        matches = both if by_name and by_service else by_name or by_service
         record = matches[0] if len(matches) == 1 else None
         live = metadata(config, name, domain, runtime=True)
         for port in container.get("NetworkSettings", {}).get("Ports") or {}:
@@ -330,7 +332,7 @@ def collect(root, network, domain):
         if len(candidates) != 1:
             return [], ""
         parent = candidates[0]
-        endpoints, _ = resolve(parent, visited | {id(record)})
+        endpoints, root = resolve(parent, visited | {id(record)})
         # Router/service names explicitly matching the child supply its own
         # declarations; do not assign every VPN-side port to every child.
         service = record.get("service", record["name"])
@@ -345,7 +347,7 @@ def collect(root, network, domain):
         record["aliases"] = names(record["aliases"] + extra["aliases"])
         for port, sources in extra["port_sources"].items():
             record["port_sources"].setdefault(port, set()).update(sources)
-        return endpoints, parent["name"]
+        return endpoints, root or parent["name"]
 
     hosts = []
     for record in records:
@@ -365,6 +367,8 @@ def collect(root, network, domain):
                     **item,
                     "hostname": record["hostname"],
                     "shared_network": shared,
+                    "container_name": record["name"],
+                    "network_owner": shared or record["name"],
                     "aliases": names(record["aliases"] + item["aliases"]),
                     "ports": list(evidence),
                     "port_sources": evidence,
