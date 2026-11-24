@@ -135,8 +135,12 @@ class InventoryToolTests(unittest.TestCase):
             self.tools.get_inventory_drift(severity="high")
         self.data["network_state"]["reported"] = {"key": "newer"}
         events = self.tools.get_discovery_changes()["items"]
-        self.assertEqual(events[0]["finding_status"], "present_in_latest_reported_findings")
-        self.assertEqual(events[1]["finding_status"], "historical_not_confirmed_current")
+        self.assertEqual(
+            events[0]["finding_status"], "present_in_latest_reported_findings"
+        )
+        self.assertEqual(
+            events[1]["finding_status"], "historical_not_confirmed_current"
+        )
         lifecycle = self.tools.get_cloudflare_lifecycle()
         self.assertEqual(lifecycle["ownership_counts"]["managed"], 1)
         self.assertIn("not evidence of configuration drift", lifecycle["caveat"])
