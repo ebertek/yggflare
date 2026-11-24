@@ -302,6 +302,72 @@ or loopback binding. If you expose it through a proxy, secure the proxy **and**
 prevent bypassing it on the LAN. Cloudflare Access on a hostname alone does not
 protect the listener.
 
+## Model Context Protocol (MCP)
+
+Yggflare includes a native, read-only MCP server for AI clients. It uses
+the existing inventory presentation model and saved discovery and
+Cloudflare lifecycle snapshots. No HTTP listener is opened and there is
+nothing to enable in the controller configuration. The server runs only
+when explicitly invoked:
+
+```sh
+docker exec -i yggflare yggflare mcp serve
+```
+
+Use `-i` without `-t`: stdout carries MCP protocol messages, not a
+human-readable CLI. Authentication and transport security are provided
+by the local Docker/SSH access boundary. Only trusted operators should
+be allowed to run this command; Docker access is effectively root access.
+
+Example VS Code user MCP configuration for a remote deployment (replace
+the SSH host with an authorized host or SSH configuration alias):
+
+```json
+{
+  "servers": {
+    "yggflare": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "-T",
+        "my-yggflare-host",
+        "docker",
+        "exec",
+        "-i",
+        "yggflare",
+        "yggflare",
+        "mcp",
+        "serve"
+      ]
+    }
+  }
+}
+```
+
+SSH must support noninteractive authentication and the remote user must
+already be authorized to execute Docker commands. Do not grant Docker
+access solely to an untrusted MCP client. No MCP credentials are stored
+in the repository.
+
+| Tool | Purpose |
+| --- | --- |
+| `get_inventory_status` | Counts and snapshot freshness |
+| `list_devices` | Search/paginate inventory, optionally unknown devices only |
+| `get_device` | Exact address, MAC, hostname or alias and saved identity evidence |
+| `get_inventory_drift` | Declared versus observed differences |
+| `get_discovery_changes` | Recent saved discovery events |
+| `get_cloudflare_lifecycle` | Saved DNS, Access and Tunnel resource presence |
+| `get_service_exposure` | Correlate Docker aliases with saved Cloudflare lifecycle |
+
+Tools do not run scans, call Cloudflare, trigger reconciliation, send
+notifications, or change inventory. The inventory model may inspect local
+Docker metadata using its existing sanitized projection. Results contain
+private infrastructure metadata; only connect trusted clients. Cloudflare
+lifecycle data does not prove external reachability or describe Access
+policy selectors. Check freshness and pagination; missing observations
+are not proof that a device is offline. This initial transport is stdio
+only; a remote HTTP/OAuth endpoint is intentionally not enabled.
+
 ## Scheduling, backups and diagnostics
 
 | Job | Default schedule |
