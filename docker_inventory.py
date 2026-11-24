@@ -162,9 +162,11 @@ def endpoint(ip, ipv6, mac, aliases, network):
 
 def image_reference(value):
     """Only literal image references, not interpolation or URLs."""
-    if isinstance(value, str) and re.fullmatch(
-        r"[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}", value
-    ) and "://" not in value:
+    if (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}", value)
+        and "://" not in value
+    ):
         return value
     return None
 
@@ -208,7 +210,9 @@ def compose_records(root, network, domain):
                         "declared_networks": names(config.get("networks") or []),
                         "declared_dependencies": names(config.get("depends_on") or []),
                         "profiles": names(config.get("profiles") or []),
-                        "declared_addresses": sorted({item["ipv4"] for item in endpoints}),
+                        "declared_addresses": sorted(
+                            {item["ipv4"] for item in endpoints}
+                        ),
                     }
                 )
         except (OSError, ValueError, TypeError, AttributeError, YAMLError):
@@ -306,8 +310,12 @@ def collect(root, network, domain, *, service_view=None):
                 "name": name,
                 "endpoints": [],
                 "source": "Docker",
-                "project": next(iter(names([labels.get("com.docker.compose.project", "")])), ""),
-                "service": next(iter(names([labels.get("com.docker.compose.service", "")])), ""),
+                "project": next(
+                    iter(names([labels.get("com.docker.compose.project", "")])), ""
+                ),
+                "service": next(
+                    iter(names([labels.get("com.docker.compose.service", "")])), ""
+                ),
                 "mode": str(
                     (container.get("HostConfig") or {}).get("NetworkMode") or ""
                 ),
@@ -324,15 +332,31 @@ def collect(root, network, domain, *, service_view=None):
         state = container.get("State") or {}
         status = state.get("Status")
         record["runtime_state"] = (
-            status if status in {"created", "running", "paused", "restarting", "removing", "exited", "dead"}
+            status
+            if status
+            in {
+                "created",
+                "running",
+                "paused",
+                "restarting",
+                "removing",
+                "exited",
+                "dead",
+            }
             else "running" if state.get("Running") is True else "unknown"
         )
         status = (state.get("Health") or {}).get("Status")
-        record["health"] = status if status in {"healthy", "unhealthy", "starting"} else None
-        record["runtime_networks"] = names((container.get("NetworkSettings", {}).get("Networks") or {}).keys())
+        record["health"] = (
+            status if status in {"healthy", "unhealthy", "starting"} else None
+        )
+        record["runtime_networks"] = names(
+            (container.get("NetworkSettings", {}).get("Networks") or {}).keys()
+        )
         record["runtime_addresses"] = sorted({item["ipv4"] for item in endpoints})
         restart_count = container.get("RestartCount")
-        record["restart_count"] = restart_count if type(restart_count) is int and restart_count >= 0 else None
+        record["restart_count"] = (
+            restart_count if type(restart_count) is int and restart_count >= 0 else None
+        )
         record["mode"] = str(
             (container.get("HostConfig") or {}).get("NetworkMode") or record["mode"]
         )
@@ -395,7 +419,9 @@ def collect(root, network, domain, *, service_view=None):
     hosts = []
     services = []
     local_projects = {
-        r.get("project") for r in records if r.get("runtime_observed") and r.get("project")
+        r.get("project")
+        for r in records
+        if r.get("runtime_observed") and r.get("project")
     }
     name_counts = {}
     for record in records:
@@ -403,7 +429,16 @@ def collect(root, network, domain, *, service_view=None):
     for record in records:
         endpoints, shared = resolve(record, set())
         if service_view is not None:
-            services.append(service_record(record, endpoints, shared, local_projects, runtime_available, compose_complete))
+            services.append(
+                service_record(
+                    record,
+                    endpoints,
+                    shared,
+                    local_projects,
+                    runtime_available,
+                    compose_complete,
+                )
+            )
         if not endpoints:
             continue
         evidence = {
@@ -436,7 +471,9 @@ def collect(root, network, domain, *, service_view=None):
                 }
             )
     if service_view is not None:
-        services.sort(key=lambda row: (row["project"], row["service"], row["container_name"]))
+        services.sort(
+            key=lambda row: (row["project"], row["service"], row["container_name"])
+        )
         service_view.update(
             observed_at=datetime.now(UTC).isoformat(),
             runtime_available=runtime_available,
@@ -448,7 +485,9 @@ def collect(root, network, domain, *, service_view=None):
     return hosts, sorted(set(warnings))
 
 
-def service_record(record, endpoints, shared, local_projects, runtime_available, compose_complete):
+def service_record(
+    record, endpoints, shared, local_projects, runtime_available, compose_complete
+):
     """Project all services, including bridge/host-only declarations."""
     project = record.get("project", "")
     service = record.get("service", "")
@@ -489,12 +528,19 @@ def service_record(record, endpoints, shared, local_projects, runtime_available,
         "ports": sorted(record["port_sources"])[:64],
         "port_list_truncated": len(record["port_sources"]) > 64,
         "presence": (
-            "observed" if observed else
-            "not_observed_local_project" if runtime_available and local_project else
-            "unknown"
+            "observed"
+            if observed
+            else (
+                "not_observed_local_project"
+                if runtime_available and local_project
+                else "unknown"
+            )
         ),
-        "declaration_status": "declared" if declared else
-            "not_in_read_source" if compose_complete else "unknown",
+        "declaration_status": (
+            "declared"
+            if declared
+            else "not_in_read_source" if compose_complete else "unknown"
+        ),
     }
 
 
@@ -502,7 +548,9 @@ def service_snapshot(root, network, domain):
     """Independent bounded cache for MCP service-level topology."""
     key = str(root), str(network), domain
     with _LOCK:
-        if _SERVICE_CACHE.get("key") != key or time.monotonic() >= _SERVICE_CACHE.get("expires", 0):
+        if _SERVICE_CACHE.get("key") != key or time.monotonic() >= _SERVICE_CACHE.get(
+            "expires", 0
+        ):
             view = {}
             collect(root, network, domain, service_view=view)
             _SERVICE_CACHE.update(key=key, expires=time.monotonic() + 30, value=view)

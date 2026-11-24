@@ -315,10 +315,15 @@ services:
     def test_service_projection_includes_host_mode_and_local_scope(self):
         container = live()
         container["Config"]["Image"] = "example/dns:2"
-        container["State"]["Health"] = {"Status": "healthy", "Log": ["never-export-this"]}
+        container["State"]["Health"] = {
+            "Status": "healthy",
+            "Log": ["never-export-this"],
+        }
         view = {}
         with patch.object(inventory, "inspect_containers", return_value=[container]):
-            hosts, _ = inventory.collect(self.root, NETWORK, "home.example", service_view=view)
+            hosts, _ = inventory.collect(
+                self.root, NETWORK, "home.example", service_view=view
+            )
         self.assertEqual(len(hosts), 1)
         self.assertEqual(view["total"], 2)
         dns, host = view["items"]

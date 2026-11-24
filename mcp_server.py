@@ -132,29 +132,58 @@ def load_model():
 
 
 SERVICE_FIELDS = (
-    "project", "service", "container_name", "hostname", "aliases", "declared",
-    "runtime_observed", "runtime_scope", "local_project_observed", "runtime_state",
-    "health", "restart_count", "declared_image", "runtime_image", "image_reference_match",
-    "declared_networks", "runtime_networks", "declared_dependencies", "profiles",
-    "declared_addresses", "runtime_addresses", "lan_endpoints", "network_mode_kind",
-    "shared_network", "ports", "port_list_truncated", "presence", "declaration_status",
+    "project",
+    "service",
+    "container_name",
+    "hostname",
+    "aliases",
+    "declared",
+    "runtime_observed",
+    "runtime_scope",
+    "local_project_observed",
+    "runtime_state",
+    "health",
+    "restart_count",
+    "declared_image",
+    "runtime_image",
+    "image_reference_match",
+    "declared_networks",
+    "runtime_networks",
+    "declared_dependencies",
+    "profiles",
+    "declared_addresses",
+    "runtime_addresses",
+    "lan_endpoints",
+    "network_mode_kind",
+    "shared_network",
+    "ports",
+    "port_list_truncated",
+    "presence",
+    "declaration_status",
 )
 
 
 def load_services():
     import os
+
     from docker_inventory import service_snapshot
     from web import NETWORK, SOURCE
 
-    return service_snapshot(SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", ""))
+    return service_snapshot(
+        SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", "")
+    )
 
 
 class InventoryTools:
     """No command execution, arbitrary paths, credential reads or write tools."""
 
-    def __init__(self, loader: Callable = load_model, service_loader: Callable | None = None):
+    def __init__(
+        self, loader: Callable = load_model, service_loader: Callable | None = None
+    ):
         self.loader = loader
-        self.service_loader = service_loader or (load_services if loader is load_model else lambda: {})
+        self.service_loader = service_loader or (
+            load_services if loader is load_model else lambda: {}
+        )
 
     def get_inventory_status(self) -> dict[str, Any]:
         """Summarize inventory and snapshot freshness without refreshing anything."""
@@ -710,11 +739,23 @@ class InventoryTools:
         rows = [
             project(item, SERVICE_FIELDS)
             for item in view.get("items", [])
-            if (not project_name or item.get("project", "").casefold() == project_name.casefold())
-            and (not needle or any(needle in str(value).casefold() for value in (
-                item.get("service"), item.get("container_name"), item.get("hostname"),
-                *item.get("aliases", []), *item.get("lan_endpoints", []),
-            )))
+            if (
+                not project_name
+                or item.get("project", "").casefold() == project_name.casefold()
+            )
+            and (
+                not needle
+                or any(
+                    needle in str(value).casefold()
+                    for value in (
+                        item.get("service"),
+                        item.get("container_name"),
+                        item.get("hostname"),
+                        *item.get("aliases", []),
+                        *item.get("lan_endpoints", []),
+                    )
+                )
+            )
         ]
         context = {
             "observed_at": view.get("observed_at"),
@@ -726,26 +767,41 @@ class InventoryTools:
         }
         return context, rows
 
-    def list_docker_services(self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_docker_services(
+        self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """List Compose and local runtime services including non-LAN services."""
         context, rows = self._service_rows(query, project_name)
         return {**context, **page(rows, offset, limit)}
 
-    def get_docker_service(self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_docker_service(
+        self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Exact service, container, hostname, alias or LAN endpoint lookup."""
         if not identifier.strip():
             raise ValueError("identifier must not be empty")
         context, rows = self._service_rows(identifier, project_name)
         needle = identifier.strip().casefold()
-        rows = [row for row in rows if needle in {
-            str(value).casefold() for value in (
-                row.get("service"), row.get("container_name"), row.get("hostname"),
-                *row.get("aliases", []), *row.get("lan_endpoints", []),
-            )
-        }]
+        rows = [
+            row
+            for row in rows
+            if needle
+            in {
+                str(value).casefold()
+                for value in (
+                    row.get("service"),
+                    row.get("container_name"),
+                    row.get("hostname"),
+                    *row.get("aliases", []),
+                    *row.get("lan_endpoints", []),
+                )
+            }
+        ]
         return {**context, "ambiguous": len(rows) > 1, **page(rows, offset, limit)}
 
-    def get_compose_drift(self, project_name: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_compose_drift(
+        self, project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Review candidate discrepancies without assuming absent services are required locally."""
         context, rows = self._service_rows("", project_name)
         findings = []
@@ -761,37 +817,90 @@ class InventoryTools:
                 kinds.append("not_observed_local_project")
             if row.get("declaration_status") == "not_in_read_source":
                 kinds.append("runtime_not_in_read_source")
-            if row.get("runtime_observed") and row.get("runtime_state") == "running" and row.get("declared_addresses") and row.get("runtime_addresses") and set(row["declared_addresses"]) != set(row["runtime_addresses"]):
+            if (
+                row.get("runtime_observed")
+                and row.get("runtime_state") == "running"
+                and row.get("declared_addresses")
+                and row.get("runtime_addresses")
+                and set(row["declared_addresses"]) != set(row["runtime_addresses"])
+            ):
                 kinds.append("lan_address_mismatch")
             if kinds:
                 findings.append({**row, "review_reasons": kinds})
         return {**context, **page(findings, offset, limit)}
 
-    def get_service_dependencies(self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_service_dependencies(
+        self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read explicit Compose depends_on and namespace evidence, not inferred traffic."""
         result = self.get_docker_service(identifier, project_name, offset, limit)
-        fields = ("project", "service", "container_name", "declared_dependencies", "shared_network", "network_mode_kind", "declared_networks", "runtime_networks")
+        fields = (
+            "project",
+            "service",
+            "container_name",
+            "declared_dependencies",
+            "shared_network",
+            "network_mode_kind",
+            "declared_networks",
+            "runtime_networks",
+        )
         result["items"] = [project(row, fields) for row in result["items"]]
         return result
 
-    def get_ingress_path(self, hostname: str, offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_ingress_path(
+        self, hostname: str, offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Correlate exact aliases and saved Cloudflare configuration, not reachability."""
         if not hostname.strip():
             raise ValueError("hostname must not be empty")
         context, rows = self._service_rows(hostname, "")
         needle = hostname.strip().casefold()
-        rows = [row for row in rows if needle in {str(v).casefold() for v in row.get("aliases", [])}]
+        rows = [
+            row
+            for row in rows
+            if needle in {str(v).casefold() for v in row.get("aliases", [])}
+        ]
         data = self.loader()
         config = data.get("cloudflare_view", {}).get("configuration", {})
         layers = {}
         for section, fields in (
-            ("access", ("hostname", "status", "expected_decisions", "observed_decisions")),
-            ("dns", ("hostname", "zone", "type", "address", "proxied", "matches_configured_tunnel")),
-            ("tunnel", ("hostname", "precedence", "origin_scheme", "origin_host", "origin_port", "has_path_match")),
+            (
+                "access",
+                ("hostname", "status", "expected_decisions", "observed_decisions"),
+            ),
+            (
+                "dns",
+                (
+                    "hostname",
+                    "zone",
+                    "type",
+                    "address",
+                    "proxied",
+                    "matches_configured_tunnel",
+                ),
+            ),
+            (
+                "tunnel",
+                (
+                    "hostname",
+                    "precedence",
+                    "origin_scheme",
+                    "origin_host",
+                    "origin_port",
+                    "has_path_match",
+                ),
+            ),
         ):
             dataset = config.get(section, {})
-            matching = [project(item, fields) for item in dataset.get("items", []) if item.get("hostname", "").casefold() == needle]
-            layers[section] = {**page(matching, 0, MAX_PAGE), "source_truncated": dataset.get("truncated")}
+            matching = [
+                project(item, fields)
+                for item in dataset.get("items", [])
+                if item.get("hostname", "").casefold() == needle
+            ]
+            layers[section] = {
+                **page(matching, 0, MAX_PAGE),
+                "source_truncated": dataset.get("truncated"),
+            }
         return {
             **context,
             "cloudflare": cloudflare_context(data),
