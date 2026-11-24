@@ -111,7 +111,8 @@ def cloudflare_context(data):
         "caveat": (
             "Saved lifecycle evidence only; not a live DNS, Access policy, "
             "reachability or security audit. Declared / unclaimed is ownership "
-            "status, not evidence of configuration drift. Unmanaged is not unsafe."
+            "status, not evidence of configuration drift. Unmanaged does not "
+            "establish unsafe exposure."
         ),
     }
 
@@ -157,12 +158,7 @@ class InventoryTools:
                     if h.get("address_relationship") == "ambiguous"
                 }
             ),
-            "observed_discrepancies": sum(
-                d.get("severity") == "drift" for d in data.get("diffs", [])
-            ),
-            "inconclusive_observations": sum(
-                d.get("severity") == "unknown" for d in data.get("diffs", [])
-            ),
+            **discrepancy_counts(data),
             "dns_sd_complete": state.get("dns_sd_complete"),
             "dns_sd_scanned_at": state.get("dns_sd_scanned_at"),
             "cloudflare": cloudflare_context(data),
@@ -256,10 +252,7 @@ class InventoryTools:
         return {
             **snapshot_context(data),
             **page(rows, offset, limit),
-            "observed_discrepancies": sum(d.get("severity") == "drift" for d in diffs),
-            "inconclusive_observations": sum(
-                d.get("severity") == "unknown" for d in diffs
-            ),
+            **discrepancy_counts(data),
         }
 
     def get_discovery_changes(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
