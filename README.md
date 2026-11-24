@@ -370,6 +370,19 @@ lifecycle data does not prove external reachability or describe Access
 policy selectors. Check freshness and pagination; missing observations
 are not proof that a device is offline.
 
+Inventory rows are service records, not a physical-device count. Docker
+Compose project/service identity takes precedence over reused container
+names. Explicitly resolved shared namespaces are distinguished from
+ambiguous address matches; competing MAC evidence remains visible.
+Observed addresses on a local macvlan interface can be identified using
+kernel metadata when it does not contradict the saved MAC. The UI and
+MCP projections do not alter discovery state or alert delivery.
+`get_inventory_drift` accepts `severity="drift"` or `severity="unknown"`
+and returns separate counts even when filtered. Recent findings indicate
+whether their message is still in the latest reported findings; historical
+absence does not prove recovery. Cloudflare ownership counts are not a
+configuration drift or security assessment.
+
 ### Streamable HTTP transport
 
 The optional listener is independent of the inventory web UI and serves

@@ -17,6 +17,36 @@ class WebTests(unittest.TestCase):
         self.docker = mock.start()
         self.addCleanup(mock.stop)
 
+    def test_local_macvlan_matches_saved_address_but_not_competing_mac(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "network-inventory").mkdir()
+            state = root / "network-inventory/state.json"
+            ip = "10.4.21.1"
+            local = {ip: {"interface": "shim", "mac": "02:00:00:00:00:01"}}
+            with (
+                patch.object(web, "CONFIG", root),
+                patch.object(web, "DATA", root),
+                patch.object(web, "local_macvlan_interfaces", return_value=local),
+            ):
+                for mac, status in (
+                    ("", "local interface"),
+                    ("02:00:00:00:00:01", "local interface"),
+                    ("02:00:00:00:00:02", "unmanaged"),
+                ):
+                    with self.subTest(mac=mac):
+                        state.write_text(
+                            json.dumps(
+                                {"hosts": {ip: {"mac": mac, "ports": ["tcp/22"]}}}
+                            )
+                        )
+                        host = web.model()["hosts"][0]
+                        self.assertEqual(host["status"], status)
+                        self.assertEqual(host["observed_ports"], ["tcp/22"])
+                        if status == "local interface":
+                            self.assertEqual(host["device_class"], "network")
+                            self.assertEqual(host["interface"], "shim")
+
     def test_web_bind_requires_numeric_ipv4_or_ipv6(self):
         for address, family in (
             ("127.0.0.1", 4),

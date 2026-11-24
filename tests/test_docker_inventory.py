@@ -117,6 +117,39 @@ class DockerInventoryTests(unittest.TestCase):
         self.assertIn("Docker port binding", dns["port_sources"]["tcp/80"])
         self.assertNotIn("never-export-this", json.dumps(hosts))
 
+    def test_same_container_name_across_projects_uses_compose_identity(self):
+        other = self.root / "other"
+        other.mkdir()
+        (other / "compose.yaml").write_text(
+            "name: remote\nservices:\n  dns:\n    container_name: dns\n"
+        )
+        with patch.object(inventory, "inspect_containers", return_value=[live()]):
+            hosts, _ = inventory.collect(self.root, NETWORK, "home.example")
+        self.assertEqual(len(hosts), 1)
+        self.assertEqual(hosts[0]["source"], "Compose + Docker")
+
+    def test_local_macvlan_requires_kernel_kind_and_unique_address(self):
+        link = {
+            "ifname": "macvlan-host",
+            "address": "02:00:00:00:00:01",
+            "linkinfo": {"info_kind": "macvlan"},
+            "addr_info": [
+                {"family": "inet", "local": "10.4.21.1"},
+                {"family": "inet", "local": "192.0.2.1"},
+            ],
+        }
+        with patch.object(inventory.subprocess, "run") as command:
+            command.return_value.stdout = json.dumps(
+                [link, {**link, "linkinfo": {"info_kind": "bridge"}}]
+            )
+            result = inventory.local_macvlan_interfaces(NETWORK)
+            self.assertEqual(result["10.4.21.1"]["interface"], "macvlan-host")
+            self.assertNotIn("192.0.2.1", result)
+            command.return_value.stdout = json.dumps([link, link])
+            self.assertEqual(inventory.local_macvlan_interfaces(NETWORK), {})
+            command.return_value.stdout = "invalid JSON"
+            self.assertEqual(inventory.local_macvlan_interfaces(NETWORK), {})
+
     def test_changed_live_ip_and_stopped_declarations(self):
         for running, expected in [(True, "10.4.21.35"), (False, "10.4.21.34")]:
             with (

@@ -105,6 +105,46 @@ class InventoryToolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.tools.get_device("")
 
+    def test_expected_shared_namespace_and_ambiguous_lookup(self):
+        parent = self.data["hosts"][0]
+        parent.update(
+            network_owner="vpn", address_relationship="expected_shared_namespace"
+        )
+        child = {
+            **parent,
+            "hostname": "child.internal",
+            "shared_network": "vpn",
+        }
+        self.data["hosts"].append(child)
+        result = self.tools.get_device(parent["ipv4"])
+        self.assertEqual(result["total"], 2)
+        self.assertFalse(result["ambiguous"])
+        self.assertEqual(result["lookup_relationship"], "expected_shared_namespace")
+        self.assertEqual(result["items"][1]["shared_network"], "vpn")
+        child["address_relationship"] = "ambiguous"
+        self.assertTrue(self.tools.get_device(parent["ipv4"])["ambiguous"])
+
+    def test_drift_severity_counts_and_historical_findings(self):
+        self.data["diffs"].append({"severity": "unknown", "field": "Presence"})
+        self.assertEqual(self.tools.get_inventory_drift(severity="drift")["total"], 1)
+        unknown = self.tools.get_inventory_drift(severity="unknown")
+        self.assertEqual(unknown["total"], 1)
+        self.assertEqual(unknown["observed_discrepancies"], 1)
+        self.assertEqual(unknown["inconclusive_observations"], 1)
+        with self.assertRaises(ValueError):
+            self.tools.get_inventory_drift(severity="high")
+        self.data["network_state"]["reported"] = {"key": "newer"}
+        events = self.tools.get_discovery_changes()["items"]
+        self.assertEqual(
+            events[0]["finding_status"], "present_in_latest_reported_findings"
+        )
+        self.assertEqual(
+            events[1]["finding_status"], "historical_not_confirmed_current"
+        )
+        lifecycle = self.tools.get_cloudflare_lifecycle()
+        self.assertEqual(lifecycle["ownership_counts"]["managed"], 1)
+        self.assertIn("not evidence of configuration drift", lifecycle["caveat"])
+
     def test_drift_and_events(self):
         self.assertEqual(self.tools.get_inventory_drift()["total"], 1)
         events = self.tools.get_discovery_changes()
