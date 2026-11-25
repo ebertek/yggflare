@@ -62,6 +62,7 @@ VIEWS = {
     },
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
+        "evidence": ("Source evidence quality", "get_evidence_overview", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
         "history": ("Job history", "get_job_history", "job"),
         "backup": ("Backup evidence", "get_backup_status", ""),
@@ -70,6 +71,7 @@ VIEWS = {
 }
 UNPAGED = {
     "get_yggflare_health",
+    "get_evidence_overview",
     "get_job_status",
     "get_backup_status",
     "get_notification_status",
@@ -87,6 +89,7 @@ CLI_VIEWS = {
     ("cloudflare", "access"): ("assurance", "access"),
     ("cloudflare", "tunnel"): ("assurance", "tunnel"),
     ("system", "status"): ("operations", "health"),
+    ("system", "evidence"): ("operations", "evidence"),
     ("system", "jobs"): ("operations", "jobs"),
     ("system", "history"): ("operations", "history"),
     ("backup", "status"): ("operations", "backup"),
@@ -101,7 +104,11 @@ CLI_VIEWS = {
 }
 
 
-def query(tools, area, view, value="", offset=0, project=""):
+class SnapshotChanged(ValueError):
+    """A page no longer corresponds to the preceding result set."""
+
+
+def query(tools, area, view, value="", offset=0, project="", snapshot_id=""):
     """All callers consume the same allowlisted query and pagination contract."""
     if area not in VIEWS or view not in VIEWS[area]:
         raise ValueError("Unknown operator view")
@@ -127,7 +134,10 @@ def query(tools, area, view, value="", offset=0, project=""):
         raise ValueError("This view does not support pagination")
     if project:
         kwargs["project_name"] = project
-    return getattr(tools, method)(**kwargs)
+    result = getattr(tools, method)(**kwargs)
+    if snapshot_id and snapshot_id != result.get("snapshot_id"):
+        raise SnapshotChanged("Result set changed; restart pagination at offset zero")
+    return result
 
 
 def display(value):
@@ -198,7 +208,10 @@ def render(area, tools, table, params):
     )
     if view in {"show", "dependencies", "ingress"} and not value:
         return nav + "<p>Choose an exact service or alias from the service list.</p>"
-    result = query(tools, area, view, value, offset, project)
+    try:
+        result = query(tools, area, view, value, offset, project, params.get("snapshot_id", [""])[0])
+    except SnapshotChanged:
+        return nav + "<p>Result set changed; " + link(view, "restart pagination", q=value, project=project) + ".</p>"
     context, groups = sections(result)
     content = nav + f"<h2>{escape(views[view][0])}</h2>"
     content += '<div class="toolbar"><input id="filter" type="search" aria-label="Filter this page" placeholder="Filter this page…"></div>'
@@ -253,6 +266,7 @@ def render(area, tools, table, params):
                 q=value,
                 project=project,
                 offset=result["next_offset"],
+                snapshot_id=result.get("snapshot_id", ""),
             )
         )
     if pages:
