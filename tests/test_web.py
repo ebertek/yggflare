@@ -49,17 +49,18 @@ class WebTests(unittest.TestCase):
 
     def test_operator_views_escape_evidence_and_offer_read_only_links(self):
         data = {"network_state": {}, "job_status": None}
-        service_loader = lambda: {
-            "items": [
-                {
-                    "project": "core",
-                    "service": "demo",
-                    "container_name": "demo",
-                    "hostname": "<script>alert(1)</script>",
-                    "aliases": ["demo.invalid"],
-                }
-            ]
-        }
+        def service_loader():
+            return {
+                "items": [
+                    {
+                        "project": "core",
+                        "service": "demo",
+                        "container_name": "demo",
+                        "hostname": "<script>alert(1)</script>",
+                        "aliases": ["demo.invalid"],
+                    }
+                ]
+            }
         html = web.render("services", data, service_loader=service_loader)
         self.assertIn("Docker services", html)
         self.assertIn("&lt;script&gt;", html)
@@ -69,6 +70,16 @@ class WebTests(unittest.TestCase):
             "Scheduled jobs", web.render("operations", data, {"view": ["jobs"]})
         )
         self.assertIn("Cloudflare audit findings", web.render("assurance", data))
+
+    def test_traefik_view_reads_saved_data_only(self):
+        result = {"available": True, "fresh": True, "items": [
+            {"kind": "routers", "name": "demo@docker", "literal_hosts": ["demo.invalid"], "rule": "never-export"}
+        ]}
+        with patch("mcp_server.saved_traefik", return_value=result):
+            html = web.render("traefik", {}, {"view": ["routes"]})
+        self.assertIn("demo@docker", html)
+        self.assertIn("demo.invalid", html)
+        self.assertNotIn("never-export", html)
 
     def test_web_bind_requires_numeric_ipv4_or_ipv6(self):
         for address, family in (

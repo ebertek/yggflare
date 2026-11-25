@@ -357,7 +357,7 @@ docker exec yggflare yggflare traefik services
 docker exec yggflare yggflare traefik middlewares
 ```
 
-The Traefik Web UI tab and MCP tools read saved observations only; explicit
+The Traefik Web UI tab, aggregate Prometheus metrics and MCP tools read saved observations only; explicit
 CLI refresh is the only interactive collection action. Router literal host
 mentions do not establish rule evaluation or external reachability. Backend
 URL paths, queries, userinfo, raw middleware settings and error messages are

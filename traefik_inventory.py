@@ -56,7 +56,7 @@ def settings(env):
             or "%" in str(address)
         ):
             raise ValueError
-        port = url.port or (443 if url.scheme == "https" else 80)
+        port = url.port if url.port is not None else (443 if url.scheme == "https" else 80)
         if not 1 <= port <= 65535:
             raise ValueError
     except (KeyError, ValueError, TypeError):

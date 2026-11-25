@@ -156,7 +156,7 @@ def job_label(script):
 
 
 def run(args, *, env=None):
-    component = "cloudflare" if "/cloudflare/" in args[1] else "network"
+    component = ("traefik" if Path(args[1]).name == "traefik_inventory.py" else "cloudflare" if "/cloudflare/" in args[1] else "network")
     label = job_label(args[1])
     started = time.monotonic()
     log("info", component, f"{label} started")
