@@ -93,12 +93,27 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("never-export", html)
 
     def test_integrations_views_use_saved_projection(self):
-        with patch("mcp_server.saved_integration", side_effect=lambda *_: {"available": True, "fresh": True, "items": [{"kind": "stacks", "name": "<script>alert(9)</script>", "secret": "never-export"}]}):
+        with patch(
+            "mcp_server.saved_integration",
+            side_effect=lambda *_: {
+                "available": True,
+                "fresh": True,
+                "items": [
+                    {
+                        "kind": "stacks",
+                        "name": "<script>alert(9)</script>",
+                        "secret": "never-export",
+                    }
+                ],
+            },
+        ):
             html = web.render("komodo", {}, {"view": ["stacks"]})
             self.assertIn("&lt;script&gt;", html)
             self.assertNotIn("never-export", html)
             self.assertNotIn("<script>alert(9)</script>", html)
-            self.assertIn("Kuma exported monitors", web.render("kuma", {}, {"view": ["monitors"]}))
+            self.assertIn(
+                "Kuma exported monitors", web.render("kuma", {}, {"view": ["monitors"]})
+            )
 
     def test_web_bind_requires_numeric_ipv4_or_ipv6(self):
         for address, family in (

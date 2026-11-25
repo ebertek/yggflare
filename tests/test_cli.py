@@ -129,7 +129,10 @@ class CommandTests(unittest.TestCase):
 
     def test_integrations_read_only_and_explicit_refresh(self):
         with (
-            patch("mcp_server.saved_integration", side_effect=lambda *_: {"available": True, "fresh": True, "items": []}),
+            patch(
+                "mcp_server.saved_integration",
+                side_effect=lambda *_: {"available": True, "fresh": True, "items": []},
+            ),
             patch.object(cli.subprocess, "run") as run,
             contextlib.redirect_stdout(io.StringIO()) as output,
         ):
@@ -139,7 +142,10 @@ class CommandTests(unittest.TestCase):
             run.assert_not_called()
             run.return_value = SimpleNamespace(returncode=0)
             self.assertEqual(cli.main(["komodo", "refresh"]), 0)
-            run.assert_called_once_with([cli.sys.executable, "/app/integration_inventory.py", "komodo"], check=False)
+            run.assert_called_once_with(
+                [cli.sys.executable, "/app/integration_inventory.py", "komodo"],
+                check=False,
+            )
 
     def test_mcp_serve_does_not_take_a_controller_snapshot(self):
         with (

@@ -28,7 +28,9 @@ monitor_status{monitor_name="Private",monitor_type="http",monitor_url="https://u
 class IntegrationTests(unittest.TestCase):
     def test_scope_and_tls_opt_in(self):
         self.assertIsNone(adapter.settings("komodo", {}))
-        self.assertEqual(adapter.settings("komodo", ENV), ("http", "192.168.1.20", 9120))
+        self.assertEqual(
+            adapter.settings("komodo", ENV), ("http", "192.168.1.20", 9120)
+        )
         for changes in (
             {"YGGFLARE_KOMODO_ALLOW_HTTP": "false"},
             {"YGGFLARE_KOMODO_API_URL": "http://8.8.8.8"},
@@ -39,11 +41,30 @@ class IntegrationTests(unittest.TestCase):
                 adapter.settings("komodo", {**ENV, **changes})
 
     def test_komodo_projection(self):
-        rows = adapter.komodo_rows("stacks", [{"name": "core", "info": {
-            "server_name": "primary", "state": "running", "deployed_hash": "abcdef0",
-            "latest_hash": "abcdef1", "repo_link": "SECRET", "status": "SECRET",
-            "services": [{"service": "dns", "image": "example/dns:2", "update_available": True, "environment": "SECRET"}],
-        }}])
+        rows = adapter.komodo_rows(
+            "stacks",
+            [
+                {
+                    "name": "core",
+                    "info": {
+                        "server_name": "primary",
+                        "state": "running",
+                        "deployed_hash": "abcdef0",
+                        "latest_hash": "abcdef1",
+                        "repo_link": "SECRET",
+                        "status": "SECRET",
+                        "services": [
+                            {
+                                "service": "dns",
+                                "image": "example/dns:2",
+                                "update_available": True,
+                                "environment": "SECRET",
+                            }
+                        ],
+                    },
+                }
+            ],
+        )
         stack = next(row for row in rows if row["kind"] == "stacks")
         self.assertEqual(stack["server"], "primary")
         self.assertFalse(stack["revision_match"])
@@ -65,12 +86,22 @@ class IntegrationTests(unittest.TestCase):
             response = connection.return_value.getresponse.return_value
             response.status = 302
             with self.assertRaises(ValueError):
-                adapter.fetch("komodo", adapter.settings("komodo", ENV), ["key", "secret"], "stacks")
+                adapter.fetch(
+                    "komodo",
+                    adapter.settings("komodo", ENV),
+                    ["key", "secret"],
+                    "stacks",
+                )
             args = connection.return_value.request.call_args
             self.assertEqual(args.args, ("POST", "/read/ListStacks"))
             self.assertEqual(args.kwargs["body"], b"{}")
             with self.assertRaises(ValueError):
-                adapter.fetch("komodo", adapter.settings("komodo", ENV), ["key", "secret"], "execute")
+                adapter.fetch(
+                    "komodo",
+                    adapter.settings("komodo", ENV),
+                    ["key", "secret"],
+                    "execute",
+                )
 
     def test_failed_refresh_retains_snapshot_and_requires_private_files(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -90,15 +121,38 @@ class IntegrationTests(unittest.TestCase):
             after = adapter.saved("kuma", root, ENV)
             self.assertEqual(after["items"], first["items"])
             self.assertFalse(after["fresh"])
-            self.assertFalse(adapter.saved("kuma", root, {**ENV, "YGGFLARE_KUMA_API_URL": "http://192.168.1.22:3001"})["available"])
+            self.assertFalse(
+                adapter.saved(
+                    "kuma",
+                    root,
+                    {**ENV, "YGGFLARE_KUMA_API_URL": "http://192.168.1.22:3001"},
+                )["available"]
+            )
 
     def test_coverage_caveat_and_unknown(self):
-        tools = InventoryTools(lambda: {}, lambda: {"items": [{"project": "core", "service": "demo", "aliases": ["demo.invalid"]}]})
-        with patch("mcp_server.saved_integration", side_effect=lambda *_: {"available": True, "fresh": True, "items": adapter.kuma_rows(METRICS)}):
+        tools = InventoryTools(
+            lambda: {},
+            lambda: {
+                "items": [
+                    {"project": "core", "service": "demo", "aliases": ["demo.invalid"]}
+                ]
+            },
+        )
+        with patch(
+            "mcp_server.saved_integration",
+            side_effect=lambda *_: {
+                "available": True,
+                "fresh": True,
+                "items": adapter.kuma_rows(METRICS),
+            },
+        ):
             result = tools.get_monitoring_coverage()
             self.assertEqual(result["items"][0]["match_status"], "candidate_host_match")
             self.assertEqual(result["items"][0]["matching_monitor_count"], 1)
-        with patch("mcp_server.saved_integration", return_value={"available": False, "fresh": False, "items": []}):
+        with patch(
+            "mcp_server.saved_integration",
+            return_value={"available": False, "fresh": False, "items": []},
+        ):
             result = tools.get_monitoring_coverage()
             self.assertIsNone(result["items"][0]["matching_monitor_count"])
             self.assertEqual(result["items"][0]["match_status"], "unknown")

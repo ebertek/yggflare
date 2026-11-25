@@ -124,7 +124,11 @@ def main(argv=None):
             or args.details
         ):
             parser.error("Integration refresh accepts no additional arguments")
-        command = [sys.executable, "/app/traefik_inventory.py"] if args.component == "traefik" else [sys.executable, "/app/integration_inventory.py", args.component]
+        command = (
+            [sys.executable, "/app/traefik_inventory.py"]
+            if args.component == "traefik"
+            else [sys.executable, "/app/integration_inventory.py", args.component]
+        )
         return subprocess.run(command, check=False).returncode
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
