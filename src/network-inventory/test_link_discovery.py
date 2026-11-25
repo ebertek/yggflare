@@ -320,6 +320,30 @@ class LinkDiscoveryTests(unittest.TestCase):
             result["warnings"],
         )
 
+    def test_collector_evidence_distinguishes_no_reply_failure_and_disabled(self):
+        def run(args):
+            if args[0] == "ip":
+                return '[{"dst":"fd00::2","state":["REACHABLE"]}]'
+            if args[0] == "ndisc6":
+                raise subprocess.CalledProcessError(2, args[0])
+            if args[0] == "rdisc6":
+                raise subprocess.CalledProcessError(1, args[0])
+            raise AssertionError("unexpected command")
+
+        with patch.dict("os.environ", {
+            "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+            "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
+            "YGGFLARE_DISCOVERY_NDP_PROBE": "true",
+            "YGGFLARE_DISCOVERY_RA": "true",
+        }, clear=True):
+            result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
+        sources = result["collector_evidence"]["sources"]
+        self.assertEqual(sources["ndp"]["completed"], 1)
+        self.assertEqual(sources["ndp"]["no_reply"], 1)
+        self.assertEqual(sources["router_advertisement"]["failed"], 1)
+        self.assertFalse(sources["arp"]["configured"])
+        self.assertEqual(sources["arp"]["attempted"], 0)
+
     def test_missing_configuration_is_disabled(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertEqual(discovery.collect(ipaddress.ip_network("10.0.0.0/24")), {})

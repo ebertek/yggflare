@@ -151,3 +151,5 @@ Paged MCP tools must expose the shared typed page envelope and accept the preced
 Cross-source ingress evidence must preserve the original ingress tool's access groups; a distinct combined tool requires every source group it reads. Exact project/stack or hostname matches are candidates, not authoritative ownership or external reachability. Never initiate live checks from presentation methods.
 
 Discovery coverage is presentation-only: Nmap run completion, represented targets, explicit timeouts and omitted targets are distinct evidence. Never infer host failure or port closure from omitted `--open` results. Do not alter scan scope, alert suppression or reconciliation when adding coverage metadata.
+
+Supplemental collector coverage uses fixed source names and aggregate invocation counts. Explicit no-reply outcomes are not failures; parsing errors, limits and missing execution evidence must remain distinct. Do not add raw subprocess output, credential data or addresses to coverage metadata.

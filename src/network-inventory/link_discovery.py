@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from discovery_ra import router_records
 from service_discovery import collect as collect_services
+from service_discovery import collector_evidence
 
 DEFAULT_MAX_TARGETS = 512
 HARD_MAX_TARGETS = 4096
@@ -61,6 +62,16 @@ def collect(network, run=None, seeds=()):
         raise ValueError("Use explicit unicast IPv6 prefixes of /64 or narrower")
     if config["ra"] and not prefixes:
         raise ValueError("Router discovery requires explicit IPv6 prefix scope")
+    evidence = {
+        "neighbor_cache": collector_evidence(True),
+        "arp": collector_evidence(config["arp_scan"]),
+        "ndp": collector_evidence(config["ndp_probe"]),
+        "router_advertisement": collector_evidence(config["ra"]),
+        "ipv4_nmap": collector_evidence(config["os_detection"]),
+        "ipv6_nmap": collector_evidence(config["ipv6_scan"]),
+        "docker_ipv6_candidates": collector_evidence(config["ipv6_scan"] and bool(prefixes)),
+        "candidate_routing": collector_evidence(config["os_detection"] or config["ipv6_scan"] or config["ndp_probe"]),
+    }
     result = {
         "observed_at": datetime.now(UTC).isoformat(),
         "records": [],
@@ -71,9 +82,19 @@ def collect(network, run=None, seeds=()):
         print(f"[discovery] {message}", file=sys.stderr, flush=True)
 
     def command(args, timeout=30, *, no_reply_codes=()):
+        key = {
+            "arp-scan": "arp", "ndisc6": "ndp", "rdisc6": "router_advertisement",
+            "docker": "docker_ipv6_candidates",
+            "nmap": "ipv6_nmap" if "-6" in args else "ipv4_nmap",
+            "ip": "candidate_routing" if "route" in args else "neighbor_cache",
+        }[args[0]]
+        row = evidence[key]
+        row["attempted"] += 1
         try:
             if run:
-                return run(args)
+                output = run(args)
+                row["completed"] += 1
+                return output
             started = time.monotonic()
             with subprocess.Popen(
                 args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
@@ -96,15 +117,20 @@ def collect(network, run=None, seeds=()):
                     raise subprocess.CalledProcessError(process.returncode, args[0])
                 if len(stdout) > 2 * 1024 * 1024:
                     raise ValueError("Oversize discovery output")
+                row["completed"] += 1
                 return stdout
         except subprocess.CalledProcessError as error:
             # ndisc6 returns 2 for an unanswered neighbour solicitation,
             # distinct from exit 1 for an execution/protocol error.
             if error.returncode in no_reply_codes:
+                row["completed"] += 1
+                row["no_reply"] += 1
                 return ""
+            row["failed"] += 1
             result["warnings"].append(args[0] + ": unavailable, failed or timed out")
             return ""
         except (OSError, ValueError, subprocess.SubprocessError):
+            row["failed"] += 1
             result["warnings"].append(args[0] + ": unavailable, failed or timed out")
             return ""
 
@@ -149,6 +175,7 @@ def collect(network, run=None, seeds=()):
                     f"{item.get('lladdr', '')} ({', '.join(state)})",
                 )
         except (ValueError, TypeError):
+            evidence["neighbor_cache"]["parse_errors"] += 1
             result["warnings"].append("ip: invalid neighbor response")
         if config.get("arp_scan"):
             if network.num_addresses > 4096:
@@ -185,6 +212,7 @@ def collect(network, run=None, seeds=()):
                         (endpoint.get("GlobalIPv6Address", ""), "Docker address")
                     )
         except (ValueError, TypeError, AttributeError):
+            evidence["docker_ipv6_candidates"]["parse_errors"] += 1
             result["warnings"].append("Docker IPv6 candidates unavailable")
     known = {r["ip"] for r in result["records"]}
     routed = set()
@@ -204,6 +232,7 @@ def collect(network, run=None, seeds=()):
                     f"{max_targets} addresses"
                 )
                 routed_limited.add(address.version)
+                evidence["candidate_routing"]["limited"] = True
             continue
         if address.version == 4 and not config.get("os_detection"):
             continue
@@ -235,6 +264,7 @@ def collect(network, run=None, seeds=()):
                     "Candidate address; reachability unverified",
                 )
         except (ValueError, TypeError, KeyError, AttributeError):
+            evidence["candidate_routing"]["parse_errors"] += 1
             result["warnings"].append("Candidate route unavailable")
     # Preserve every observation, but probe each address once per family.
     # A host/macvlan pair may see the same address on both interfaces; route
@@ -278,9 +308,12 @@ def collect(network, run=None, seeds=()):
                     if routed_interface in observed_interfaces:
                         preferred = routed_interface
                 except (TypeError, ValueError, AttributeError):
-                    pass
+                    evidence["candidate_routing"]["parse_errors"] += 1
             selected.append((ip, preferred))
         if len(selected) > max_targets:
+            evidence["ipv4_nmap" if version == 4 else "ipv6_nmap"]["limited"] = True
+            if version == 6 and config["ndp_probe"]:
+                evidence["ndp"]["limited"] = True
             result["warnings"].append(
                 f"IPv{version} probe targets limited to {max_targets} unique addresses"
             )
@@ -291,6 +324,7 @@ def collect(network, run=None, seeds=()):
         for ip, interface in targets
         if ipaddress.ip_address(ip).version == 6 and config.get("ndp_probe")
     ]
+    evidence["ndp"]["eligible_targets"] = len(ndp_targets)
     if ndp_targets:
         note(f"NDP probes: {len(ndp_targets)} addresses")
     for index, (ip, interface) in enumerate(ndp_targets, 1):
@@ -342,12 +376,17 @@ def collect(network, run=None, seeds=()):
         ]
         if config.get("os_detection"):
             args += ["-O", "--osscan-limit", "--max-os-tries", "1"]
+        source = evidence["ipv6_nmap" if ipv6 else "ipv4_nmap"]
+        source["eligible_targets"] = source.get("eligible_targets", 0) + len(addresses)
         raw = command([*args, *addresses], timeout=90)
         note(f"END {family} Nmap on {interface}: {time.monotonic() - started:.1f}s")
         if not raw:
             continue
         try:
             root = ET.fromstring(raw)
+            finished = root.find("./runstats/finished")
+            if finished is None or finished.get("exit") != "success":
+                source["completion_unverified"] = True
             scoped = set(addresses)
             for host in root.findall("host"):
                 reported = [
@@ -386,6 +425,7 @@ def collect(network, run=None, seeds=()):
                             f"{match.get('name')} (accuracy {match.get('accuracy')}%)",
                         )
         except ET.ParseError:
+            source["parse_errors"] += 1
             result["warnings"].append("nmap: invalid XML response")
     # Router Advertisements are topology metadata, not device candidates.
     # Collect only after the Nmap target lists have been finalized so a
@@ -411,9 +451,11 @@ def collect(network, run=None, seeds=()):
                         }
                     )
             except ValueError:
+                evidence["router_advertisement"]["parse_errors"] += 1
                 result["warnings"].append("rdisc6: invalid or oversized response")
     note("START optional service discovery")
-    collect_services(interfaces, allowed, result["records"], add, result["warnings"])
+    evidence.update(collect_services(interfaces, allowed, result["records"], add, result["warnings"]))
+    result["collector_evidence"] = {"version": 1, "sources": evidence}
     note(
         f"END supplemental discovery: {len(result['records'])} observations; {len(result['warnings'])} warnings"
     )

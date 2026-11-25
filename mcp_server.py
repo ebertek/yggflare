@@ -731,6 +731,49 @@ def scan_coverage_context(state):
     return result
 
 
+SUPPLEMENTAL_SOURCES = (
+    "neighbor_cache", "arp", "ndp", "router_advertisement",
+    "ipv4_nmap", "ipv6_nmap", "docker_ipv6_candidates", "candidate_routing",
+    "ssdp", "lldp", "netbios", "smb", "snmp", "p0f",
+)
+
+
+def supplemental_coverage_context(supplemental):
+    saved = supplemental.get("collector_evidence")
+    if not isinstance(saved, dict) or saved.get("version") != 1 or not isinstance(saved.get("sources"), dict):
+        return {"available": False, "sources": []}
+    sources = []
+    for name in SUPPLEMENTAL_SOURCES:
+        row = saved["sources"].get(name)
+        if not isinstance(row, dict) or type(row.get("configured")) is not bool:
+            continue
+        counts = {
+            key: row[key] for key in ("attempted", "completed", "failed", "no_reply", "parse_errors", "eligible_targets")
+            if type(row.get(key)) is int and 0 <= row[key] <= 100000
+        }
+        if not {"attempted", "completed", "failed", "no_reply", "parse_errors"} <= counts.keys():
+            continue
+        if counts["completed"] + counts["failed"] != counts["attempted"] or counts["no_reply"] > counts["completed"]:
+            continue
+        flags = {key: row.get(key) is True for key in ("limited", "unavailable", "completion_unverified")}
+        if not row["configured"]:
+            status = "not_configured"
+        elif flags["unavailable"] or counts["failed"] or counts["parse_errors"] or flags["limited"]:
+            status = "partial_or_failed"
+        elif not counts["attempted"]:
+            status = "not_attempted"
+        elif flags["completion_unverified"]:
+            status = "completion_unverified"
+        else:
+            status = "completed"
+        sources.append({"source": name, "configured": row["configured"], **counts, **flags, "status": status})
+    return {
+        "available": len(sources) == len(SUPPLEMENTAL_SOURCES),
+        "sources": sources,
+        "caveat": "Attempt counts are collector invocations or batches, not proof of host coverage. No reply is not a failure or offline proof; configured collectors may have no eligible targets.",
+    }
+
+
 class InventoryTools:
     """No command execution, arbitrary paths, credential reads or write tools."""
 
@@ -1101,6 +1144,7 @@ class InventoryTools:
             "pending_discord_deliveries": len(state.get("pending_discord_events", [])),
             "coverage_verified": False,
             "scan_coverage": scan_coverage_context(state),
+            "supplemental_coverage": supplemental_coverage_context(supplemental),
         }
 
     def get_discovery_evidence(
@@ -1356,6 +1400,10 @@ class InventoryTools:
             network.get("status") == "succeeded" if network.get("status") else None
         )
         supplemental = state.get("supplemental", {})
+        supplemental_coverage = supplemental_coverage_context(supplemental)
+        configured_sources = [item for item in supplemental_coverage["sources"] if item["configured"]]
+        supplemental_failed = bool(supplemental.get("warnings")) or any(item["status"] == "partial_or_failed" for item in configured_sources)
+        supplemental_verified = False if supplemental_failed else True if supplemental_coverage["available"] and configured_sources and all(item["status"] == "completed" for item in configured_sources) else None
         coverage = scan_coverage_context(state)
         discovery = coverage.get("host_discovery", {})
         tcp = coverage.get("tcp", {})
@@ -1410,10 +1458,10 @@ class InventoryTools:
                 available=bool(supplemental.get("observed_at")),
                 observed_at=supplemental.get("observed_at"),
                 attempted_at=scanned,
-                verified=None,
-                complete=False if supplemental.get("warnings") else None,
+                verified=supplemental_verified,
+                complete=False if supplemental_failed else None,
                 max_age=36 * 3600,
-                caveat="Warnings indicate partial evidence; zero warnings do not prove all configured collectors ran.",
+                caveat="Execution evidence is not network coverage; inspect discovery status for configured, completed, limited and unattempted collectors.",
             ),
             row(
                 "cloudflare",

@@ -61,12 +61,25 @@ def execute(
         return output.read(LIMIT).decode("utf-8", errors="replace")
 
 
+def collector_evidence(configured):
+    return {
+        "configured": configured,
+        "attempted": 0,
+        "completed": 0,
+        "failed": 0,
+        "no_reply": 0,
+        "parse_errors": 0,
+        "limited": False,
+    }
+
+
 def collect(interfaces, allowed, records, add, warnings):
     """Each optional failure is isolated and reported without raw exceptions."""
     flags = {
         name: enabled(name)
         for name in ("SSDP", "LLDP", "NETBIOS", "SMB", "SNMP", "P0F")
     }
+    evidence = {name.lower(): collector_evidence(value) for name, value in flags.items()}
     targets = sorted(
         {
             r["ip"]
@@ -80,10 +93,17 @@ def collect(interfaces, allowed, records, add, warnings):
     # Keep anonymous SMB attempts separately bounded; NetBIOS node-status
     # probes are light and should not omit hosts after the first 16.
     smb_targets = targets[:SMB_TARGET_LIMIT]
+    evidence["smb"]["limited"] = flags["SMB"] and len(targets) > SMB_TARGET_LIMIT
+    evidence["smb"]["eligible_targets"] = len(targets) if flags["SMB"] else 0
+    evidence["netbios"]["eligible_targets"] = len(targets) if flags["NETBIOS"] else 0
 
     def attempt(source, operation):
+        key = "lldp" if source == "LLDP/CDP" else source.lower()
+        row = evidence[key]
+        row["attempted"] += 1
         try:
             operation()
+            row["completed"] += 1
         except (
             OSError,
             ValueError,
@@ -91,6 +111,7 @@ def collect(interfaces, allowed, records, add, warnings):
             ET.ParseError,
             subprocess.SubprocessError,
         ):
+            row["failed"] += 1
             warnings.append(source + ": unavailable, failed or timed out")
 
     for interface in interfaces:
@@ -139,6 +160,7 @@ def collect(interfaces, allowed, records, add, warnings):
         attempt("LLDP/CDP", lldp)
     netbios_enabled = flags["NETBIOS"] and bool(targets)
     if netbios_enabled and shutil.which("nmblookup") is None:
+        evidence["netbios"]["unavailable"] = True
         warnings.append("NetBIOS: nmblookup executable unavailable")
     elif netbios_enabled:
         print(
@@ -166,10 +188,17 @@ def collect(interfaces, allowed, records, add, warnings):
             for index, (ip, names, failed) in enumerate(
                 executor.map(netbios, targets), start=1
             ):
+                row = evidence["netbios"]
+                row["attempted"] += 1
                 if failed:
+                    row["failed"] += 1
                     warnings.append("NetBIOS: unavailable, failed or timed out")
-                elif names:
-                    add(ip, "", "NetBIOS name", ", ".join(names))
+                else:
+                    row["completed"] += 1
+                    if names:
+                        add(ip, "", "NetBIOS name", ", ".join(names))
+                    else:
+                        row["no_reply"] += 1
                 if index % 4 == 0 or index == len(targets):
                     print(
                         f"[discovery] NetBIOS completed: {index}/{len(targets)}",
@@ -253,3 +282,4 @@ def collect(interfaces, allowed, records, add, warnings):
                     add(str(address), "", "SNMP system identity", raw)
 
         attempt("SNMP", snmp)
+    return evidence
