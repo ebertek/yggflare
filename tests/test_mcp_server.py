@@ -428,16 +428,25 @@ class InventoryToolTests(unittest.TestCase):
             }
             for i in range(60)
         ]
-        rows.append({
-            "kind": "routers",
-            "protocol": "http",
-            "name": "real@docker",
-            "literal_hosts": ["EXAMPLE.INVALID."],
-        })
-        services = [{"project": "core", "service": "demo", "aliases": ["example.invalid"]}]
+        rows.append(
+            {
+                "kind": "routers",
+                "protocol": "http",
+                "name": "real@docker",
+                "literal_hosts": ["EXAMPLE.INVALID."],
+            }
+        )
+        services = [
+            {"project": "core", "service": "demo", "aliases": ["example.invalid"]}
+        ]
         with (
-            patch.object(self.tools, "service_loader", return_value={"items": services}) as load,
-            patch("mcp_server.saved_traefik", return_value={"available": True, "items": rows}),
+            patch.object(
+                self.tools, "service_loader", return_value={"items": services}
+            ) as load,
+            patch(
+                "mcp_server.saved_traefik",
+                return_value={"available": True, "items": rows},
+            ),
         ):
             result = self.tools.get_ingress_evidence("EXAMPLE.INVALID.")
         load.assert_called_once()
@@ -541,16 +550,22 @@ class MonitorCorrelationTests(unittest.TestCase):
         from mcp_server import device_port_evidence
 
         stamp = "2026-11-25T09:00:00Z"
-        data = {"network_state": {
-            "scanned_at": stamp,
-            "scan_coverage": {
-                "version": 1, "mode": "live", "observed_at": stamp,
-                "tcp": {"selected_port_count": 2, "selected_ports": [22, 443]},
-            },
-        }}
+        data = {
+            "network_state": {
+                "scanned_at": stamp,
+                "scan_coverage": {
+                    "version": 1,
+                    "mode": "live",
+                    "observed_at": stamp,
+                    "tcp": {"selected_port_count": 2, "selected_ports": [22, 443]},
+                },
+            }
+        }
         device = {
-            "ipv4": "192.0.2.1", "ipv6": "2001:db8::1",
-            "observed_ports": ["tcp/22"], "last_seen": stamp,
+            "ipv4": "192.0.2.1",
+            "ipv6": "2001:db8::1",
+            "observed_ports": ["tcp/22"],
+            "last_seen": stamp,
         }
         for address, port, selected, observed, evidence in (
             ("192.0.2.1", 22, True, True, "observed_open"),

@@ -1052,7 +1052,14 @@ def device_port_evidence(data, device, address, monitor):
     }
     port = monitor.get("target_port")
     scheme = monitor.get("target_scheme")
-    if type(port) is not int or scheme not in {"tcp", "udp", "http", "https", "ws", "wss"}:
+    if type(port) is not int or scheme not in {
+        "tcp",
+        "udp",
+        "http",
+        "https",
+        "ws",
+        "wss",
+    }:
         return result
     # The primary scan's observed_ports are IPv4 evidence, not IPv6 evidence.
     if address != normalized_monitor_host(device.get("ipv4")):
@@ -2538,9 +2545,17 @@ class InventoryTools:
             "routers", needle, "http", 0, MAX_PAGE, "", exact_host=True
         )
         layers["traefik"] = {
-            **{key: traefik[key] for key in (
-                "schema_version", "total", "offset", "next_offset", "snapshot_id", "items"
-            )},
+            **{
+                key: traefik[key]
+                for key in (
+                    "schema_version",
+                    "total",
+                    "offset",
+                    "next_offset",
+                    "snapshot_id",
+                    "items",
+                )
+            },
             "source_truncated": False if traefik.get("available") else None,
             "page_truncated": traefik.get("next_offset") is not None,
         }
@@ -2626,7 +2641,9 @@ class InventoryTools:
                 **layer,
                 "source_truncated": (
                     False
-                    if {"komodo": komodo, "kuma": kuma, "probes": probes}[source].get("available")
+                    if {"komodo": komodo, "kuma": kuma, "probes": probes}[source].get(
+                        "available"
+                    )
                     else None
                 ),
                 "page_truncated": layer["next_offset"] is not None,
