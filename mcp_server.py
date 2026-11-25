@@ -2325,7 +2325,7 @@ class InventoryTools:
             scope == "devices" and project_name
         ):
             raise ValueError("Invalid monitoring coverage scope or project filter")
-        kuma = saved_integration("kuma", Path("/data"))
+        kuma = dict(saved_integration("kuma", Path("/data")))
         monitors = kuma.pop("items")
         if scope == "devices":
             data = self.loader()
