@@ -303,6 +303,9 @@ class MonitorMatch(TypedDict, total=False):
     device_candidates: list[str]
     device_candidates_truncated: bool
     target_port_observed: bool | None
+    target_port_selected: bool | None
+    target_port_evidence: str
+    port_observed_at: str | None
 
 
 class CoverageRow(TypedDict, total=False):
@@ -1039,9 +1042,65 @@ def monitor_candidates(index, services, ingress=""):
     return candidates
 
 
+def device_port_evidence(data, device, address, monitor):
+    """Keep selection, positive observations and missing evidence distinct."""
+    result = {
+        "target_port_observed": None,
+        "target_port_selected": None,
+        "target_port_evidence": "unknown",
+        "port_observed_at": None,
+    }
+    port = monitor.get("target_port")
+    scheme = monitor.get("target_scheme")
+    if type(port) is not int or scheme not in {
+        "tcp",
+        "udp",
+        "http",
+        "https",
+        "ws",
+        "wss",
+    }:
+        return result
+    # The primary scan's observed_ports are IPv4 evidence, not IPv6 evidence.
+    if address != normalized_monitor_host(device.get("ipv4")):
+        return result
+    protocol = "udp" if scheme == "udp" else "tcp"
+    state = data.get("network_state", {})
+    saved = state.get("scan_coverage", {})
+    tcp = saved.get("tcp", {})
+    selected = tcp.get("selected_ports")
+    if (
+        protocol == "tcp"
+        and saved.get("version") == 1
+        and saved.get("mode") == "live"
+        and saved.get("observed_at") == state.get("scanned_at")
+        and isinstance(selected, list)
+        and len(selected) == tcp.get("selected_port_count")
+        and len(selected) <= 65535
+        and all(type(item) is int and 1 <= item <= 65535 for item in selected)
+        and len(set(selected)) == len(selected)
+    ):
+        result["target_port_selected"] = port in selected
+    ports = device.get("observed_ports") or []
+    if f"{protocol}/{port}" in ports:
+        result["target_port_observed"] = True
+        result["target_port_evidence"] = "observed_open"
+        result["port_observed_at"] = bounded(device.get("last_seen")) or None
+    elif result["target_port_selected"] is False:
+        result["target_port_evidence"] = "not_selected_in_primary_scan"
+    elif result["target_port_selected"] is True:
+        result["target_port_evidence"] = "selected_not_observed"
+    # None, not False: the --open scan cannot prove a negative here.
+    return result
+
+
 def network_monitor_rows(data, monitors, query, available, fresh):
     """Correlate explicit numeric targets with saved non-container inventory rows."""
-    devices = [row for row in data.get("hosts", []) if not row.get("container_name")]
+    devices = [
+        row
+        for row in data.get("hosts", [])
+        if not row.get("container_name") and row.get("device_class") != "docker"
+    ]
     owners = {}
     for device in devices:
         for field in ("ipv4", "ipv6"):
@@ -1071,17 +1130,6 @@ def network_monitor_rows(data, monitors, query, available, fresh):
                 identities = sorted(
                     {bounded(str(row.get("hostname") or address)) for row in candidates}
                 )
-                port = monitor.get("target_port")
-                ports = device.get("observed_ports") or []
-                scheme = monitor.get("target_scheme")
-                observed = None
-                if (
-                    type(port) is int
-                    and ports
-                    and scheme in {"tcp", "udp", "http", "https", "ws", "wss"}
-                ):
-                    protocol = "udp" if scheme == "udp" else "tcp"
-                    observed = f"{protocol}/{port}" in ports
                 matches.append(
                     {
                         **project(monitor, INTEGRATION_FIELDS),
@@ -1089,7 +1137,7 @@ def network_monitor_rows(data, monitors, query, available, fresh):
                         "device_candidates": identities[:MAX_VALUES],
                         "device_candidates_truncated": len(identities) > MAX_VALUES,
                         "shared_or_ambiguous_address": len(candidates) > 1,
-                        "target_port_observed": observed,
+                        **device_port_evidence(data, device, address, monitor),
                     }
                 )
         rows.append(
@@ -1969,8 +2017,9 @@ class InventoryTools:
             "recipient_receipt_verified": None,
         }
 
-    def _service_rows(self, query, project_name):
-        view = self.service_loader()
+    def _service_rows(self, query, project_name, *, view=None):
+        if view is None:
+            view = self.service_loader()
         needle = query.strip().casefold()
         rows = [
             project(item, SERVICE_FIELDS)
@@ -2148,10 +2197,12 @@ class InventoryTools:
             },
         }
 
-    def _traefik_rows(self, kind, query, protocol, offset, limit, snapshot_id):
+    def _traefik_rows(
+        self, kind, query, protocol, offset, limit, snapshot_id, *, exact_host=False
+    ):
         if protocol and protocol not in {"http", "tcp", "udp"}:
             raise ValueError("Unknown Traefik protocol")
-        data = saved_traefik(Path("/data"))
+        data = dict(saved_traefik(Path("/data")))
         rows = data.pop("items")
         fields = (
             "protocol",
@@ -2180,10 +2231,18 @@ class InventoryTools:
             if row.get("kind") == kind
             and (not protocol or row.get("protocol") == protocol)
             and (
-                not query
-                or query.casefold() in str(row.get("name", "")).casefold()
-                or query.casefold()
-                in {str(host).casefold() for host in row.get("literal_hosts", [])}
+                normalized_monitor_host(query)
+                in {
+                    normalized_monitor_host(host)
+                    for host in row.get("literal_hosts", [])
+                }
+                if exact_host
+                else (
+                    not query
+                    or query.casefold() in str(row.get("name", "")).casefold()
+                    or query.casefold()
+                    in {str(host).casefold() for host in row.get("literal_hosts", [])}
+                )
             )
         ]
         return {**data, **page(rows, offset, limit, snapshot_id)}
@@ -2339,8 +2398,9 @@ class InventoryTools:
                 "coverage_caveat": "Exact saved numeric device address candidates only; DHCP reuse, shared addresses and independent timestamps prevent proof of monitoring or device identity.",
                 **page(rows, offset, limit, snapshot_id),
             }
-        context, services = self._service_rows(query, project_name)
-        _, all_services = self._service_rows("", "")
+        view = self.service_loader()
+        context, services = self._service_rows(query, project_name, view=view)
+        _, all_services = self._service_rows("", "", view=view)
         index = monitor_index(monitors, all_services)
         rows = []
         for service in services:
@@ -2423,12 +2483,19 @@ class InventoryTools:
         """Correlate exact aliases and saved Cloudflare configuration, not reachability."""
         if not hostname.strip():
             raise ValueError("hostname must not be empty")
-        context, rows = self._service_rows(hostname, "")
-        needle = hostname.strip().casefold()
+        context, services = self._service_rows("", "")
+        return self._ingress_path(
+            hostname, offset, limit, snapshot_id, context, services
+        )
+
+    def _ingress_path(self, hostname, offset, limit, snapshot_id, context, services):
+        needle = normalized_monitor_host(hostname)
+        if not needle:
+            raise ValueError("hostname must not be empty")
         rows = [
             row
-            for row in rows
-            if needle in {str(v).casefold() for v in row.get("aliases", [])}
+            for row in services
+            if needle in {normalized_monitor_host(v) for v in row.get("aliases", [])}
         ]
         data = self.loader()
         config = data.get("cloudflare_view", {}).get("configuration", {})
@@ -2465,21 +2532,32 @@ class InventoryTools:
             matching = [
                 project(item, fields)
                 for item in dataset.get("items", [])
-                if item.get("hostname", "").casefold() == needle
+                if normalized_monitor_host(item.get("hostname")) == needle
             ]
+            layer = page(matching, 0, MAX_PAGE)
             layers[section] = {
-                **page(matching, 0, MAX_PAGE),
+                **layer,
                 "source_truncated": dataset.get("truncated"),
+                "page_truncated": layer["next_offset"] is not None,
             }
-        traefik = self.list_traefik_routes(hostname, "http", 0, MAX_PAGE)
-        matching_routes = [
-            row
-            for row in traefik["items"]
-            if needle in {str(host).casefold() for host in row.get("literal_hosts", [])}
-        ]
+        # Filter literal hosts on the complete saved projection before paging.
+        traefik = self._traefik_rows(
+            "routers", needle, "http", 0, MAX_PAGE, "", exact_host=True
+        )
         layers["traefik"] = {
-            **page(matching_routes, 0, MAX_PAGE),
-            "source_truncated": traefik.get("next_offset") is not None,
+            **{
+                key: traefik[key]
+                for key in (
+                    "schema_version",
+                    "total",
+                    "offset",
+                    "next_offset",
+                    "snapshot_id",
+                    "items",
+                )
+            },
+            "source_truncated": False if traefik.get("available") else None,
+            "page_truncated": traefik.get("next_offset") is not None,
         }
         return {
             **context,
@@ -2504,16 +2582,17 @@ class InventoryTools:
         self, hostname: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
     ) -> ServicePage:
         """Correlate saved ingress, deployment, monitor and local probe evidence by exact names."""
-        result = self.get_ingress_path(hostname, offset, limit, snapshot_id)
-        needle = hostname.strip().casefold().rstrip(".")
-        # Do not use the paginated service subset as the basis of cross-source
-        # matching. Candidate ownership is exact project/stack name only.
-        _, services = self._service_rows("", "")
+        # Reuse one complete service projection for all layers and ownership.
+        context, services = self._service_rows("", "")
+        result = self._ingress_path(
+            hostname, offset, limit, snapshot_id, context, services
+        )
+        needle = normalized_monitor_host(hostname)
         matching_services = [
             row
             for row in services
             if needle
-            in {str(value).casefold().rstrip(".") for value in row.get("aliases", [])}
+            in {normalized_monitor_host(value) for value in row.get("aliases", [])}
         ]
         projects = {
             str(row.get("project")).casefold()
@@ -2560,7 +2639,14 @@ class InventoryTools:
             layer = page(rows, 0, MAX_PAGE)
             result["layers"][source] = {
                 **layer,
-                "source_truncated": layer["next_offset"] is not None,
+                "source_truncated": (
+                    False
+                    if {"komodo": komodo, "kuma": kuma, "probes": probes}[source].get(
+                        "available"
+                    )
+                    else None
+                ),
+                "page_truncated": layer["next_offset"] is not None,
             }
         result["integration_snapshots"] = {
             name: {
@@ -2768,7 +2854,7 @@ PROMPTS = {
     ),
     "review_monitoring": (
         ("get_monitoring_coverage", "list_kuma_monitors"),
-        "Review candidate service monitoring coverage. Exact hostname/IP matches are hints only, and an empty result is not proof of missing monitoring.",
+        "Review candidate service and device monitoring coverage (scope=services or devices). Exact hostname/IP and Docker friendly-name matches are hints only. Distinguish selected ports from positive observations; an empty result is not proof of missing monitoring or a closed port.",
     ),
     "review_connectivity": (
         ("get_probe_status", "list_probe_results"),
