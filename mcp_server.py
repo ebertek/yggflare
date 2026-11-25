@@ -9,7 +9,8 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from integration_inventory import FIELDS as INTEGRATION_FIELDS, saved as saved_integration
+from integration_inventory import FIELDS as INTEGRATION_FIELDS
+from integration_inventory import saved as saved_integration
 from job_status import JOBS, artifact_status, backup_checks
 from traefik_inventory import saved as saved_traefik
 
@@ -985,9 +986,20 @@ class InventoryTools:
     def _integration_status(self, adapter):
         data = saved_integration(adapter, Path("/data"))
         rows = data.pop("items")
-        kinds = ("servers", "stacks", "stack_services", "deployments") if adapter == "komodo" else ("monitors",)
-        return {**data, "counts": {kind: sum(row.get("kind") == kind for row in rows) for kind in kinds} if data["available"] else None,
-                "caveat": "Only resources visible to the configured credential; not direct remote runtime or connectivity proof."}
+        kinds = (
+            ("servers", "stacks", "stack_services", "deployments")
+            if adapter == "komodo"
+            else ("monitors",)
+        )
+        return {
+            **data,
+            "counts": (
+                {kind: sum(row.get("kind") == kind for row in rows) for kind in kinds}
+                if data["available"]
+                else None
+            ),
+            "caveat": "Only resources visible to the configured credential; not direct remote runtime or connectivity proof.",
+        }
 
     def get_komodo_status(self) -> dict[str, Any]:
         """Read saved Komodo collection state."""
@@ -1001,30 +1013,53 @@ class InventoryTools:
         data = saved_integration(adapter, Path("/data"))
         rows = data.pop("items")
         needle = query.strip().casefold()
-        filtered = [project(row, INTEGRATION_FIELDS) for row in rows if row.get("kind") == kind and (not needle or any(needle in str(row.get(key) or "").casefold() for key in ("name", "server", "stack", "target_host")))]
+        filtered = [
+            project(row, INTEGRATION_FIELDS)
+            for row in rows
+            if row.get("kind") == kind
+            and (
+                not needle
+                or any(
+                    needle in str(row.get(key) or "").casefold()
+                    for key in ("name", "server", "stack", "target_host")
+                )
+            )
+        ]
         return {**data, **page(filtered, offset, limit)}
 
-    def list_komodo_servers(self, query: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_komodo_servers(
+        self, query: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read reported Komodo server state, not direct host probes."""
         return self._integration_rows("komodo", "servers", query, offset, limit)
 
-    def list_komodo_stacks(self, query: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_komodo_stacks(
+        self, query: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read reported stack state, ownership and deployed/latest revisions."""
         return self._integration_rows("komodo", "stacks", query, offset, limit)
 
-    def list_komodo_services(self, query: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_komodo_services(
+        self, query: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read Komodo-reported stack service images, not proof containers are running."""
         return self._integration_rows("komodo", "stack_services", query, offset, limit)
 
-    def list_komodo_deployments(self, query: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_komodo_deployments(
+        self, query: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read standalone deployment state and image metadata."""
         return self._integration_rows("komodo", "deployments", query, offset, limit)
 
-    def list_kuma_monitors(self, query: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_kuma_monitors(
+        self, query: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read Kuma-exported monitor status and sanitized target host/port."""
         return self._integration_rows("kuma", "monitors", query, offset, limit)
 
-    def get_monitoring_coverage(self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_monitoring_coverage(
+        self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Correlate exact monitor target hosts with service identities; not proof of coverage."""
         context, services = self._service_rows(query, project_name)
         kuma = saved_integration("kuma", Path("/data"))
@@ -1032,15 +1067,52 @@ class InventoryTools:
         by_host = {}
         for row in monitors:
             if row.get("target_host"):
-                by_host.setdefault(str(row["target_host"]).casefold().rstrip("."), []).append(row)
+                by_host.setdefault(
+                    str(row["target_host"]).casefold().rstrip("."), []
+                ).append(row)
         rows = []
         for service in services:
-            hosts = {str(value).casefold().rstrip(".") for value in (service.get("hostname"), *service.get("aliases", []), *service.get("lan_endpoints", [])) if value}
+            hosts = {
+                str(value).casefold().rstrip(".")
+                for value in (
+                    service.get("hostname"),
+                    *service.get("aliases", []),
+                    *service.get("lan_endpoints", []),
+                )
+                if value
+            }
             matches = [item for host in sorted(hosts) for item in by_host.get(host, [])]
-            rows.append({**project(service, ("project", "service", "container_name", "hostname", "shared_network")), "matching_monitor_count": len(matches) if kuma["available"] else None,
-                         "monitor_names": [bounded(item.get("name")) for item in matches[:MAX_VALUES]],
-                         "match_status": "candidate_host_match" if matches else "no_exact_host_match" if kuma["fresh"] else "unknown"})
-        return {**context, "kuma": kuma, "coverage_caveat": "Shared IPs, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative per-service coverage conclusions.", **page(rows, offset, limit)}
+            rows.append(
+                {
+                    **project(
+                        service,
+                        (
+                            "project",
+                            "service",
+                            "container_name",
+                            "hostname",
+                            "shared_network",
+                        ),
+                    ),
+                    "matching_monitor_count": (
+                        len(matches) if kuma["available"] else None
+                    ),
+                    "monitor_names": [
+                        bounded(item.get("name")) for item in matches[:MAX_VALUES]
+                    ],
+                    "match_status": (
+                        "candidate_host_match"
+                        if matches
+                        else "no_exact_host_match" if kuma["fresh"] else "unknown"
+                    ),
+                }
+            )
+        return {
+            **context,
+            "kuma": kuma,
+            "coverage_caveat": "Shared IPs, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative per-service coverage conclusions.",
+            **page(rows, offset, limit),
+        }
 
     def get_ingress_path(
         self, hostname: str, offset: int = 0, limit: int = 25

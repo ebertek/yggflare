@@ -14,7 +14,8 @@ import time
 from pathlib import Path
 
 from backup import create_snapshot, prune_snapshots
-from integration_inventory import ADAPTERS, INTERVAL as INTEGRATION_INTERVAL
+from integration_inventory import ADAPTERS
+from integration_inventory import INTERVAL as INTEGRATION_INTERVAL
 from job_status import track
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
@@ -161,9 +162,11 @@ def run(args, *, env=None):
     component = (
         "integration"
         if Path(args[1]).name == "integration_inventory.py"
-        else "traefik"
-        if Path(args[1]).name == "traefik_inventory.py"
-        else "cloudflare" if "/cloudflare/" in args[1] else "network"
+        else (
+            "traefik"
+            if Path(args[1]).name == "traefik_inventory.py"
+            else "cloudflare" if "/cloudflare/" in args[1] else "network"
+        )
     )
     label = job_label(args[1])
     started = time.monotonic()
@@ -392,11 +395,18 @@ def run_scheduler(listener=None):
                 )
             next_traefik = time.monotonic() + TRAEFIK_INTERVAL
         for adapter in ADAPTERS:
-            if os.environ.get("YGGFLARE_" + adapter.upper() + "_API_URL") and time.monotonic() >= next_integration[adapter]:
+            if (
+                os.environ.get("YGGFLARE_" + adapter.upper() + "_API_URL")
+                and time.monotonic() >= next_integration[adapter]
+            ):
                 try:
                     run([sys.executable, "/app/integration_inventory.py", adapter])
                 except Exception:
-                    log("warning", "controller", f"{adapter} presentation refresh failed; previous snapshot retained")
+                    log(
+                        "warning",
+                        "controller",
+                        f"{adapter} presentation refresh failed; previous snapshot retained",
+                    )
                 next_integration[adapter] = time.monotonic() + INTEGRATION_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):

@@ -23,14 +23,57 @@ ADAPTERS = ("komodo", "kuma")
 INTERVAL = 300
 MAX_BYTES = 4 * 1024 * 1024
 MAX_ROWS = 4000
-KOMODO_READS = {"servers": "ListServers", "stacks": "ListStacks", "deployments": "ListDeployments"}
-SECRET_FILES = {"komodo": ("komodo-api-key.txt", "komodo-api-secret.txt"), "kuma": ("kuma-api-key.txt",)}
-STATES = {"running", "paused", "stopped", "created", "restarting", "dead", "removing", "unhealthy", "down", "unknown", "deploying", "ok", "not_ok", "disabled", "exited", "unreachable", "healthy"}
+KOMODO_READS = {
+    "servers": "ListServers",
+    "stacks": "ListStacks",
+    "deployments": "ListDeployments",
+}
+SECRET_FILES = {
+    "komodo": ("komodo-api-key.txt", "komodo-api-secret.txt"),
+    "kuma": ("kuma-api-key.txt",),
+}
+STATES = {
+    "running",
+    "paused",
+    "stopped",
+    "created",
+    "restarting",
+    "dead",
+    "removing",
+    "unhealthy",
+    "down",
+    "unknown",
+    "deploying",
+    "ok",
+    "not_ok",
+    "disabled",
+    "exited",
+    "unreachable",
+    "healthy",
+}
 FIELDS = (
-    "kind", "name", "server", "swarm", "state", "template", "version",
-    "deployed_hash", "latest_hash", "revision_match", "project_missing",
-    "service", "stack", "image", "latest_image", "update_available", "container_name",
-    "monitor_type", "target_host", "target_port", "target_scheme", "status",
+    "kind",
+    "name",
+    "server",
+    "swarm",
+    "state",
+    "template",
+    "version",
+    "deployed_hash",
+    "latest_hash",
+    "revision_match",
+    "project_missing",
+    "service",
+    "stack",
+    "image",
+    "latest_image",
+    "update_available",
+    "container_name",
+    "monitor_type",
+    "target_host",
+    "target_port",
+    "target_scheme",
+    "status",
 )
 
 
@@ -49,17 +92,26 @@ def settings(adapter, env):
         if (
             url.scheme not in {"http", "https"}
             or (url.scheme == "http" and not allow_http and not address.is_loopback)
-            or url.username is not None or url.password is not None
-            or url.path not in {"", "/"} or url.query or url.fragment
+            or url.username is not None
+            or url.password is not None
+            or url.path not in {"", "/"}
+            or url.query
+            or url.fragment
             or not (address.is_loopback or address in lan)
-            or address.is_unspecified or address.is_multicast or "%" in str(address)
+            or address.is_unspecified
+            or address.is_multicast
+            or "%" in str(address)
         ):
             raise ValueError
-        port = url.port if url.port is not None else (443 if url.scheme == "https" else 80)
+        port = (
+            url.port if url.port is not None else (443 if url.scheme == "https" else 80)
+        )
         if not 1 <= port <= 65535:
             raise ValueError
     except (KeyError, ValueError, TypeError):
-        raise ValueError("Integration requires a numeric scoped origin; LAN HTTP requires explicit opt-in") from None
+        raise ValueError(
+            "Integration requires a numeric scoped origin; LAN HTTP requires explicit opt-in"
+        ) from None
     return url.scheme, str(address), port
 
 
@@ -68,10 +120,18 @@ def credentials(adapter, directory=Path("/config")):
     for filename in SECRET_FILES[adapter]:
         path = directory / filename
         info = path.lstat()
-        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 4096 or info.st_mode & 0o077:
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or not 0 < info.st_size <= 4096
+            or info.st_mode & 0o077
+        ):
             raise ValueError("Integration credential must be a private regular file")
         value = path.read_text(encoding="utf-8").strip()
-        if not value or not value.isascii() or any(not 33 <= ord(char) <= 126 for char in value):
+        if (
+            not value
+            or not value.isascii()
+            or any(not 33 <= ord(char) <= 126 for char in value)
+        ):
             raise ValueError("Invalid integration credential")
         result.append(value)
     return result
@@ -81,15 +141,25 @@ def fetch(adapter, origin, secrets, kind):
     """The only outbound requests are fixed, documented read operations."""
     if adapter == "komodo" and kind in KOMODO_READS:
         method, path, body = "POST", "/read/" + KOMODO_READS[kind], b"{}"
-        headers = {"Content-Type": "application/json", "Accept": "application/json",
-                   "X-Api-Key": secrets[0], "X-Api-Secret": secrets[1]}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Api-Key": secrets[0],
+            "X-Api-Secret": secrets[1],
+        }
     elif adapter == "kuma" and kind == "monitors":
         method, path, body = "GET", "/metrics", None
-        headers = {"Accept": "text/plain", "Authorization": "Basic " + base64.b64encode((":" + secrets[0]).encode()).decode()}
+        headers = {
+            "Accept": "text/plain",
+            "Authorization": "Basic "
+            + base64.b64encode((":" + secrets[0]).encode()).decode(),
+        }
     else:
         raise ValueError("Unsupported integration operation")
     scheme, address, port = origin
-    cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    cls = (
+        http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    )
     connection = cls(address, port, timeout=8)
     try:
         connection.request(method, path, body=body, headers=headers)
@@ -105,11 +175,21 @@ def fetch(adapter, origin, secrets, kind):
 
 
 def safe_name(value):
-    return value if isinstance(value, str) and 0 < len(value) <= 253 and all(c.isprintable() for c in value) else None
+    return (
+        value
+        if isinstance(value, str)
+        and 0 < len(value) <= 253
+        and all(c.isprintable() for c in value)
+        else None
+    )
 
 
 def revision(value):
-    return value.lower() if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{7,64}", value) else None
+    return (
+        value.lower()
+        if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{7,64}", value)
+        else None
+    )
 
 
 def boolean(value):
@@ -121,36 +201,69 @@ def komodo_rows(kind, payload):
         raise ValueError("Invalid Komodo list response")
     rows = []
     for item in payload:
-        if not isinstance(item, dict) or not isinstance(item.get("info"), dict) or not safe_name(item.get("name")):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("info"), dict)
+            or not safe_name(item.get("name"))
+        ):
             raise ValueError("Invalid Komodo resource")
         info = item["info"]
         state = info.get("state")
         state = state.lower() if isinstance(state, str) else None
-        row = {"kind": kind, "name": safe_name(item["name"]),
-               "state": state if state in STATES else "unknown", "template": boolean(item.get("template"))}
+        row = {
+            "kind": kind,
+            "name": safe_name(item["name"]),
+            "state": state if state in STATES else "unknown",
+            "template": boolean(item.get("template")),
+        }
         if kind == "servers":
             row["version"] = safe_name(info.get("version"))
         else:
-            row.update(server=safe_name(info.get("server_name")), swarm=safe_name(info.get("swarm_name")))
+            row.update(
+                server=safe_name(info.get("server_name")),
+                swarm=safe_name(info.get("swarm_name")),
+            )
         if kind == "stacks":
-            deployed, latest = revision(info.get("deployed_hash")), revision(info.get("latest_hash"))
-            row.update(deployed_hash=deployed, latest_hash=latest,
-                       revision_match=deployed == latest if deployed and latest and len(deployed) == len(latest) else None,
-                       project_missing=boolean(info.get("project_missing")))
+            deployed, latest = revision(info.get("deployed_hash")), revision(
+                info.get("latest_hash")
+            )
+            row.update(
+                deployed_hash=deployed,
+                latest_hash=latest,
+                revision_match=(
+                    deployed == latest
+                    if deployed and latest and len(deployed) == len(latest)
+                    else None
+                ),
+                project_missing=boolean(info.get("project_missing")),
+            )
             services = info.get("services", [])
             if not isinstance(services, list) or len(services) > MAX_ROWS:
                 raise ValueError("Invalid Komodo stack services")
             for service in services:
-                if not isinstance(service, dict) or not safe_name(service.get("service")):
+                if not isinstance(service, dict) or not safe_name(
+                    service.get("service")
+                ):
                     raise ValueError("Invalid Komodo stack service")
-                rows.append({"kind": "stack_services", "name": safe_name(service["service"]),
-                             "service": safe_name(service["service"]), "stack": row["name"], "server": row["server"],
-                             "swarm": row["swarm"], "image": image_reference(service.get("image")),
-                             "latest_image": image_reference(service.get("latest_image")),
-                             "update_available": boolean(service.get("update_available"))})
+                rows.append(
+                    {
+                        "kind": "stack_services",
+                        "name": safe_name(service["service"]),
+                        "service": safe_name(service["service"]),
+                        "stack": row["name"],
+                        "server": row["server"],
+                        "swarm": row["swarm"],
+                        "image": image_reference(service.get("image")),
+                        "latest_image": image_reference(service.get("latest_image")),
+                        "update_available": boolean(service.get("update_available")),
+                    }
+                )
         elif kind == "deployments":
-            row.update(image=image_reference(info.get("image")), container_name=safe_name(info.get("custom_name")),
-                       update_available=boolean(info.get("update_available")))
+            row.update(
+                image=image_reference(info.get("image")),
+                container_name=safe_name(info.get("custom_name")),
+                update_available=boolean(info.get("update_available")),
+            )
         rows.append(row)
         if len(rows) > MAX_ROWS:
             raise ValueError("Komodo projection exceeds limit")
@@ -177,7 +290,9 @@ def target(labels):
     try:
         host = str(ipaddress.ip_address(host))
     except ValueError:
-        if not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}", host):
+        if not isinstance(host, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}", host
+        ):
             host = None
         else:
             host = host.lower().rstrip(".")
@@ -207,10 +322,19 @@ def kuma_rows(payload):
             if name is None:
                 raise ValueError("Invalid Kuma monitor identity")
             host, port, scheme = target(labels)
-            rows.append({"kind": "monitors", "name": name,
-                         "monitor_type": safe_name(labels.get("monitor_type")),
-                         "target_host": host, "target_port": port, "target_scheme": scheme,
-                         "status": {0: "down", 1: "up", 2: "pending", 3: "maintenance"}.get(sample.value, "unknown")})
+            rows.append(
+                {
+                    "kind": "monitors",
+                    "name": name,
+                    "monitor_type": safe_name(labels.get("monitor_type")),
+                    "target_host": host,
+                    "target_port": port,
+                    "target_scheme": scheme,
+                    "status": {0: "down", 1: "up", 2: "pending", 3: "maintenance"}.get(
+                        sample.value, "unknown"
+                    ),
+                }
+            )
             if len(rows) > MAX_ROWS:
                 raise ValueError("Kuma projection exceeds limit")
     if not saw_family:
@@ -224,7 +348,12 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
         raise ValueError("Integration is not configured")
     with (data / (adapter + "-refresh.lock")).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        status = {"version": 1, "attempted_at": timestamp(), "source_id": source_id(origin), "ok": False}
+        status = {
+            "version": 1,
+            "attempted_at": timestamp(),
+            "source_id": source_id(origin),
+            "ok": False,
+        }
         write(data / (adapter + "-view-status.json"), status)
         secret = credentials(adapter, secret_dir)
         if adapter == "komodo":
@@ -235,8 +364,22 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
             rows = kuma_rows(request(adapter, origin, secret, "monitors"))
         if len(rows) > MAX_ROWS:
             raise ValueError("Integration projection exceeds limit")
-        rows.sort(key=lambda row: (row["kind"], row.get("server") or "", row.get("stack") or "", row["name"], row.get("target_host") or "", row.get("target_port") or 0))
-        view = {"version": 1, "source_id": source_id(origin), "observed_at": timestamp(), "items": rows}
+        rows.sort(
+            key=lambda row: (
+                row["kind"],
+                row.get("server") or "",
+                row.get("stack") or "",
+                row["name"],
+                row.get("target_host") or "",
+                row.get("target_port") or 0,
+            )
+        )
+        view = {
+            "version": 1,
+            "source_id": source_id(origin),
+            "observed_at": timestamp(),
+            "items": rows,
+        }
         write(data / (adapter + "-view.json"), view)
         status.update(ok=True, observed_at=view["observed_at"])
         write(data / (adapter + "-view-status.json"), status)
@@ -254,19 +397,39 @@ def saved(adapter, data, env=None):
     status = read(data / (adapter + "-view-status.json"))
     match = bool(origin and view.get("source_id") == source_id(origin))
     rows = view.get("items")
-    available = match and isinstance(rows, list) and len(rows) <= MAX_ROWS and all(isinstance(row, dict) for row in rows)
+    available = (
+        match
+        and isinstance(rows, list)
+        and len(rows) <= MAX_ROWS
+        and all(isinstance(row, dict) for row in rows)
+    )
     age = None
     if available:
         try:
-            age = (datetime.now(UTC) - datetime.fromisoformat(view["observed_at"])).total_seconds()
+            age = (
+                datetime.now(UTC) - datetime.fromisoformat(view["observed_at"])
+            ).total_seconds()
         except (ValueError, TypeError, KeyError):
             available = False
-    verified = bool(available and status.get("ok") is True and status.get("source_id") == view.get("source_id") and status.get("observed_at") == view.get("observed_at"))
-    return {"configured": configured, "available": bool(available),
-            "observed_at": view.get("observed_at") if available else None,
-            "last_attempt_at": status.get("attempted_at") if origin and status.get("source_id") == source_id(origin) else None,
-            "last_refresh_verified": verified, "fresh": bool(verified and age is not None and 0 <= age <= 900),
-            "items": rows if available else []}
+    verified = bool(
+        available
+        and status.get("ok") is True
+        and status.get("source_id") == view.get("source_id")
+        and status.get("observed_at") == view.get("observed_at")
+    )
+    return {
+        "configured": configured,
+        "available": bool(available),
+        "observed_at": view.get("observed_at") if available else None,
+        "last_attempt_at": (
+            status.get("attempted_at")
+            if origin and status.get("source_id") == source_id(origin)
+            else None
+        ),
+        "last_refresh_verified": verified,
+        "fresh": bool(verified and age is not None and 0 <= age <= 900),
+        "items": rows if available else [],
+    }
 
 
 def main():
@@ -278,7 +441,10 @@ def main():
         print(f"Integration snapshot refreshed: {len(view['items'])} observations.")
         return 0
     except (OSError, ValueError, TypeError, http.client.HTTPException):
-        print("Integration refresh unavailable; previous complete snapshot retained.", file=sys.stderr)
+        print(
+            "Integration refresh unavailable; previous complete snapshot retained.",
+            file=sys.stderr,
+        )
         return 2
     finally:
         signal.alarm(0)
