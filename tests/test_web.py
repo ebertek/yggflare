@@ -93,9 +93,18 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("never-export", html)
 
     def test_unifi_view_escapes_evidence(self):
-        result = {"available": True, "fresh": True, "items": [
-            {"kind": "clients", "name": "<script>alert(1)</script>", "mac": "00:11:22:33:44:55", "access": "never-export"}
-        ]}
+        result = {
+            "available": True,
+            "fresh": True,
+            "items": [
+                {
+                    "kind": "clients",
+                    "name": "<script>alert(1)</script>",
+                    "mac": "00:11:22:33:44:55",
+                    "access": "never-export",
+                }
+            ],
+        }
         with patch("mcp_server.saved_unifi", return_value=result):
             html = web.render("unifi", {}, {"view": ["clients"]})
         self.assertIn("&lt;script&gt;", html)

@@ -104,10 +104,27 @@ class UniFiTests(unittest.TestCase):
     def test_multiple_pages_and_duplicate_rejection(self):
         def fetch(config, key, kind, site, offset):
             identifier = f"00000000-0000-0000-0000-{offset + 1:012d}"
-            return {"data": [{"id": identifier}], "offset": offset, "limit": 1, "count": 1, "totalCount": 2}
-        self.assertEqual(len(unifi.all_rows(unifi.settings(ENV), "KEY", "clients", SITE, fetch)), 2)
+            return {
+                "data": [{"id": identifier}],
+                "offset": offset,
+                "limit": 1,
+                "count": 1,
+                "totalCount": 2,
+            }
+
+        self.assertEqual(
+            len(unifi.all_rows(unifi.settings(ENV), "KEY", "clients", SITE, fetch)), 2
+        )
+
         def duplicate(config, key, kind, site, offset):
-            return {"data": [{"id": SITE}], "offset": offset, "limit": 1, "count": 1, "totalCount": 2}
+            return {
+                "data": [{"id": SITE}],
+                "offset": offset,
+                "limit": 1,
+                "count": 1,
+                "totalCount": 2,
+            }
+
         with self.assertRaises(ValueError):
             unifi.all_rows(unifi.settings(ENV), "KEY", "clients", SITE, duplicate)
 

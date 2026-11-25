@@ -116,7 +116,11 @@ def checks():
     ):
         if os.environ.get(setting):
             evidence = reader(data)
-            add(name + " snapshot", evidence["fresh"], "configured adapter has no fresh verified snapshot; review collection status")
+            add(
+                name + " snapshot",
+                evidence["fresh"],
+                "configured adapter has no fresh verified snapshot; review collection status",
+            )
     archives = sorted(backup.glob("yggflare-????????T??????Z.tar.gz"))
     if archives:
         latest = archives[-1]
