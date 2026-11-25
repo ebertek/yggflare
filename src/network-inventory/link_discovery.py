@@ -21,7 +21,7 @@ NMAP_BATCH_SIZE = 64
 MAX_SEEDS = 4096
 
 
-def collect(network, run=None, seeds=()):
+def collect(network, run=None, seeds=(), observed_ports=None):
     """Explicit interfaces and prefixes gate every active probe."""
     raw_interfaces = os.environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").strip()
     if not raw_interfaces:
@@ -466,7 +466,12 @@ def collect(network, run=None, seeds=()):
     note("START optional service discovery")
     evidence.update(
         collect_services(
-            interfaces, allowed, result["records"], add, result["warnings"]
+            interfaces,
+            allowed,
+            result["records"],
+            add,
+            result["warnings"],
+            observed_ports=observed_ports,
         )
     )
     result["collector_evidence"] = {"version": 1, "sources": evidence}

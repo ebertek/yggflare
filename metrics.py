@@ -284,6 +284,20 @@ def render(config, data, now=None):
                     "failed",
                     "no_reply",
                     "parse_errors",
+                    "eligible_targets",
+                    "selected_targets",
+                    "target_limit",
+                    "workers",
+                    "effective_workers",
+                    "skipped_no_port_evidence",
+                    "skipped_target_limit",
+                    "success_with_shares",
+                    "success_empty",
+                    "access_denied",
+                    "connection_refused",
+                    "remote_timeout",
+                    "execution_timeout",
+                    "execution_failed",
                 ):
                     count = row.get(field)
                     if type(count) is int and 0 <= count <= 100000:

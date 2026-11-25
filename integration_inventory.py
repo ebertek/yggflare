@@ -302,10 +302,25 @@ def komodo_rows(kind, payload):
 
 
 def target(labels):
+    """Interpret only labels applicable to the monitor type; ignore placeholders."""
+    kind = labels.get("monitor_type")
     host = labels.get("monitor_hostname", "")
     port = labels.get("monitor_port", "")
     scheme = None
     value = labels.get("monitor_url", "")
+    if kind in {"http", "keyword", "json-query", "real-browser"}:
+        if not value:
+            return None, None, None
+    elif kind in {"port", "ping", "dns", "udp", "smtp", "mqtt"}:
+        value = ""
+        if kind == "ping":
+            port = None
+        elif kind == "port":
+            scheme = "tcp"
+        elif kind == "udp":
+            scheme = "udp"
+    else:
+        return None, None, None
     if value:
         try:
             url = urlsplit(value)
@@ -313,11 +328,19 @@ def target(labels):
                 return None, None, None
             if url.scheme not in {"http", "https", "ws", "wss", "tcp", "udp"}:
                 return None, None, None
-            host, port, scheme = url.hostname or "", url.port, url.scheme
+            if not url.hostname:
+                return None, None, None
+            host, port, scheme = url.hostname, url.port, url.scheme
             if port is None:
                 port = {"http": 80, "https": 443, "ws": 80, "wss": 443}.get(scheme)
         except ValueError:
             return None, None, None
+    if not isinstance(host, str) or host.strip().casefold() in {
+        "",
+        "null",
+        "undefined",
+    }:
+        return None, None, None
     try:
         host = str(ipaddress.ip_address(host))
     except ValueError:
@@ -333,6 +356,8 @@ def target(labels):
             port = None
     except (TypeError, ValueError):
         port = None
+    if host is None:
+        return None, None, None
     return host, port, scheme
 
 

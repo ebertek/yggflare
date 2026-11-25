@@ -19,7 +19,33 @@ from discovery_ssdp import ssdp
 LIMIT = 1024 * 1024
 NETBIOS_TIMEOUT_SECONDS = 3
 NETBIOS_WORKERS = 8
-SMB_TARGET_LIMIT = 16
+SMB_DEFAULT_TARGET_LIMIT = 512
+SMB_HARD_TARGET_LIMIT = 4096
+SMB_DEFAULT_WORKERS = 8
+SMB_HARD_WORKERS = 16
+
+
+def smb_settings(env):
+    """Validate bounded limits before attempting any SMB enumeration."""
+
+    def integer(name, default, maximum):
+        try:
+            value = int(env.get(name, default))
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be an integer from 1 to {maximum}") from None
+        if not 1 <= value <= maximum:
+            raise ValueError(f"{name} must be from 1 to {maximum}")
+        return value
+
+    target_limit = integer(
+        "YGGFLARE_DISCOVERY_SMB_MAX_TARGETS",
+        env.get("YGGFLARE_DISCOVERY_MAX_TARGETS", SMB_DEFAULT_TARGET_LIMIT),
+        SMB_HARD_TARGET_LIMIT,
+    )
+    workers = integer(
+        "YGGFLARE_DISCOVERY_SMB_WORKERS", SMB_DEFAULT_WORKERS, SMB_HARD_WORKERS
+    )
+    return target_limit, workers
 
 
 def enabled(name):
@@ -73,7 +99,64 @@ def collector_evidence(configured):
     }
 
 
-def collect(interfaces, allowed, records, add, warnings):
+def smb_outcome(returncode, output):
+    """Classify explicit Samba outcomes; never export raw diagnostics."""
+    if returncode == 0:
+        return "success"
+    text = output.upper()
+    if any(
+        code in text
+        for code in (
+            "NT_STATUS_ACCESS_DENIED",
+            "NT_STATUS_LOGON_FAILURE",
+            "NT_STATUS_ACCOUNT_RESTRICTION",
+            "NT_STATUS_ACCOUNT_DISABLED",
+        )
+    ):
+        return "access_denied"
+    if "NT_STATUS_CONNECTION_REFUSED" in text or "CONNECTION REFUSED" in text:
+        return "connection_refused"
+    if "NT_STATUS_IO_TIMEOUT" in text or "NT_STATUS_CONNECTION_TIMEOUT" in text:
+        return "remote_timeout"
+    return "execution_failed"
+
+
+def smb_listing(ip, port, timeout_seconds=10):
+    """Bound both output streams and use only anonymous enumeration."""
+    args = ["smbclient", "-N", "-U", "%", "-g", "-L", ip, "-t", "3", "-p", str(port)]
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        with subprocess.Popen(
+            args, stdout=out, stderr=err, env={**os.environ, "LC_ALL": "C"}
+        ) as process:
+            deadline = time.monotonic() + timeout_seconds
+            while process.poll() is None:
+                if out.tell() + err.tell() > LIMIT:
+                    process.kill()
+                    process.wait()
+                    return "execution_failed", []
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    process.wait()
+                    return "execution_timeout", []
+                time.sleep(0.05)
+            if out.tell() + err.tell() > LIMIT:
+                return "execution_failed", []
+            out.seek(0)
+            err.seek(0)
+            raw = out.read(LIMIT).decode("utf-8", errors="replace")
+            diagnostic = err.read(LIMIT).decode("utf-8", errors="replace")
+            outcome = smb_outcome(process.returncode, raw + "\n" + diagnostic)
+            if outcome != "success":
+                return outcome, []
+            shares = [
+                line.split("|")[1]
+                for line in raw.splitlines()
+                if line.startswith(("Disk|", "Printer|")) and len(line.split("|")) >= 2
+            ]
+            return ("success_with_shares" if shares else "success_empty"), shares
+
+
+def collect(interfaces, allowed, records, add, warnings, observed_ports=None):
     """Each optional failure is isolated and reported without raw exceptions."""
     flags = {
         name: enabled(name)
@@ -92,11 +175,61 @@ def collect(interfaces, allowed, records, add, warnings):
         },
         key=ipaddress.ip_address,
     )
-    # Keep anonymous SMB attempts separately bounded; NetBIOS node-status
-    # probes are light and should not omit hosts after the first 16.
-    smb_targets = targets[:SMB_TARGET_LIMIT]
-    evidence["smb"]["limited"] = flags["SMB"] and len(targets) > SMB_TARGET_LIMIT
-    evidence["smb"]["eligible_targets"] = len(targets) if flags["SMB"] else 0
+    # Only already observed open SMB ports justify anonymous enumeration.
+    smb_ports = {ip: set() for ip in targets}
+    for ip, ports in (observed_ports or {}).items():
+        if ip in smb_ports:
+            smb_ports[ip].update(set(ports) & {"tcp/445", "tcp/139"})
+    for record in records:
+        ip = record.get("ip")
+        if ip in smb_ports and record.get("source") == "Nmap IPv4":
+            port = str(record.get("detail", "")).split(" ", 1)[0]
+            if port in {"tcp/445", "tcp/139"}:
+                smb_ports[ip].add(port)
+    smb_candidates = [ip for ip in targets if smb_ports[ip]]
+    smb_targets = []
+    smb_workers = SMB_DEFAULT_WORKERS
+    smb_configuration_valid = True
+    if flags["SMB"]:
+        try:
+            smb_limit, smb_workers = smb_settings(os.environ)
+        except ValueError:
+            smb_configuration_valid = False
+            evidence["smb"]["unavailable"] = True
+            warnings.append("SMB: invalid target limit or worker configuration")
+        else:
+            smb_targets = sorted(
+                smb_candidates,
+                key=lambda ip: (
+                    "tcp/445" not in smb_ports[ip],
+                    ipaddress.ip_address(ip),
+                ),
+            )[:smb_limit]
+            evidence["smb"].update(
+                target_limit=smb_limit,
+                workers=smb_workers,
+                effective_workers=min(smb_workers, len(smb_targets)),
+            )
+        evidence["smb"].update(
+            eligible_targets=len(smb_candidates),
+            selected_targets=len(smb_targets),
+            skipped_no_port_evidence=len(targets) - len(smb_candidates),
+            **(
+                {
+                    "skipped_target_limit": len(smb_candidates) - len(smb_targets),
+                    "limited": len(smb_candidates) > smb_limit,
+                }
+                if smb_configuration_valid
+                else {}
+            ),
+            success_with_shares=0,
+            success_empty=0,
+            access_denied=0,
+            connection_refused=0,
+            remote_timeout=0,
+            execution_timeout=0,
+            execution_failed=0,
+        )
     evidence["netbios"]["eligible_targets"] = len(targets) if flags["NETBIOS"] else 0
 
     def attempt(source, operation):
@@ -207,21 +340,51 @@ def collect(interfaces, allowed, records, add, warnings):
                         file=sys.stderr,
                         flush=True,
                     )
-    for ip in smb_targets:
-        if flags["SMB"]:
+    if flags["SMB"] and smb_configuration_valid and shutil.which("smbclient") is None:
+        evidence["smb"]["unavailable"] = True
+        evidence["smb"]["effective_workers"] = 0
+        warnings.append("SMB: smbclient executable unavailable")
+    elif flags["SMB"] and smb_configuration_valid and smb_targets:
+        row = evidence["smb"]
+        workers = min(smb_workers, len(smb_targets))
+        print(
+            f"[discovery] START SMB: {len(smb_targets)} targets, {workers} workers",
+            file=sys.stderr,
+            flush=True,
+        )
 
-            def smb():
-                raw = execute(["smbclient", "-N", "-g", "-L", ip, "-t", "3"])
-                shares = [
-                    line.split("|")[1]
-                    for line in raw.splitlines()
-                    if line.startswith(("Disk|", "Printer|"))
-                    and len(line.split("|")) >= 2
-                ]
-                if shares:
-                    add(ip, "", "SMB anonymous share listing", ", ".join(shares))
+        def enumerate_smb(ip):
+            port = 445 if "tcp/445" in smb_ports[ip] else 139
+            try:
+                outcome, shares = smb_listing(ip, port)
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+                outcome, shares = "execution_failed", []
+            return ip, outcome, shares
 
-            attempt("SMB", smb)
+        # Apply observations and counters on the caller thread in target order.
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for index, (ip, outcome, shares) in enumerate(
+                executor.map(enumerate_smb, smb_targets), start=1
+            ):
+                row["attempted"] += 1
+                row[outcome] += 1
+                if outcome in {"execution_failed", "execution_timeout"}:
+                    row["failed"] += 1
+                    warnings.append(
+                        "SMB: collector execution failed or exceeded bounds"
+                    )
+                else:
+                    row["completed"] += 1
+                    if outcome == "remote_timeout":
+                        row["no_reply"] += 1
+                    if outcome == "success_with_shares":
+                        add(ip, "", "SMB anonymous share listing", ", ".join(shares))
+                if index % 8 == 0 or index == len(smb_targets):
+                    print(
+                        f"[discovery] SMB completed: {index}/{len(smb_targets)}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
     if flags["SNMP"]:
 
         def snmp():

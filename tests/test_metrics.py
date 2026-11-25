@@ -65,6 +65,15 @@ class MetricsTests(unittest.TestCase):
                                         "failed": 0,
                                         "parse_errors": 0,
                                     },
+                                    "smb": {
+                                        "configured": True,
+                                        "attempted": 1,
+                                        "completed": 1,
+                                        "access_denied": 1,
+                                        "selected_targets": 1,
+                                        "skipped_no_port_evidence": 8,
+                                        "private_diagnostic": "never-export",
+                                    },
                                     "private": {"configured": True, "attempted": 42},
                                     "arp": {"configured": False, "attempted": 0},
                                 },
@@ -77,6 +86,9 @@ class MetricsTests(unittest.TestCase):
         self.assertIn("yggflare_network_tcp_requested_target_count 4", output)
         self.assertIn("yggflare_network_tcp_omitted_target_count 2", output)
         self.assertIn("yggflare_discovery_ndp_no_reply 1", output)
+        self.assertIn("yggflare_discovery_smb_access_denied 1", output)
+        self.assertIn("yggflare_discovery_smb_skipped_no_port_evidence 8", output)
+        self.assertNotIn("yggflare_discovery_smb_private_diagnostic", output)
         self.assertNotIn("yggflare_discovery_private", output)
         self.assertNotIn("yggflare_discovery_arp_attempted", output)
         self.assertNotIn("never-export", output)

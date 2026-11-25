@@ -83,6 +83,47 @@ class IntegrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adapter.kuma_rows("# TYPE something gauge\nsomething 1")
 
+    def test_kuma_live_style_metric_labels_are_projected(self):
+        payload = (
+            "# TYPE monitor_status gauge\n"
+            'monitor_status{monitor_name="device",monitor_type="port",'
+            'monitor_hostname="192.0.2.10",monitor_port="1080",'
+            'monitor_url="https://"} 1\n'
+            'monitor_status{monitor_name="worker",monitor_type="docker",'
+            'monitor_hostname="null",monitor_port="null",monitor_url="https://"} 1\n'
+        )
+        port, docker = adapter.kuma_rows(payload)
+        self.assertEqual(port["target_host"], "192.0.2.10")
+        self.assertEqual(port["target_port"], 1080)
+        self.assertEqual(port["target_scheme"], "tcp")
+        self.assertIsNone(docker["target_host"])
+        self.assertIsNone(docker["target_port"])
+        self.assertIsNone(docker["target_scheme"])
+
+    def test_kuma_monitor_type_ignores_unused_url(self):
+        for kind, host, port, expected in (
+            ("port", "192.0.2.10", "1080", ("192.0.2.10", 1080, "tcp")),
+            ("port", "example.invalid", "53", ("example.invalid", 53, "tcp")),
+            ("ping", "192.0.2.10", "443", ("192.0.2.10", None, None)),
+            ("docker", "null", "null", (None, None, None)),
+            ("group", "null", "null", (None, None, None)),
+            ("push", "null", "null", (None, None, None)),
+            ("port", "null", "443", (None, None, None)),
+            ("http", "null", "null", (None, None, None)),
+        ):
+            with self.subTest(kind=kind, host=host):
+                self.assertEqual(
+                    adapter.target(
+                        {
+                            "monitor_type": kind,
+                            "monitor_hostname": host,
+                            "monitor_port": port,
+                            "monitor_url": "https://",
+                        }
+                    ),
+                    expected,
+                )
+
     def test_fixed_requests_reject_redirects(self):
         with patch.object(adapter.http.client, "HTTPConnection") as connection:
             response = connection.return_value.getresponse.return_value

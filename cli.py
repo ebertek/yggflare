@@ -77,6 +77,7 @@ def main(argv=None):
             "stacks",
             "deployments",
             "monitors",
+            "devices",
             "coverage",
             "results",
             "refresh",
@@ -93,6 +94,10 @@ def main(argv=None):
         help="Manual Cloudflare plan limit; 0 (default) means all validated actions",
     )
     parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--limit", type=int, help="Page size (1-50)")
+    parser.add_argument(
+        "--all", action="store_true", help="Read every page of a stable result set"
+    )
     parser.add_argument("--project", default="")
     parser.add_argument("--snapshot-id", default="")
     args = parser.parse_args(argv)
@@ -112,6 +117,8 @@ def main(argv=None):
                 offset=args.offset,
                 project=args.project,
                 snapshot_id=args.snapshot_id,
+                limit=args.limit,
+                all_pages=args.all,
             )
         except ValueError as error:
             parser.error(str(error))
@@ -121,8 +128,14 @@ def main(argv=None):
             else cli_text(result)
         )
         return 0
-    if args.offset or args.project or args.snapshot_id:
-        parser.error("--offset and --project require a read-only operator view")
+    if (
+        args.offset
+        or args.project
+        or args.snapshot_id
+        or args.limit is not None
+        or args.all
+    ):
+        parser.error("Pagination and project options require a read-only operator view")
     if (
         args.component in {"traefik", "komodo", "kuma", "probes"}
         and args.operation == "refresh"

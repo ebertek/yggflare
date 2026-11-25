@@ -507,6 +507,47 @@ class DiscoveryCoverageTests(unittest.TestCase):
 
 
 class MonitorCorrelationTests(unittest.TestCase):
+    def test_docker_name_ambiguity_and_network_address_candidates(self):
+        services = [
+            {"project": "a", "service": "worker", "container_name": "worker"},
+            {"project": "b", "service": "worker", "container_name": "worker"},
+        ]
+        devices = [
+            {
+                "hostname": "device.invalid",
+                "ipv4": "192.0.2.10",
+                "observed_ports": ["tcp/1080"],
+            },
+            {"hostname": "other.invalid", "ipv4": "192.0.2.11"},
+        ]
+        monitors = [
+            {"name": "worker", "monitor_type": "docker", "target_port": 443},
+            {"name": "worker", "monitor_type": "group"},
+            {
+                "name": "device",
+                "monitor_type": "port",
+                "target_host": "192.0.2.10",
+                "target_port": 1080,
+                "target_scheme": "tcp",
+            },
+        ]
+        tools = InventoryTools(lambda: {"hosts": devices}, lambda: {"items": services})
+        with patch(
+            "mcp_server.saved_integration",
+            return_value={"available": True, "fresh": True, "items": monitors},
+        ):
+            coverage = tools.get_monitoring_coverage(project_name="a")
+            match = coverage["items"][0]["monitor_matches"][0]
+            self.assertEqual(match["service_candidates"], ["a/worker", "b/worker"])
+            self.assertTrue(match["ambiguous_service_identity"])
+            self.assertIsNone(match["target_port"])
+            self.assertEqual(coverage["items"][0]["matching_monitor_count"], 1)
+            coverage = tools.get_monitoring_coverage(scope="devices")
+            match = coverage["items"][0]["monitor_matches"][0]
+            self.assertTrue(match["target_port_observed"])
+            self.assertEqual(match["device_candidates"], ["device.invalid"])
+            self.assertEqual(coverage["items"][1]["matching_monitor_count"], 0)
+
     def test_exact_internal_alias_address_and_shared_port_evidence(self):
         services = [
             {
