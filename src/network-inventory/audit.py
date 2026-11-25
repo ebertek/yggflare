@@ -552,7 +552,16 @@ def main():
         ignored,
     )
     try:
-        lifecycle = update_findings(previous, reported, advertisements, inventory, hosts, ignored, now, dns_sd_complete)
+        lifecycle = update_findings(
+            previous,
+            reported,
+            advertisements,
+            inventory,
+            hosts,
+            ignored,
+            now,
+            dns_sd_complete,
+        )
     except (ValueError, TypeError, KeyError, AttributeError):
         progress("Finding history unavailable; existing alert policy unchanged")
         lifecycle = {"version": 1, "available": False}

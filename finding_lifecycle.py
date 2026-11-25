@@ -182,6 +182,10 @@ def update(
 
 def rows(state):
     value = state.get("finding_lifecycle", {})
-    if not isinstance(value, dict) or value.get("version") != 1 or value.get("available") is False:
+    if (
+        not isinstance(value, dict)
+        or value.get("version") != 1
+        or value.get("available") is False
+    ):
         return None
     return value

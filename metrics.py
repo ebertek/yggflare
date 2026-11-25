@@ -8,7 +8,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from finding_lifecycle import STATES as FINDING_STATES, rows as finding_rows
+from finding_lifecycle import STATES as FINDING_STATES
+from finding_lifecycle import rows as finding_rows
 from integration_inventory import ADAPTERS
 from integration_inventory import saved as saved_integration
 from job_status import JOBS, read_jobs
@@ -228,11 +229,33 @@ def render(config, data, now=None):
         ),
     ]
     history = finding_rows(scan)
-    values.append(("yggflare_finding_history_available", "Structured finding lifecycle is available", history is not None))
+    values.append(
+        (
+            "yggflare_finding_history_available",
+            "Structured finding lifecycle is available",
+            history is not None,
+        )
+    )
     if history is not None:
-        values.append(("yggflare_finding_history_truncated", "Finding history has exceeded retention", history.get("truncated")))
+        values.append(
+            (
+                "yggflare_finding_history_truncated",
+                "Finding history has exceeded retention",
+                history.get("truncated"),
+            )
+        )
         for state in FINDING_STATES:
-            values.append((f"yggflare_finding_history_{state}", "Retained findings with this historical observation status", sum(row.get("status") == state for row in history.get("items", []) if isinstance(row, dict))))
+            values.append(
+                (
+                    f"yggflare_finding_history_{state}",
+                    "Retained findings with this historical observation status",
+                    sum(
+                        row.get("status") == state
+                        for row in history.get("items", [])
+                        if isinstance(row, dict)
+                    ),
+                )
+            )
     job_document = read_jobs(Path(data))
     values.append(
         (
