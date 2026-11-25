@@ -745,6 +745,31 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     row = tool.output_schema["$defs"][row["$ref"].rsplit("/", 1)[-1]]
                 self.assertTrue(row.get("properties"), tool.name)
 
+    async def test_every_tool_returns_safe_structured_fixture_evidence(self):
+        data = fixture()
+        before = deepcopy(data)
+        arguments = {
+            "get_device": {"identifier": "example.invalid"},
+            "get_docker_service": {"identifier": "example.invalid"},
+            "get_service_dependencies": {"identifier": "example.invalid"},
+            "get_ingress_path": {"hostname": "example.invalid"},
+            "get_ingress_evidence": {"hostname": "example.invalid"},
+            "get_service_exposure": {"identifier": "example.internal"},
+        }
+        async with Client(
+            build_server(lambda: data, env={}), raise_exceptions=True
+        ) as client:
+            for name in TOOL_NAMES:
+                with self.subTest(tool=name):
+                    result = await client.call_tool(name, arguments.get(name, {}))
+                    self.assertFalse(result.is_error, name)
+                    self.assertIsInstance(result.structured_content, dict, name)
+                    for private in (
+                        "never-export", "private notes", "private-app-id", "private-dns-id"
+                    ):
+                        self.assertNotIn(private, str(result.structured_content), name)
+        self.assertEqual(data, before)
+
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
         async with Client(server, raise_exceptions=True) as client:
