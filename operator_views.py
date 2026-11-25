@@ -68,6 +68,7 @@ VIEWS = {
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
         "evidence": ("Source evidence quality", "get_evidence_overview", ""),
+        "discovery": ("Discovery coverage", "get_discovery_status", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
         "history": ("Job history", "get_job_history", "job"),
         "backup": ("Backup evidence", "get_backup_status", ""),
@@ -77,6 +78,7 @@ VIEWS = {
 UNPAGED = {
     "get_yggflare_health",
     "get_evidence_overview",
+    "get_discovery_status",
     "get_job_status",
     "get_backup_status",
     "get_notification_status",
@@ -95,6 +97,7 @@ CLI_VIEWS = {
     ("cloudflare", "tunnel"): ("assurance", "tunnel"),
     ("system", "status"): ("operations", "health"),
     ("system", "evidence"): ("operations", "evidence"),
+    ("network", "coverage"): ("operations", "discovery"),
     ("system", "jobs"): ("operations", "jobs"),
     ("system", "history"): ("operations", "history"),
     ("backup", "status"): ("operations", "backup"),

@@ -440,6 +440,37 @@ class InventoryToolTests(unittest.TestCase):
             self.assertIsNone(ingress["traefik_runtime_verified"])
 
 
+class DiscoveryCoverageTests(unittest.TestCase):
+    def test_old_offline_and_live_coverage(self):
+        state = {}
+        tools = InventoryTools(lambda: {"network_state": state})
+        self.assertFalse(tools.get_discovery_status()["scan_coverage"]["available"])
+        state["scan_coverage"] = {"version": 1, "mode": "offline"}
+        self.assertFalse(tools.get_discovery_status()["scan_coverage"]["available"])
+        state["scan_coverage"] = {
+            "version": 1,
+            "mode": "live",
+            "observed_at": "2026-01-01T00:00:00+00:00",
+            "host_discovery": {"run_completed": True, "secret": "never-export"},
+            "tcp": {
+                "requested_target_count": 3,
+                "omitted_target_count": 1,
+                "run_completed": True,
+            },
+            "dns_sd": {"status": "empty_browse", "observation_count": 0},
+        }
+        result = tools.get_discovery_status()["scan_coverage"]
+        self.assertTrue(result["available"])
+        self.assertEqual(result["tcp"]["omitted_target_count"], 1)
+        self.assertNotIn("never-export", str(result))
+        row = next(
+            item
+            for item in tools.get_evidence_overview()["items"]
+            if item["source"] == "network_ipv4"
+        )
+        self.assertEqual(row["completeness"], "incomplete")
+
+
 class CrossSourceTests(unittest.TestCase):
     def test_exact_matches_and_source_metadata(self):
         tools = InventoryTools(
@@ -668,6 +699,16 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 result = await client.call_tool("list_probe_results", {})
                 self.assertFalse(result.is_error)
                 self.assertEqual(result.structured_content["items"], [observed])
+
+    async def test_remaining_paged_tools_publish_row_fields(self):
+        async with Client(build_server(fixture), raise_exceptions=True) as client:
+            for tool in (await client.list_tools()).tools:
+                if "offset" not in tool.input_schema.get("properties", {}):
+                    continue
+                row = tool.output_schema["properties"]["items"]["items"]
+                if "$ref" in row:
+                    row = tool.output_schema["$defs"][row["$ref"].rsplit("/", 1)[-1]]
+                self.assertTrue(row.get("properties"), tool.name)
 
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)

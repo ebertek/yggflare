@@ -105,9 +105,13 @@ class NetworkAuditTests(unittest.TestCase):
             patch.object(audit, "docker_ips", return_value=set()),
             patch.object(audit, "top_tcp_ports", return_value={443, 9999}),
         ):
+            coverage = {}
             hosts, advertisements, complete = audit.scan(
-                inventory, timeout=900, do_dns_sd=False
+                inventory, timeout=900, do_dns_sd=False, coverage=coverage
             )
+            self.assertEqual(coverage["tcp"]["requested_target_count"], 1)
+            self.assertEqual(coverage["tcp"]["represented_target_count"], 1)
+            self.assertEqual(coverage["dns_sd"]["status"], "disabled")
         self.assertEqual(len(commands), 2)
         self.assertEqual(hosts["10.4.20.33"]["ports"], ["tcp/443", "tcp/62078"])
         self.assertEqual(
@@ -115,6 +119,22 @@ class NetworkAuditTests(unittest.TestCase):
         )
         self.assertEqual(advertisements, [])
         self.assertFalse(complete)
+
+    def test_nmap_coverage_does_not_infer_absence_or_timeout(self):
+        xml = (
+            '<nmaprun><host><status state="up"/>'
+            '<address addr="10.4.20.33" addrtype="ipv4"/><ports/>'
+            '</host><host timedout="true"><address addr="10.4.20.34" addrtype="ipv4"/>'
+            '</host><runstats><finished exit="success"/><hosts total="3"/></runstats></nmaprun>'
+        )
+        coverage = audit.nmap_coverage(xml, ["10.4.20.33", "10.4.20.34", "10.4.20.35"])
+        self.assertTrue(coverage["run_completed"])
+        self.assertEqual(coverage["requested_target_count"], 3)
+        self.assertEqual(coverage["represented_target_count"], 2)
+        self.assertEqual(coverage["explicit_timeout_count"], 1)
+        self.assertEqual(coverage["omitted_target_count"], 1)
+        self.assertEqual(coverage["port_evidence_target_count"], 1)
+        self.assertIsNone(audit.nmap_coverage("<nmaprun/>")["run_completed"])
 
     def test_no_tcp_targets_does_not_load_service_database(self):
         with (

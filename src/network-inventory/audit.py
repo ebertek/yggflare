@@ -273,19 +273,72 @@ def load_inventory(path):
     return known
 
 
-def scan(inventory, timeout, do_dns_sd=True):
+def nmap_coverage(xml, targets=None):
+    """Summarize positive XML evidence without assuming omitted hosts were scanned."""
+    root = ET.fromstring(xml)
+    finished = root.find("./runstats/finished")
+    exit_status = finished.get("exit") if finished is not None else None
+    stats = root.find("./runstats/hosts")
+    total = None
+    if stats is not None and str(stats.get("total", "")).isdecimal():
+        total = int(stats.get("total"))
+    result = {
+        "run_completed": (
+            True
+            if exit_status == "success"
+            else False if exit_status == "error" else None
+        ),
+        "reported_target_count": total,
+    }
+    if targets is None:
+        return result
+    expected = set(targets)
+    represented, timed_out, port_evidence = set(), set(), set()
+    for host in root.findall("host"):
+        addresses = {
+            item.get("addr")
+            for item in host.findall("address")
+            if item.get("addrtype") == "ipv4"
+        } & expected
+        represented.update(addresses)
+        if host.get("timedout") == "true":
+            timed_out.update(addresses)
+        elif host.find("ports") is not None:
+            port_evidence.update(addresses)
+    result.update(
+        requested_target_count=len(expected),
+        represented_target_count=len(represented),
+        omitted_target_count=len(expected - represented),
+        explicit_timeout_count=len(timed_out),
+        port_evidence_target_count=len(port_evidence - timed_out),
+    )
+    # --open may omit hosts without open ports, and Nmap may omit timed-out
+    # hosts entirely. Never infer timeout, port closure or offline from omission.
+    return result
+
+
+def scan(inventory, timeout, do_dns_sd=True, *, coverage=None):
     """Discover the LAN first, then TCP scan responsive and inventory addresses."""
     with phase("IPv4 host discovery"):
         discovery = run_command(
             ["nmap", "-sn", "-PR", "-n", "-oX", "-", str(NETWORK)], timeout
         )
     hosts = parse_nmap_xml(discovery)
+    if coverage is not None:
+        coverage.update(mode="live", host_discovery=nmap_coverage(discovery))
     # Scan live hosts only; exclude observed Docker containers but not the
     # entire .21 allocation (real appliances may have addresses there).
     with phase("Docker address exclusion"):
         ignored = docker_ips()
     targets = sorted(set(hosts) - ignored, key=ipaddress.ip_address)
     progress(f"Found {len(hosts)} IPv4 hosts; {len(targets)} targets for TCP probes")
+    if coverage is not None:
+        coverage["tcp"] = {
+            "requested_target_count": len(targets),
+            "selected_port_count": 0,
+            "run_completed": None,
+        }
+        coverage["docker_excluded_count"] = len(set(hosts) & ignored)
     if targets:
         recorded_tcp = {
             int(item.split("/")[1])
@@ -317,20 +370,34 @@ def scan(inventory, timeout, do_dns_sd=True):
             with phase(
                 f"IPv4 combined TCP scan ({len(targets)} hosts; {len(ports)} ports)"
             ):
-                checked = parse_nmap_xml(run_command(args, timeout))
+                scanned_xml = run_command(args, timeout)
+                checked = parse_nmap_xml(scanned_xml)
+                if coverage is not None:
+                    coverage["tcp"] = {
+                        **nmap_coverage(scanned_xml, targets),
+                        "selected_port_count": len(ports),
+                    }
         for ip in targets:
             hosts[ip]["ports"] = checked.get(ip, {}).get("ports", [])
             hosts[ip]["services"] = checked.get(ip, {}).get("services", {})
     advertised = []
+    dns_status = "disabled"
     if do_dns_sd:
         try:
             with phase("DNS-SD Avahi browse"):
                 advertised = parse_avahi(
                     run_command(["avahi-browse", "-a", "-r", "-p", "-t"], 90)
                 )
+                dns_status = "observations_returned" if advertised else "empty_browse"
         except (FileNotFoundError, subprocess.TimeoutExpired, RuntimeError):
             # Absence of Avahi must not imply that a service was withdrawn.
             advertised = []
+            dns_status = "failed"
+    if coverage is not None:
+        coverage["dns_sd"] = {
+            "status": dns_status,
+            "observation_count": len(advertised),
+        }
     return hosts, advertised, do_dns_sd and bool(advertised)
 
 
@@ -484,6 +551,7 @@ def main():
         parser.error("--timeout must be between 30 and 3600")
     inventory = load_inventory(args.inventory)
     scan_started = time.monotonic()
+    coverage = {"version": 1, "mode": "offline"}
     if args.discovery_xml:
         hosts = parse_nmap_xml(args.discovery_xml.read_text(encoding="utf-8"))
         advertised = (
@@ -494,7 +562,7 @@ def main():
         dns_sd_complete = bool(args.dns_sd_file)
     else:
         hosts, advertised, dns_sd_complete = scan(
-            inventory, args.timeout, not args.no_dns_sd
+            inventory, args.timeout, not args.no_dns_sd, coverage=coverage
         )
     ignored = docker_ips() if not args.discovery_xml else set()
     state_file = args.state_dir / "state.json"
@@ -568,6 +636,7 @@ def main():
     snapshot = {
         **identity,
         "supplemental": supplemental,
+        "scan_coverage": {**coverage, "observed_at": now},
         "alert_state": alert_state,
         "alert_pending_confirmations": pending_confirmation,
         "version": 1,
