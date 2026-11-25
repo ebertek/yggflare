@@ -7,13 +7,16 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from finding_lifecycle import STATES as FINDING_STATES
+from finding_lifecycle import rows as finding_rows
 from integration_inventory import FIELDS as INTEGRATION_FIELDS
 from integration_inventory import saved as saved_integration
 from job_status import JOBS, artifact_status, backup_checks
@@ -149,6 +152,82 @@ def cloudflare_context(data):
             "status, not evidence of configuration drift. Unmanaged does not "
             "establish unsafe exposure."
         ),
+    }
+
+
+class EvidenceSource(TypedDict):
+    source: str
+    configured: bool | None
+    available: bool
+    observed_at: str | None
+    last_attempt_at: str | None
+    age_seconds: float | None
+    freshness: str
+    collection_status: str
+    completeness: str
+    caveat: str
+
+
+class EvidenceOverview(TypedDict):
+    schema_version: int
+    evaluated_at: str
+    items: list[EvidenceSource]
+
+
+def evidence_source(
+    source,
+    *,
+    configured,
+    available,
+    observed_at=None,
+    attempted_at=None,
+    verified=None,
+    complete=None,
+    max_age=900,
+    now=None,
+    caveat="",
+):
+    now = now or datetime.now(UTC)
+    age = None
+    try:
+        if observed_at:
+            value = datetime.fromisoformat(observed_at)
+            if value.tzinfo is not None:
+                age = (now - value).total_seconds()
+    except (TypeError, ValueError):
+        pass
+    freshness = (
+        "unavailable"
+        if not available
+        else (
+            "unknown"
+            if age is None or age < 0
+            else "stale" if age > max_age else "fresh"
+        )
+    )
+    return {
+        "source": source,
+        "configured": configured,
+        "available": bool(available),
+        "observed_at": observed_at or None,
+        "last_attempt_at": attempted_at or None,
+        "age_seconds": round(age, 1) if age is not None and age >= 0 else None,
+        "freshness": freshness,
+        "collection_status": (
+            "not_configured"
+            if configured is False
+            else (
+                "verified"
+                if verified is True
+                else "unverified" if verified is False else "unknown"
+            )
+        ),
+        "completeness": (
+            "complete_within_reported_scope"
+            if complete is True
+            else "incomplete" if complete is False else "unknown"
+        ),
+        "caveat": caveat,
     }
 
 
@@ -667,6 +746,87 @@ class InventoryTools:
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
+    def list_finding_history(
+        self,
+        query: str = "",
+        status: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> dict[str, Any]:
+        """Read structured finding lifecycle; disappearance is not proof of resolution."""
+        if status and status not in FINDING_STATES:
+            raise ValueError("Unknown finding status")
+        data = self.loader()
+        history = finding_rows(data.get("network_state", {}))
+        needle = query.strip().casefold()
+        fields = (
+            "finding_id",
+            "kind",
+            "address",
+            "mac",
+            "hostname",
+            "service",
+            "status",
+            "first_seen",
+            "first_seen_lower_bound",
+            "last_seen",
+            "status_changed_at",
+            "observation_count",
+            "reappearance_count",
+        )
+        items = [
+            project(row, fields)
+            for row in (history or {}).get("items", [])
+            if (not status or row.get("status") == status)
+            and (
+                not needle
+                or any(
+                    needle in str(row.get(key) or "").casefold()
+                    for key in (
+                        "finding_id",
+                        "kind",
+                        "address",
+                        "mac",
+                        "hostname",
+                        "service",
+                    )
+                )
+            )
+        ]
+        return {
+            **snapshot_context(data),
+            "available": history is not None,
+            "observed_at": (history or {}).get("observed_at"),
+            "history_truncated": (history or {}).get("truncated"),
+            "active_total": (history or {}).get("active_total"),
+            "caveat": "History starts at first retained observation; a missing finding is not proof of repair or service closure. Inventory match means a positive observation agrees with current declaration.",
+            **page(items, offset, limit, snapshot_id),
+        }
+
+    def list_finding_transitions(
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> dict[str, Any]:
+        """Page bounded lifecycle transitions; no changes to alerts or inventory."""
+        data = self.loader()
+        history = finding_rows(data.get("network_state", {}))
+        needle = query.strip().casefold()
+        items = [
+            project(
+                row, ("finding_id", "kind", "from_status", "to_status", "observed_at")
+            )
+            for row in reversed((history or {}).get("transitions", []))
+            if not needle
+            or needle in str(row.get("finding_id", "")).casefold()
+            or needle in str(row.get("kind", "")).casefold()
+        ]
+        return {
+            **snapshot_context(data),
+            "available": history is not None,
+            "history_limit": 256,
+            **page(items, offset, limit, snapshot_id),
+        }
+
     def get_pending_network_findings(
         self, offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
@@ -680,6 +840,116 @@ class InventoryTools:
             if isinstance(item, str)
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
+
+    def get_evidence_overview(self) -> EvidenceOverview:
+        """Compare source freshness, collection outcome and completeness without active probes."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        jobs = (data.get("job_status") or {}).get("jobs", {})
+        network = jobs.get("network_scan", {})
+        scanned = state.get("scanned_at") or data.get("scanned_at")
+        verified = (
+            network.get("status") == "succeeded" if network.get("status") else None
+        )
+        supplemental = state.get("supplemental", {})
+        cloud = cloudflare_context(data)
+        view = self.service_loader()
+        now = datetime.now(UTC)
+
+        def row(source, **kwargs):
+            return evidence_source(source, now=now, **kwargs)
+
+        items = [
+            row(
+                "network_ipv4",
+                configured=True,
+                available=bool(scanned),
+                observed_at=scanned,
+                attempted_at=network.get("started_at"),
+                verified=verified,
+                max_age=36 * 3600,
+                caveat="Saved host observations; missing TCP or host responses do not prove absence.",
+            ),
+            row(
+                "dns_sd",
+                configured=None,
+                available=bool(state.get("dns_sd_scanned_at")),
+                observed_at=state.get("dns_sd_scanned_at"),
+                attempted_at=scanned,
+                verified=state.get("dns_sd_complete"),
+                complete=state.get("dns_sd_complete"),
+                max_age=36 * 3600,
+                caveat="A completed browse only reflects received advertisements.",
+            ),
+            row(
+                "supplemental",
+                configured=None,
+                available=bool(supplemental.get("observed_at")),
+                observed_at=supplemental.get("observed_at"),
+                attempted_at=scanned,
+                verified=None,
+                complete=False if supplemental.get("warnings") else None,
+                max_age=36 * 3600,
+                caveat="Warnings indicate partial evidence; zero warnings do not prove all configured collectors ran.",
+            ),
+            row(
+                "cloudflare",
+                configured=True,
+                available=bool(cloud["audited_at"]),
+                observed_at=cloud["audited_at"],
+                attempted_at=cloud["latest_attempt_at"],
+                verified=(
+                    cloud["last_refresh_verified"]
+                    if cloud["latest_attempt_at"]
+                    else None
+                ),
+                max_age=8 * 3600,
+                caveat="Saved audit projection; configuration does not prove reachability or authorization.",
+            ),
+            row(
+                "compose",
+                configured=True,
+                available=bool(view.get("observed_at")),
+                observed_at=view.get("observed_at"),
+                complete=(
+                    False if view.get("truncated") else view.get("compose_complete")
+                ),
+                max_age=120,
+                caveat="Read source only; not all declarations necessarily belong on this host.",
+            ),
+            row(
+                "local_docker",
+                configured=True,
+                available=view.get("runtime_available") is True,
+                observed_at=view.get("observed_at"),
+                verified=view.get("runtime_available"),
+                complete=False if view.get("truncated") else None,
+                max_age=120,
+                caveat="Local engine only; no remote-host or replica completeness guarantee.",
+            ),
+        ]
+        for source, evidence in (
+            ("traefik", saved_traefik(Path("/data"))),
+            ("komodo", saved_integration("komodo", Path("/data"))),
+            ("kuma", saved_integration("kuma", Path("/data"))),
+            ("probes", saved_probes(Path("/data"))),
+        ):
+            items.append(
+                row(
+                    source,
+                    configured=evidence.get("configured"),
+                    available=evidence.get("available", False),
+                    observed_at=evidence.get("observed_at"),
+                    attempted_at=evidence.get("last_attempt_at"),
+                    verified=(
+                        evidence.get("last_refresh_verified")
+                        if evidence.get("last_attempt_at")
+                        else None
+                    ),
+                    caveat="Saved bounded observation; visibility and health are not implied by successful collection.",
+                )
+            )
+        return {"schema_version": 1, "evaluated_at": now.isoformat(), "items": items}
 
     def get_yggflare_health(self) -> dict[str, Any]:
         """Read controller heartbeat, build identity and saved snapshot context."""
@@ -1281,7 +1551,10 @@ TOOL_NAMES = (
     "list_network_services",
     "get_pending_network_findings",
     "get_network_findings",
+    "list_finding_history",
+    "list_finding_transitions",
     "get_yggflare_health",
+    "get_evidence_overview",
     "get_job_status",
     "get_job_history",
     "get_backup_status",
@@ -1323,6 +1596,8 @@ GROUPS = {
         "list_network_services",
         "get_pending_network_findings",
         "get_network_findings",
+        "list_finding_history",
+        "list_finding_transitions",
         "list_docker_services",
         "get_docker_service",
         "get_compose_drift",
@@ -1362,6 +1637,7 @@ REQUIRED_GROUPS = {name: {group} for group, names in GROUPS.items() for name in 
 REQUIRED_GROUPS.update(
     {
         "get_inventory_status": {"inventory", "cloudflare"},
+        "get_evidence_overview": set(GROUPS),
         "get_yggflare_health": {"inventory", "cloudflare", "operations"},
         "get_service_exposure": {"inventory", "cloudflare"},
         "get_ingress_path": {"inventory", "cloudflare", "traefik"},
@@ -1370,6 +1646,7 @@ REQUIRED_GROUPS.update(
 )
 RESOURCE_METHODS = {
     "inventory": "get_inventory_status",
+    "evidence": "get_evidence_overview",
     "operations": "get_yggflare_health",
     "jobs": "get_job_status",
     "discovery": "get_discovery_status",

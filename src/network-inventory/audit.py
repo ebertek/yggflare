@@ -26,6 +26,7 @@ from discord_format import render
 from link_discovery import collect as collect_links
 
 from discord_webhook import validate_webhook_url
+from finding_lifecycle import update as update_findings
 
 NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
 DEFAULT_PORTS = (
@@ -550,6 +551,20 @@ def main():
         now,
         ignored,
     )
+    try:
+        lifecycle = update_findings(
+            previous,
+            reported,
+            advertisements,
+            inventory,
+            hosts,
+            ignored,
+            now,
+            dns_sd_complete,
+        )
+    except (ValueError, TypeError, KeyError, AttributeError):
+        progress("Finding history unavailable; existing alert policy unchanged")
+        lifecycle = {"version": 1, "available": False}
     snapshot = {
         **identity,
         "supplemental": supplemental,
@@ -560,6 +575,7 @@ def main():
         "scanned_at": now,
         "scan_duration_seconds": round(time.monotonic() - scan_started, 3),
         "reported": reported,
+        "finding_lifecycle": lifecycle,
         "advertisements": advertisements,
         "hosts": hosts,
         "discovered_hosts": len(hosts),

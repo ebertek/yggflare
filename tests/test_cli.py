@@ -147,6 +147,21 @@ class CommandTests(unittest.TestCase):
                 check=False,
             )
 
+    def test_finding_pagination_rejects_changed_snapshot(self):
+        with (
+            patch("mcp_server.InventoryTools") as tools,
+            patch.object(cli.subprocess, "run") as run,
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as error,
+        ):
+            tools.return_value.list_finding_history.return_value = {
+                "items": [],
+                "snapshot_id": "new",
+            }
+            cli.main(["network", "findings", "--offset", "50", "--snapshot-id", "old"])
+        self.assertEqual(error.exception.code, 2)
+        run.assert_not_called()
+
     def test_probe_results_and_refresh_are_separate(self):
         with (
             patch(

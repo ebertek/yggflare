@@ -447,12 +447,41 @@ docker exec yggflare yggflare probes results
 
 The Web UI Probes tab, aggregate metrics and MCP read saved evidence only.
 
+### Finding lifecycle and evidence quality
+
+The Findings tab and `yggflare network findings` / `network transitions`
+read structured history from the saved network scan. Stable IDs are derived
+from finding identity, not the notification text. History begins with the
+first post-upgrade observation; legacy first-seen dates are not invented.
+At most 1,024 findings and 256 transitions are retained; active observations
+are prioritized, and truncation is reported. A failed browse does not
+advance DNS-SD last-seen timestamps. Missing observations are not proof of
+repair; an inventory match requires positive matching observation against
+the current declaration. These presentation records never control alerts.
+
+The Operations tab's Source evidence quality view and
+`yggflare system evidence --json` distinguish freshness, last collection
+verification, completeness and availability. Freshness thresholds reflect
+the expected schedule, not guaranteed execution. Optional collectors now
+also appear in scheduler history. New aggregate metrics describe finding
+history and optional job outcomes.
+
+```sh
+docker exec yggflare yggflare network findings --json
+docker exec yggflare yggflare network transitions --json
+docker exec yggflare yggflare system evidence --json
+```
+
+Web pagination links carry the previous result-set fingerprint. CLI users
+may pass `--snapshot-id` with `--offset` to reject changed result sets.
+This fingerprint is not a frozen server-side snapshot or source timestamp.
+
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same forty-four read-only tools. HTTP is disabled by default.
+use the same forty-seven read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -543,6 +572,9 @@ in the repository.
 | `get_monitoring_coverage` | Candidate exact host matches, not verified per-service coverage |
 | `get_probe_status` | Independent probe snapshot status |
 | `list_probe_results` | Saved scoped DNS/TCP/TLS/HTTP outcomes |
+| `list_finding_history` | Retained structured observations and lifecycle status |
+| `list_finding_transitions` | Bounded historical status transitions |
+| `get_evidence_overview` | Typed source freshness, availability and completeness |
 
 Service topology uses a separate 30-second sanitized cache. It includes host
 and bridge-only declarations without inventing LAN addresses. Local Docker

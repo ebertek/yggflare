@@ -393,7 +393,8 @@ def run_scheduler(listener=None):
             and time.monotonic() >= next_traefik
         ):
             try:
-                run([sys.executable, "/app/traefik_inventory.py"])
+                with tracked("traefik"):
+                    run([sys.executable, "/app/traefik_inventory.py"])
             except Exception:
                 log(
                     "warning",
@@ -407,7 +408,8 @@ def run_scheduler(listener=None):
                 and time.monotonic() >= next_integration[adapter]
             ):
                 try:
-                    run([sys.executable, "/app/integration_inventory.py", adapter])
+                    with tracked(adapter):
+                        run([sys.executable, "/app/integration_inventory.py", adapter])
                 except Exception:
                     log(
                         "warning",
@@ -420,7 +422,8 @@ def run_scheduler(listener=None):
             and time.monotonic() >= next_probe
         ):
             try:
-                run([sys.executable, "/app/probe_inventory.py"])
+                with tracked("probes"):
+                    run([sys.executable, "/app/probe_inventory.py"])
             except Exception:
                 log(
                     "warning",

@@ -107,6 +107,10 @@ Prometheus `/metrics` is opt-in via `YGGFLARE_METRICS_ENABLED=true` and is serve
 - A complete collection is not proof that all resources are visible, all checks passed, or the endpoint is reachable externally. Keep the most recent successful collection on failed refresh; never report an unavailable source as an empty healthy inventory.
 - MCP group restrictions control registered tools, resources and prompts for one server process, not per-principal RBAC. Cross-source queries require all relevant groups. Keep local CLI and Web UI authorization separate from MCP. Log only fixed operation names, elapsed time and outcomes, never query arguments or payloads.
 
+## Finding lifecycle and evidence
+
+Structured finding history is presentation-only and must not alter alert suppression, delivery, inventory or reconciliation. Missing observations are never proof of resolution; require positive evidence for an inventory match. Preserve incomplete sources, explicitly bound retention and do not fabricate pre-upgrade history. Keep source availability, collection outcome, freshness and coverage independent. Treat snapshot IDs as filtered result-set fingerprints, not frozen snapshots.
+
 ## Operator interface parity
 
 New evidence collectors and assurance features must have a shared sanitized query layer and be available through the read-only Web UI, operator CLI and MCP where applicable. Keep explicit action commands separate from evidence views; rendering, JSON output and MCP requests must not trigger network collectors, reconciliation or mutations. Document commands and views, and test all three interfaces. Do not expose raw adapter payloads, credentials, untrusted HTML or terminal control characters.

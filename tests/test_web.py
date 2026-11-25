@@ -115,6 +115,15 @@ class WebTests(unittest.TestCase):
                 "Kuma exported monitors", web.render("kuma", {}, {"view": ["monitors"]})
             )
 
+    def test_finding_pagination_rejects_changed_snapshot(self):
+        html = web.render(
+            "findings",
+            {"network_state": {}},
+            {"offset": ["50"], "snapshot_id": ["old"]},
+        )
+        self.assertIn("Result set changed", html)
+        self.assertIn("restart pagination", html)
+
     def test_probe_view_uses_saved_projection(self):
         with patch(
             "mcp_server.saved_probes",

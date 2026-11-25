@@ -64,8 +64,11 @@ def main(argv=None):
             "access",
             "tunnel",
             "jobs",
+            "evidence",
             "history",
             "notifications",
+            "findings",
+            "transitions",
             "routes",
             "services",
             "middlewares",
@@ -90,6 +93,7 @@ def main(argv=None):
     )
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--project", default="")
+    parser.add_argument("--snapshot-id", default="")
     args = parser.parse_args(argv)
     from operator_views import CLI_VIEWS, cli_text, query
 
@@ -106,6 +110,7 @@ def main(argv=None):
                 value=args.argument or "",
                 offset=args.offset,
                 project=args.project,
+                snapshot_id=args.snapshot_id,
             )
         except ValueError as error:
             parser.error(str(error))
@@ -115,7 +120,7 @@ def main(argv=None):
             else cli_text(result)
         )
         return 0
-    if args.offset or args.project:
+    if args.offset or args.project or args.snapshot_id:
         parser.error("--offset and --project require a read-only operator view")
     if (
         args.component in {"traefik", "komodo", "kuma", "probes"}
