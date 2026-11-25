@@ -418,6 +418,36 @@ class InventoryToolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.tools.list_docker_services(offset=1, snapshot_id=first["snapshot_id"])
 
+    def test_ingress_filters_literal_hosts_before_pagination(self):
+        rows = [
+            {
+                "kind": "routers",
+                "protocol": "http",
+                "name": f"example.invalid-{i}@docker",
+                "literal_hosts": ["other.invalid"],
+            }
+            for i in range(60)
+        ]
+        rows.append({
+            "kind": "routers",
+            "protocol": "http",
+            "name": "real@docker",
+            "literal_hosts": ["EXAMPLE.INVALID."],
+        })
+        services = [{"project": "core", "service": "demo", "aliases": ["example.invalid"]}]
+        with (
+            patch.object(self.tools, "service_loader", return_value={"items": services}) as load,
+            patch("mcp_server.saved_traefik", return_value={"available": True, "items": rows}),
+        ):
+            result = self.tools.get_ingress_evidence("EXAMPLE.INVALID.")
+        load.assert_called_once()
+        self.assertEqual(result["total"], 1)
+        layer = result["layers"]["traefik"]
+        self.assertEqual(layer["total"], 1)
+        self.assertEqual(layer["items"][0]["name"], "real@docker")
+        self.assertFalse(layer["page_truncated"])
+        self.assertFalse(layer["source_truncated"])
+
     def test_traefik_saved_projection_and_ingress_correlation(self):
         self.tools.service_loader = lambda: {"items": []}
         row = {
@@ -507,6 +537,41 @@ class DiscoveryCoverageTests(unittest.TestCase):
 
 
 class MonitorCorrelationTests(unittest.TestCase):
+    def test_device_port_evidence_distinguishes_selection_from_observation(self):
+        from mcp_server import device_port_evidence
+
+        stamp = "2026-11-25T09:00:00Z"
+        data = {"network_state": {
+            "scanned_at": stamp,
+            "scan_coverage": {
+                "version": 1, "mode": "live", "observed_at": stamp,
+                "tcp": {"selected_port_count": 2, "selected_ports": [22, 443]},
+            },
+        }}
+        device = {
+            "ipv4": "192.0.2.1", "ipv6": "2001:db8::1",
+            "observed_ports": ["tcp/22"], "last_seen": stamp,
+        }
+        for address, port, selected, observed, evidence in (
+            ("192.0.2.1", 22, True, True, "observed_open"),
+            ("192.0.2.1", 443, True, None, "selected_not_observed"),
+            ("192.0.2.1", 38050, False, None, "not_selected_in_primary_scan"),
+            ("2001:db8::1", 22, None, None, "unknown"),
+        ):
+            with self.subTest(address=address, port=port):
+                match = device_port_evidence(
+                    data, device, address, {"target_port": port, "target_scheme": "tcp"}
+                )
+                self.assertIs(match["target_port_selected"], selected)
+                self.assertIs(match["target_port_observed"], observed)
+                self.assertEqual(match["target_port_evidence"], evidence)
+        data["network_state"]["scan_coverage"]["tcp"].pop("selected_ports")
+        match = device_port_evidence(
+            data, device, "192.0.2.1", {"target_port": 443, "target_scheme": "tcp"}
+        )
+        self.assertIsNone(match["target_port_selected"])
+        self.assertIsNone(match["target_port_observed"])
+
     def test_docker_name_ambiguity_and_network_address_candidates(self):
         services = [
             {"project": "a", "service": "worker", "container_name": "worker"},

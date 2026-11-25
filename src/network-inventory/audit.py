@@ -336,6 +336,7 @@ def scan(inventory, timeout, do_dns_sd=True, *, coverage=None):
         coverage["tcp"] = {
             "requested_target_count": len(targets),
             "selected_port_count": 0,
+            "selected_ports": [],
             "run_completed": None,
         }
         coverage["docker_excluded_count"] = len(set(hosts) & ignored)
@@ -376,6 +377,7 @@ def scan(inventory, timeout, do_dns_sd=True, *, coverage=None):
                     coverage["tcp"] = {
                         **nmap_coverage(scanned_xml, targets),
                         "selected_port_count": len(ports),
+                        "selected_ports": ports,
                     }
         for ip in targets:
             hosts[ip]["ports"] = checked.get(ip, {}).get("ports", [])

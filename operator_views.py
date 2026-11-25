@@ -232,6 +232,7 @@ def sections(result):
         groups.append((key.capitalize(), layer.get("items", [])))
         context[key + "_total"] = layer.get("total")
         context[key + "_source_truncated"] = layer.get("source_truncated")
+        context[key + "_page_truncated"] = layer.get("page_truncated")
     return context, groups
 
 

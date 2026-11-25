@@ -110,6 +110,10 @@ class NetworkAuditTests(unittest.TestCase):
                 inventory, timeout=900, do_dns_sd=False, coverage=coverage
             )
             self.assertEqual(coverage["tcp"]["requested_target_count"], 1)
+            self.assertEqual(
+                len(coverage["tcp"]["selected_ports"]),
+                coverage["tcp"]["selected_port_count"],
+            )
             self.assertEqual(coverage["tcp"]["represented_target_count"], 1)
             self.assertEqual(coverage["dns_sd"]["status"], "disabled")
         self.assertEqual(len(commands), 2)
