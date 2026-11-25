@@ -56,10 +56,13 @@ class ServiceTests(unittest.TestCase):
             smb_settings({"YGGFLARE_DISCOVERY_MAX_TARGETS": "100"}), (100, 8)
         )
         self.assertEqual(
-            smb_settings({
-                "YGGFLARE_DISCOVERY_SMB_MAX_TARGETS": "200",
-                "YGGFLARE_DISCOVERY_SMB_WORKERS": "4",
-            }), (200, 4)
+            smb_settings(
+                {
+                    "YGGFLARE_DISCOVERY_SMB_MAX_TARGETS": "200",
+                    "YGGFLARE_DISCOVERY_SMB_WORKERS": "4",
+                }
+            ),
+            (200, 4),
         )
         for key, value in (
             ("YGGFLARE_DISCOVERY_SMB_MAX_TARGETS", "0"),
@@ -82,10 +85,16 @@ class ServiceTests(unittest.TestCase):
                 clear=True,
             ),
             patch("service_discovery.shutil.which", return_value="/usr/bin/smbclient"),
-            patch("service_discovery.smb_listing", return_value=("success_empty", [])) as listing,
+            patch(
+                "service_discovery.smb_listing", return_value=("success_empty", [])
+            ) as listing,
         ):
             evidence = collect(
-                ["eth0"], lambda a: True, rows, lambda *a: None, [],
+                ["eth0"],
+                lambda a: True,
+                rows,
+                lambda *a: None,
+                [],
                 observed_ports={row["ip"]: ["tcp/445"] for row in rows},
             )["smb"]
         self.assertEqual(listing.call_count, 200)
@@ -109,8 +118,11 @@ class ServiceTests(unittest.TestCase):
             patch("service_discovery.smb_listing") as listing,
         ):
             evidence = collect(
-                ["eth0"], lambda a: True, [{"ip": "192.0.2.1"}],
-                lambda *a: None, warnings,
+                ["eth0"],
+                lambda a: True,
+                [{"ip": "192.0.2.1"}],
+                lambda *a: None,
+                warnings,
                 observed_ports={"192.0.2.1": ["tcp/445"]},
             )["smb"]
         listing.assert_not_called()

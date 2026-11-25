@@ -27,6 +27,7 @@ SMB_HARD_WORKERS = 16
 
 def smb_settings(env):
     """Validate bounded limits before attempting any SMB enumeration."""
+
     def integer(name, default, maximum):
         try:
             value = int(env.get(name, default))
@@ -199,7 +200,10 @@ def collect(interfaces, allowed, records, add, warnings, observed_ports=None):
         else:
             smb_targets = sorted(
                 smb_candidates,
-                key=lambda ip: ("tcp/445" not in smb_ports[ip], ipaddress.ip_address(ip)),
+                key=lambda ip: (
+                    "tcp/445" not in smb_ports[ip],
+                    ipaddress.ip_address(ip),
+                ),
             )[:smb_limit]
             evidence["smb"].update(
                 target_limit=smb_limit,
@@ -366,7 +370,9 @@ def collect(interfaces, allowed, records, add, warnings, observed_ports=None):
                 row[outcome] += 1
                 if outcome in {"execution_failed", "execution_timeout"}:
                     row["failed"] += 1
-                    warnings.append("SMB: collector execution failed or exceeded bounds")
+                    warnings.append(
+                        "SMB: collector execution failed or exceeded bounds"
+                    )
                 else:
                     row["completed"] += 1
                     if outcome == "remote_timeout":
