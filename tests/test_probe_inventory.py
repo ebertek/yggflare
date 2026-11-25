@@ -145,7 +145,11 @@ class ProbeTests(unittest.TestCase):
         planned = probes.saved(self.root, self.root, ENV)
         self.assertFalse(planned["available"])
         self.assertEqual(len(planned["configured_checks"]), 4)
-        self.assertIsNone(probe_coverage(planned["configured_checks"], [], False, False)["passed_checks"])
+        self.assertIsNone(
+            probe_coverage(planned["configured_checks"], [], False, False)[
+                "passed_checks"
+            ]
+        )
         outcomes = {
             "dns": {"status": "matched", "expected_address_match": True},
             "tcp": {"status": "connected"},
@@ -153,14 +157,22 @@ class ProbeTests(unittest.TestCase):
             "http": {"status": "response_received", "expected_status_match": False},
         }
         probes.refresh(
-            self.root, self.root, ENV,
+            self.root,
+            self.root,
+            ENV,
             lambda target, check: {
-                **{key: target[key] for key in ("target", "hostname", "address", "port", "scheme")},
-                "check": check, **outcomes[check],
+                **{
+                    key: target[key]
+                    for key in ("target", "hostname", "address", "port", "scheme")
+                },
+                "check": check,
+                **outcomes[check],
             },
         )
         snapshot = probes.saved(self.root, self.root, ENV)
-        summary = probe_coverage(snapshot["configured_checks"], snapshot["items"], True, True)
+        summary = probe_coverage(
+            snapshot["configured_checks"], snapshot["items"], True, True
+        )
         self.assertEqual(summary["passed_checks"], 3)
         self.assertEqual(summary["failed_checks"], 1)
         self.assertEqual(summary["configured_checks"], 4)
@@ -176,7 +188,10 @@ class ProbeTests(unittest.TestCase):
             self.root,
             ENV,
             lambda target, check: {
-                **{key: target[key] for key in ("target", "hostname", "address", "port", "scheme")},
+                **{
+                    key: target[key]
+                    for key in ("target", "hostname", "address", "port", "scheme")
+                },
                 "check": check,
                 "status": "check_failed",
             },

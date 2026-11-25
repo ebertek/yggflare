@@ -479,17 +479,25 @@ def render(config, data, now=None):
                     )
             if adapter == "kuma":
                 selection = monitor_port_summary(source["items"], scan, available=True)
-                for key in ("numeric_ipv4_tcp_endpoints", "selected_endpoints", "not_selected_endpoints"):
-                    values.append((
-                        "yggflare_kuma_primary_scan_" + key,
-                        "Distinct numeric IPv4 TCP monitor endpoints by global primary port selection, not reachability",
-                        selection.get(key),
-                    ))
-                values.append((
-                    "yggflare_kuma_primary_scan_selection_available",
-                    "Saved primary IPv4 port selection is available for monitor comparison",
-                    selection["available"],
-                ))
+                for key in (
+                    "numeric_ipv4_tcp_endpoints",
+                    "selected_endpoints",
+                    "not_selected_endpoints",
+                ):
+                    values.append(
+                        (
+                            "yggflare_kuma_primary_scan_" + key,
+                            "Distinct numeric IPv4 TCP monitor endpoints by global primary port selection, not reachability",
+                            selection.get(key),
+                        )
+                    )
+                values.append(
+                    (
+                        "yggflare_kuma_primary_scan_selection_available",
+                        "Saved primary IPv4 port selection is available for monitor comparison",
+                        selection["available"],
+                    )
+                )
                 for state in ("up", "down", "pending", "maintenance", "unknown"):
                     values.append(
                         (
@@ -519,19 +527,32 @@ def render(config, data, now=None):
         ]
     )
     coverage = probe_coverage(
-        probes.get("configured_checks"), probes["items"], probes["available"], probes["fresh"]
+        probes.get("configured_checks"),
+        probes["items"],
+        probes["available"],
+        probes["fresh"],
     )
-    values.append((
-        "yggflare_probe_configuration_available",
-        "Validated local probe configuration is available or explicitly disabled",
-        coverage["configuration_available"],
-    ))
-    for key in ("configured_checks", "observed_checks", "passed_checks", "failed_checks", "inconclusive_checks"):
-        values.append((
-            "yggflare_probe_coverage_" + key,
-            "Configured or saved check outcome count; consult freshness separately",
-            coverage.get(key),
-        ))
+    values.append(
+        (
+            "yggflare_probe_configuration_available",
+            "Validated local probe configuration is available or explicitly disabled",
+            coverage["configuration_available"],
+        )
+    )
+    for key in (
+        "configured_checks",
+        "observed_checks",
+        "passed_checks",
+        "failed_checks",
+        "inconclusive_checks",
+    ):
+        values.append(
+            (
+                "yggflare_probe_coverage_" + key,
+                "Configured or saved check outcome count; consult freshness separately",
+                coverage.get(key),
+            )
+        )
     if probes["available"]:
         values.append(
             (

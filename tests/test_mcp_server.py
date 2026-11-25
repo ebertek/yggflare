@@ -86,11 +86,22 @@ class InventoryToolTests(unittest.TestCase):
     def test_nonfinite_projection_and_cross_group_scopes(self):
         from mcp_server import GROUPS, REQUIRED_GROUPS, enabled_tools, project
 
-        self.assertEqual(project({"number": float("nan")}, ("number",)), {"number": None})
-        self.assertEqual(project({"number": float("inf")}, ("number",)), {"number": None})
+        self.assertEqual(
+            project({"number": float("nan")}, ("number",)), {"number": None}
+        )
+        self.assertEqual(
+            project({"number": float("inf")}, ("number",)), {"number": None}
+        )
         for group in GROUPS:
             enabled = set(enabled_tools({"YGGFLARE_MCP_TOOL_GROUPS": group}))
-            self.assertEqual(enabled, {name for name, required in REQUIRED_GROUPS.items() if required <= {group}})
+            self.assertEqual(
+                enabled,
+                {
+                    name
+                    for name, required in REQUIRED_GROUPS.items()
+                    if required <= {group}
+                },
+            )
             self.assertNotIn("get_ingress_evidence", enabled)
             self.assertNotIn("get_monitoring_coverage", enabled)
         self.assertIn(

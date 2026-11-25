@@ -2455,7 +2455,9 @@ class InventoryTools:
         return {
             **data,
             "configured_checks": checks,
-            "probe_coverage": probe_coverage(checks, rows, data["available"], data["fresh"]),
+            "probe_coverage": probe_coverage(
+                checks, rows, data["available"], data["fresh"]
+            ),
             "check_count": len(rows) if data["available"] else None,
             "caveat": "Independent observations from the Yggflare host only; no external access or authentication proof.",
         }
@@ -2467,7 +2469,9 @@ class InventoryTools:
         data = dict(saved_probes(Path("/data")))
         rows = data.pop("items")
         checks = data.pop("configured_checks", None)
-        data["probe_coverage"] = probe_coverage(checks, rows, data["available"], data["fresh"])
+        data["probe_coverage"] = probe_coverage(
+            checks, rows, data["available"], data["fresh"]
+        )
         needle = query.strip().casefold()
         filtered = [
             project(row, PROBE_FIELDS)
@@ -2613,14 +2617,18 @@ class InventoryTools:
         configured_checks = probes.get("configured_checks")
         matching_checks = (
             [
-                row for row in configured_checks
+                row
+                for row in configured_checks
                 if normalized_monitor_host(row.get("hostname")) == needle
             ]
-            if configured_checks is not None else None
+            if configured_checks is not None
+            else None
         )
         result["probe_coverage"] = probe_coverage(
-            matching_checks, probes.get("items", []),
-            probes.get("available", False), probes.get("fresh", False),
+            matching_checks,
+            probes.get("items", []),
+            probes.get("available", False),
+            probes.get("fresh", False),
         )
         matches = {
             "komodo": [
@@ -2898,10 +2906,16 @@ def guarded(method, name, slots, audit):
         started = time.monotonic()
         outcome = "failed"
         try:
-            if any(isinstance(value, str) and len(value) > MAX_TEXT for value in (*args, *kwargs.values())):
+            if any(
+                isinstance(value, str) and len(value) > MAX_TEXT
+                for value in (*args, *kwargs.values())
+            ):
                 raise ValueError("MCP filter exceeds length limit")
             result = method(*args, **kwargs)
-            if len(json.dumps(result, ensure_ascii=True, allow_nan=False).encode()) > 1024 * 1024:
+            if (
+                len(json.dumps(result, ensure_ascii=True, allow_nan=False).encode())
+                > 1024 * 1024
+            ):
                 raise ValueError("MCP result exceeds response budget; narrow the query")
             outcome = "succeeded"
             return result

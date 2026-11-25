@@ -290,9 +290,14 @@ def saved(data, config=Path("/config"), env=None):
     configured_checks = (
         [
             {
-                **{key: target[key] for key in ("target", "hostname", "address", "port", "scheme")},
+                **{
+                    key: target[key]
+                    for key in ("target", "hostname", "address", "port", "scheme")
+                },
                 "check": check,
-                "expected_http_status_configured": bool(target["expected_statuses"]) if check == "http" else None,
+                "expected_http_status_configured": (
+                    bool(target["expected_statuses"]) if check == "http" else None
+                ),
             }
             for target in targets
             for check in target["checks"]
@@ -315,7 +320,8 @@ def saved(data, config=Path("/config"), env=None):
             available = (
                 len(identities) == len(configured_checks)
                 and len(set(identities)) == len(identities)
-                and set(identities) == {check_identity(row) for row in configured_checks}
+                and set(identities)
+                == {check_identity(row) for row in configured_checks}
             )
         except TypeError:
             available = False

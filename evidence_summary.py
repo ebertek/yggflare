@@ -1,4 +1,5 @@
 """Pure summaries of saved evidence; no active collection."""
+
 import ipaddress
 
 
@@ -58,15 +59,29 @@ def monitor_port_summary(monitors, state, *, available):
 
 
 def check_identity(row):
-    return tuple(row.get(key) for key in ("target", "hostname", "address", "port", "scheme", "check"))
+    return tuple(
+        row.get(key)
+        for key in ("target", "hostname", "address", "port", "scheme", "check")
+    )
 
 
 def probe_outcome(row):
     """A response received and an expected result are distinct."""
     check, status = row.get("check"), row.get("status")
-    if status in {"mismatch", "certificate_invalid", "resolution_failed", "timeout", "connection_refused", "check_failed"}:
+    if status in {
+        "mismatch",
+        "certificate_invalid",
+        "resolution_failed",
+        "timeout",
+        "connection_refused",
+        "check_failed",
+    }:
         return "failed"
-    if check == "dns" and status == "matched" and row.get("expected_address_match") is True:
+    if (
+        check == "dns"
+        and status == "matched"
+        and row.get("expected_address_match") is True
+    ):
         return "passed"
     if check == "tcp" and status == "connected":
         return "passed"
@@ -98,5 +113,7 @@ def probe_coverage(configured_checks, rows, available, fresh):
     matching = [row for row in rows if check_identity(row) in expected]
     result["observed_checks"] = len(matching)
     for outcome in ("passed", "failed", "inconclusive"):
-        result[outcome + "_checks"] = sum(probe_outcome(row) == outcome for row in matching)
+        result[outcome + "_checks"] = sum(
+            probe_outcome(row) == outcome for row in matching
+        )
     return result
