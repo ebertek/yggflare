@@ -49,6 +49,7 @@ class WebTests(unittest.TestCase):
 
     def test_operator_views_escape_evidence_and_offer_read_only_links(self):
         data = {"network_state": {}, "job_status": None}
+
         def service_loader():
             return {
                 "items": [
@@ -61,6 +62,7 @@ class WebTests(unittest.TestCase):
                     }
                 ]
             }
+
         html = web.render("services", data, service_loader=service_loader)
         self.assertIn("Docker services", html)
         self.assertIn("&lt;script&gt;", html)
@@ -72,9 +74,18 @@ class WebTests(unittest.TestCase):
         self.assertIn("Cloudflare audit findings", web.render("assurance", data))
 
     def test_traefik_view_reads_saved_data_only(self):
-        result = {"available": True, "fresh": True, "items": [
-            {"kind": "routers", "name": "demo@docker", "literal_hosts": ["demo.invalid"], "rule": "never-export"}
-        ]}
+        result = {
+            "available": True,
+            "fresh": True,
+            "items": [
+                {
+                    "kind": "routers",
+                    "name": "demo@docker",
+                    "literal_hosts": ["demo.invalid"],
+                    "rule": "never-export",
+                }
+            ],
+        }
         with patch("mcp_server.saved_traefik", return_value=result):
             html = web.render("traefik", {}, {"view": ["routes"]})
         self.assertIn("demo@docker", html)

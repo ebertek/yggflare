@@ -272,14 +272,34 @@ def render(config, data, now=None):
         )
     )
     traefik = saved_traefik(Path(data))
-    values.extend([
-        ("yggflare_traefik_snapshot_available", "Configured Traefik snapshot available", traefik["available"]),
-        ("yggflare_traefik_snapshot_fresh", "Latest Traefik snapshot fresh and verified", traefik["fresh"]),
-        ("yggflare_traefik_last_success_timestamp_seconds", "Latest complete saved Traefik observation", epoch(traefik["observed_at"])),
-    ])
+    values.extend(
+        [
+            (
+                "yggflare_traefik_snapshot_available",
+                "Configured Traefik snapshot available",
+                traefik["available"],
+            ),
+            (
+                "yggflare_traefik_snapshot_fresh",
+                "Latest Traefik snapshot fresh and verified",
+                traefik["fresh"],
+            ),
+            (
+                "yggflare_traefik_last_success_timestamp_seconds",
+                "Latest complete saved Traefik observation",
+                epoch(traefik["observed_at"]),
+            ),
+        ]
+    )
     if traefik["available"]:
         for kind in ("routers", "services", "middlewares"):
-            values.append((f"yggflare_traefik_{kind}", "Resources in the last complete Traefik snapshot", sum(row.get("kind") == kind for row in traefik["items"])))
+            values.append(
+                (
+                    f"yggflare_traefik_{kind}",
+                    "Resources in the last complete Traefik snapshot",
+                    sum(row.get("kind") == kind for row in traefik["items"]),
+                )
+            )
     output = "".join(
         metric(name, description, value) for name, description, value in values
     )

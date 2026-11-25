@@ -420,8 +420,17 @@ class InventoryToolTests(unittest.TestCase):
 
     def test_traefik_saved_projection_and_ingress_correlation(self):
         self.tools.service_loader = lambda: {"items": []}
-        row = {"kind": "routers", "protocol": "http", "name": "demo@docker", "literal_hosts": ["example.invalid"], "raw": "never-export"}
-        with patch("mcp_server.saved_traefik", side_effect=lambda _: {"available": True, "fresh": True, "items": [row]}):
+        row = {
+            "kind": "routers",
+            "protocol": "http",
+            "name": "demo@docker",
+            "literal_hosts": ["example.invalid"],
+            "raw": "never-export",
+        }
+        with patch(
+            "mcp_server.saved_traefik",
+            side_effect=lambda _: {"available": True, "fresh": True, "items": [row]},
+        ):
             result = self.tools.list_traefik_routes("example.invalid")
             self.assertEqual(result["total"], 1)
             self.assertNotIn("never-export", str(result))
