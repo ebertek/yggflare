@@ -340,6 +340,233 @@ class FindingPage(PageContext):
     items: list[FindingRow]
 
 
+class DeviceRow(TypedDict, total=False):
+    hostname: str | None
+    ipv4: str | None
+    ipv6: str | None
+    mac: str | None
+    aliases: list[str]
+    ports: list[str]
+    observed_ports: list[str]
+    last_seen: str | None
+    status: str | None
+    source: str | None
+    device_class: str | None
+    flags: list[str]
+    container_name: str | None
+    network_owner: str | None
+    shared_network: str | None
+    address_relationship: str | None
+    interface: str | None
+    cloudflare_hosts: list[dict[str, Any]]
+
+
+class DevicePage(PageContext):
+    items: list[DeviceRow]
+
+
+class DriftRow(TypedDict, total=False):
+    hostname: str | None
+    ipv4: str | None
+    field: str
+    expected: Any
+    observed: Any
+    severity: str
+
+
+class DriftPage(PageContext):
+    items: list[DriftRow]
+
+
+class DiscoveryEventRow(TypedDict, total=False):
+    observed_at: str
+    message: str
+    baseline: bool
+    finding_status: str
+
+
+class DiscoveryEventPage(PageContext):
+    items: list[DiscoveryEventRow]
+
+
+class CloudflareRow(TypedDict, total=False):
+    hostname: str | None
+    lifecycle: str
+    declared: bool | None
+    claimed: bool | None
+    tunnel_routes: int | list[str] | None
+    access_app_count: int
+    dns_record_count: int
+    section: str
+    kind: str
+    reason: str
+    status: str
+    type: str
+    category: str
+    proxied: bool | None
+    expected: Any
+    actual: Any
+    before: Any
+    content: Any
+    app_count: int
+    expected_decisions: list[str]
+    observed_decisions: list[str]
+    policy_list_truncated: bool | None
+    zone: str
+    address: str | None
+    matches_configured_tunnel: bool | None
+    precedence: int
+    has_path_match: bool
+    origin_scheme: str | None
+    origin_host: str | None
+    origin_port: int | None
+    origin_status: str | None
+
+
+class CloudflarePage(PageContext):
+    items: list[CloudflareRow]
+
+
+class DiscoveryRow(TypedDict, total=False):
+    ip: str | None
+    interface: str | None
+    source: str
+    detail: str
+
+
+class DiscoveryPage(PageContext):
+    items: list[DiscoveryRow]
+
+
+class ConflictRow(TypedDict, total=False):
+    address: str
+    macs: list[str]
+    reasons: list[str]
+
+
+class ConflictPage(PageContext):
+    items: list[ConflictRow]
+
+
+class IdentityRow(TypedDict, total=False):
+    identity: str
+    label: str | None
+    confidence: str | None
+    status: str | None
+    current_addresses: list[str]
+    addresses: list[str]
+    first_seen: str | None
+    last_seen: str | None
+    seen_scans: int
+    name_hints: list[str]
+    macs: list[str]
+    sources: list[str]
+    missed_scans: int
+
+
+class IdentityPage(PageContext):
+    items: list[IdentityRow]
+
+
+class IdentityChangeRow(TypedDict, total=False):
+    observed_at: str
+    identity: str
+    kind: str
+    description: str
+
+
+class IdentityChangePage(PageContext):
+    items: list[IdentityChangeRow]
+
+
+class NetworkServiceRow(TypedDict, total=False):
+    source: str
+    address: str
+    port: str | int
+    name: str
+    product: str
+    version: str
+    method: str
+    host: str
+    service: str
+    addresses: list[str]
+
+
+class NetworkServicePage(PageContext):
+    items: list[NetworkServiceRow]
+
+
+class FindingMessageRow(TypedDict, total=False):
+    finding_id: str
+    message: str
+    candidate: str
+
+
+class FindingMessagePage(PageContext):
+    items: list[FindingMessageRow]
+
+
+class FindingTransitionRow(TypedDict, total=False):
+    finding_id: str
+    kind: str
+    from_status: str | None
+    to_status: str | None
+    observed_at: str
+
+
+class FindingTransitionPage(PageContext):
+    items: list[FindingTransitionRow]
+
+
+class ServiceRow(TypedDict, total=False):
+    project: str | None
+    service: str | None
+    container_name: str | None
+    hostname: str | None
+    aliases: list[str]
+    declared: bool
+    runtime_observed: bool
+    runtime_scope: str
+    local_project_observed: bool
+    runtime_state: str | None
+    health: str | None
+    restart_count: int | None
+    declared_image: str | None
+    runtime_image: str | None
+    image_reference_match: bool | None
+    declared_networks: list[str]
+    runtime_networks: list[str]
+    declared_dependencies: list[str]
+    profiles: list[str]
+    declared_addresses: list[str]
+    runtime_addresses: list[str]
+    lan_endpoints: list[str]
+    network_mode_kind: str
+    shared_network: str | None
+    ports: list[str]
+    port_list_truncated: bool
+    presence: str
+    declaration_status: str
+    review_reasons: list[str]
+
+
+class ServicePage(PageContext):
+    items: list[ServiceRow]
+
+
+class TopologyRow(TypedDict, total=False):
+    project: str | None
+    service: str | None
+    container_name: str | None
+    network: str
+    network_owner: str
+    source: str
+
+
+class TopologyPage(PageContext):
+    items: list[TopologyRow]
+
+
 class EvidenceSource(TypedDict):
     source: str
     configured: bool | None
@@ -467,6 +694,33 @@ def load_services():
     )
 
 
+def scan_coverage_context(state):
+    """Expose only bounded aggregate metadata; old/offline snapshots remain unknown."""
+    saved = state.get("scan_coverage")
+    if not isinstance(saved, dict) or saved.get("version") != 1:
+        return {"available": False, "mode": "unknown"}
+    mode = saved.get("mode")
+    if mode != "live":
+        return {"available": False, "mode": "offline" if mode == "offline" else "unknown"}
+    fields = (
+        "run_completed", "reported_target_count", "requested_target_count",
+        "represented_target_count", "omitted_target_count", "explicit_timeout_count",
+        "port_evidence_target_count", "selected_port_count",
+    )
+    result = {
+        "available": True,
+        "mode": "live",
+        "observed_at": bounded(saved.get("observed_at")),
+        "docker_excluded_count": bounded(saved.get("docker_excluded_count")),
+        "caveat": "Target omissions may reflect --open filtering or timeouts; they do not prove a host is down or its ports are closed.",
+    }
+    for key in ("host_discovery", "tcp", "dns_sd"):
+        value = saved.get(key)
+        if isinstance(value, dict):
+            result[key] = project(value, fields if key != "dns_sd" else ("status", "observation_count"))
+    return result
+
+
 class InventoryTools:
     """No command execution, arbitrary paths, credential reads or write tools."""
 
@@ -518,7 +772,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> DevicePage:
         """List declared/discovered devices and Docker services; filter by name or address."""
         data = self.loader()
         needle = query.casefold().strip()
@@ -532,7 +786,7 @@ class InventoryTools:
 
     def get_device(
         self, identifier: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> DevicePage:
         """Find exact hostname, alias, IP or MAC matches and saved identity evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
@@ -594,7 +848,7 @@ class InventoryTools:
         limit: int = 25,
         severity: str = "",
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> DriftPage:
         """Compare declared inventory and saved observations; missing evidence is unknown."""
         data = self.loader()
         fields = ("hostname", "ipv4", "field", "expected", "observed", "severity")
@@ -614,7 +868,7 @@ class InventoryTools:
 
     def get_discovery_changes(
         self, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> DiscoveryEventPage:
         """Read recent saved discovery events, newest first, including baseline flags."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -641,7 +895,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> CloudflarePage:
         """Read saved Cloudflare lifecycle and DNS/Access/Tunnel presence, not policy rules."""
         data = self.loader()
         rows = []
@@ -672,7 +926,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> CloudflarePage:
         """Read saved configuration discrepancies, not an executable write plan."""
         sections = (
             "proposed",
@@ -785,7 +1039,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> CloudflarePage:
         """Read ordered Access decisions and assignment match, never policy selectors."""
         return self._cloudflare_configuration(
             "access", hostname, offset, limit, snapshot_id
@@ -797,7 +1051,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> CloudflarePage:
         """Read saved DNS metadata, numeric addresses and configured tunnel match."""
         return self._cloudflare_configuration(
             "dns", hostname, offset, limit, snapshot_id
@@ -809,7 +1063,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> CloudflarePage:
         """Read ordered saved routes and sanitized origin metadata, not connector health."""
         return self._cloudflare_configuration(
             "tunnel", hostname, offset, limit, snapshot_id
@@ -836,6 +1090,7 @@ class InventoryTools:
             "supplemental_sources_truncated": len(counts) > MAX_VALUES,
             "pending_discord_deliveries": len(state.get("pending_discord_events", [])),
             "coverage_verified": False,
+            "scan_coverage": scan_coverage_context(state),
         }
 
     def get_discovery_evidence(
@@ -845,7 +1100,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> DiscoveryPage:
         """Read supplemental evidence, including topology-only records without an IP."""
         data = self.loader()
         supplemental = data.get("network_state", {}).get("supplemental", {})
@@ -864,7 +1119,7 @@ class InventoryTools:
 
     def get_identity_conflicts(
         self, address: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> ConflictPage:
         """Read competing identity evidence without selecting an authoritative MAC."""
         data = self.loader()
         rows = [
@@ -880,7 +1135,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> IdentityPage:
         """Page identities by canonical ID, label, address or observed MAC."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -902,7 +1157,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> IdentityChangePage:
         """Read the retained identity timeline, newest first."""
         data = self.loader()
         rows = [
@@ -916,7 +1171,7 @@ class InventoryTools:
 
     def list_network_services(
         self, address: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> NetworkServicePage:
         """List saved scan-confirmed ports and DNS-SD hints as distinct evidence."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -975,7 +1230,7 @@ class InventoryTools:
 
     def get_network_findings(
         self, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> FindingMessagePage:
         """Read latest reported finding keys; absence does not establish resolution."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -1045,7 +1300,7 @@ class InventoryTools:
 
     def list_finding_transitions(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> FindingTransitionPage:
         """Page bounded lifecycle transitions; no changes to alerts or inventory."""
         data = self.loader()
         history = finding_rows(data.get("network_state", {}))
@@ -1068,7 +1323,7 @@ class InventoryTools:
 
     def get_pending_network_findings(
         self, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> FindingMessagePage:
         """Read findings awaiting repeated observation, not notification payloads."""
         data = self.loader()
         rows = [
@@ -1091,6 +1346,14 @@ class InventoryTools:
             network.get("status") == "succeeded" if network.get("status") else None
         )
         supplemental = state.get("supplemental", {})
+        coverage = scan_coverage_context(state)
+        discovery = coverage.get("host_discovery", {})
+        tcp = coverage.get("tcp", {})
+        if coverage.get("available") and discovery.get("run_completed") is True and tcp.get("run_completed") is not False:
+            # A saved live scan is itself positive collection evidence even if
+            # an explicit CLI invocation has no scheduler record.
+            if not network.get("status"):
+                verified = True
         cloud = cloudflare_context(data)
         view = self.service_loader()
         now = datetime.now(UTC)
@@ -1107,7 +1370,8 @@ class InventoryTools:
                 attempted_at=network.get("started_at"),
                 verified=verified,
                 max_age=36 * 3600,
-                caveat="Saved host observations; missing TCP or host responses do not prove absence.",
+                complete=False if tcp.get("omitted_target_count", 0) or tcp.get("explicit_timeout_count", 0) or tcp.get("run_completed") is False else None,
+                caveat="Saved host observations; missing TCP or host responses do not prove absence. See discovery status for requested and represented targets.",
             ),
             row(
                 "dns_sd",
@@ -1326,7 +1590,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> ServicePage:
         """List Compose and local runtime services including non-LAN services."""
         context, rows = self._service_rows(query, project_name)
         return {**context, **page(rows, offset, limit, snapshot_id)}
@@ -1338,7 +1602,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> ServicePage:
         """Exact service, container, hostname, alias or LAN endpoint lookup."""
         if not identifier.strip():
             raise ValueError("identifier must not be empty")
@@ -1371,7 +1635,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> ServicePage:
         """Review candidate discrepancies without assuming absent services are required locally."""
         context, rows = self._service_rows("", project_name)
         findings = []
@@ -1406,7 +1670,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> ServicePage:
         """Read explicit Compose depends_on and namespace evidence, not inferred traffic."""
         result = self.get_docker_service(
             identifier, project_name, offset, limit, snapshot_id
@@ -1430,7 +1694,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> TopologyPage:
         """List declared and local runtime network relationships, not physical links."""
         context, services = self._service_rows("", project_name)
         rows = []
@@ -1719,7 +1983,7 @@ class InventoryTools:
 
     def get_ingress_path(
         self, hostname: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> ServicePage:
         """Correlate exact aliases and saved Cloudflare configuration, not reachability."""
         if not hostname.strip():
             raise ValueError("hostname must not be empty")
@@ -1802,7 +2066,7 @@ class InventoryTools:
 
     def get_ingress_evidence(
         self, hostname: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> ServicePage:
         """Correlate saved ingress, deployment, monitor and local probe evidence by exact names."""
         result = self.get_ingress_path(hostname, offset, limit, snapshot_id)
         needle = hostname.strip().casefold().rstrip(".")
@@ -1885,7 +2149,7 @@ class InventoryTools:
 
     def get_service_exposure(
         self, identifier: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> DevicePage:
         """Correlate a Docker hostname/alias/IP with saved Cloudflare lifecycle evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
