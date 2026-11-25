@@ -78,10 +78,15 @@ def smb_outcome(returncode, output):
     if returncode == 0:
         return "success"
     text = output.upper()
-    if any(code in text for code in (
-        "NT_STATUS_ACCESS_DENIED", "NT_STATUS_LOGON_FAILURE",
-        "NT_STATUS_ACCOUNT_RESTRICTION", "NT_STATUS_ACCOUNT_DISABLED",
-    )):
+    if any(
+        code in text
+        for code in (
+            "NT_STATUS_ACCESS_DENIED",
+            "NT_STATUS_LOGON_FAILURE",
+            "NT_STATUS_ACCOUNT_RESTRICTION",
+            "NT_STATUS_ACCOUNT_DISABLED",
+        )
+    ):
         return "access_denied"
     if "NT_STATUS_CONNECTION_REFUSED" in text or "CONNECTION REFUSED" in text:
         return "connection_refused"
@@ -157,7 +162,8 @@ def collect(interfaces, allowed, records, add, warnings, observed_ports=None):
                 smb_ports[ip].add(port)
     smb_candidates = [ip for ip in targets if smb_ports[ip]]
     smb_targets = sorted(
-        smb_candidates, key=lambda ip: ("tcp/445" not in smb_ports[ip], ipaddress.ip_address(ip))
+        smb_candidates,
+        key=lambda ip: ("tcp/445" not in smb_ports[ip], ipaddress.ip_address(ip)),
     )[:SMB_TARGET_LIMIT]
     if flags["SMB"]:
         evidence["smb"].update(
@@ -166,8 +172,12 @@ def collect(interfaces, allowed, records, add, warnings, observed_ports=None):
             skipped_no_port_evidence=len(targets) - len(smb_candidates),
             skipped_target_limit=len(smb_candidates) - len(smb_targets),
             limited=len(smb_candidates) > SMB_TARGET_LIMIT,
-            success_with_shares=0, success_empty=0, access_denied=0,
-            connection_refused=0, remote_timeout=0, execution_timeout=0,
+            success_with_shares=0,
+            success_empty=0,
+            access_denied=0,
+            connection_refused=0,
+            remote_timeout=0,
+            execution_timeout=0,
             execution_failed=0,
         )
     evidence["netbios"]["eligible_targets"] = len(targets) if flags["NETBIOS"] else 0

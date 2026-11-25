@@ -95,7 +95,9 @@ def main(argv=None):
     )
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, help="Page size (1-50)")
-    parser.add_argument("--all", action="store_true", help="Read every page of a stable result set")
+    parser.add_argument(
+        "--all", action="store_true", help="Read every page of a stable result set"
+    )
     parser.add_argument("--project", default="")
     parser.add_argument("--snapshot-id", default="")
     args = parser.parse_args(argv)
@@ -126,7 +128,13 @@ def main(argv=None):
             else cli_text(result)
         )
         return 0
-    if args.offset or args.project or args.snapshot_id or args.limit is not None or args.all:
+    if (
+        args.offset
+        or args.project
+        or args.snapshot_id
+        or args.limit is not None
+        or args.all
+    ):
         parser.error("Pagination and project options require a read-only operator view")
     if (
         args.component in {"traefik", "komodo", "kuma", "probes"}

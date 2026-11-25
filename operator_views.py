@@ -121,7 +121,17 @@ class SnapshotChanged(ValueError):
     """A page no longer corresponds to the preceding result set."""
 
 
-def query(tools, area, view, value="", offset=0, project="", snapshot_id="", limit=None, all_pages=False):
+def query(
+    tools,
+    area,
+    view,
+    value="",
+    offset=0,
+    project="",
+    snapshot_id="",
+    limit=None,
+    all_pages=False,
+):
     """All callers consume the same allowlisted query and pagination contract."""
     if area not in VIEWS or view not in VIEWS[area]:
         raise ValueError("Unknown operator view")
@@ -159,7 +169,9 @@ def query(tools, area, view, value="", offset=0, project="", snapshot_id="", lim
     if not all_pages:
         return result
     if "layers" in result:
-        raise ValueError("--all does not combine independently paginated ingress layers")
+        raise ValueError(
+            "--all does not combine independently paginated ingress layers"
+        )
     identity = result.get("snapshot_id")
     total = result.get("total")
     if not identity or type(total) is not int or not 0 <= total <= 10000:
@@ -173,7 +185,9 @@ def query(tools, area, view, value="", offset=0, project="", snapshot_id="", lim
         kwargs["offset"] = next_offset
         following = getattr(tools, method)(**kwargs)
         if following.get("snapshot_id") != identity or following.get("total") != total:
-            raise SnapshotChanged("Result set changed; restart pagination at offset zero")
+            raise SnapshotChanged(
+                "Result set changed; restart pagination at offset zero"
+            )
         batch = following["items"]
         if not batch:
             raise ValueError("Empty continuation page")

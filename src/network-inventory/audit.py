@@ -600,7 +600,8 @@ def main():
                     NETWORK,
                     observed_ports={
                         ip: host.get("ports", [])
-                        for ip, host in hosts.items() if ip not in ignored
+                        for ip, host in hosts.items()
+                        if ip not in ignored
                     },
                     seeds=[(ip, "Nmap discovery") for ip in hosts if ip not in ignored]
                     + [

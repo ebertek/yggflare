@@ -110,20 +110,35 @@ class CommandTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_all_pages_preserves_snapshot_and_rejects_changes(self):
-        first = {"items": [{"name": "a"}], "total": 2, "snapshot_id": "stable", "next_offset": 1}
-        second = {"items": [{"name": "b"}], "total": 2, "snapshot_id": "stable", "next_offset": None}
+        first = {
+            "items": [{"name": "a"}],
+            "total": 2,
+            "snapshot_id": "stable",
+            "next_offset": 1,
+        }
+        second = {
+            "items": [{"name": "b"}],
+            "total": 2,
+            "snapshot_id": "stable",
+            "next_offset": None,
+        }
         with (
             patch("mcp_server.InventoryTools") as tools,
             contextlib.redirect_stdout(io.StringIO()) as output,
         ):
             method = tools.return_value.list_kuma_monitors
             method.side_effect = [first, second]
-            self.assertEqual(cli.main(["kuma", "monitors", "--limit", "1", "--all", "--json"]), 0)
+            self.assertEqual(
+                cli.main(["kuma", "monitors", "--limit", "1", "--all", "--json"]), 0
+            )
             self.assertIn('"name": "b"', output.getvalue())
             self.assertEqual(method.call_args_list[1].kwargs["offset"], 1)
             self.assertEqual(method.call_args_list[1].kwargs["limit"], 1)
             method.side_effect = [first, {**second, "snapshot_id": "changed"}]
-            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            with (
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
                 cli.main(["kuma", "monitors", "--all"])
 
     def test_traefik_reads_and_explicit_refresh_are_separate(self):

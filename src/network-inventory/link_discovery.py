@@ -466,7 +466,11 @@ def collect(network, run=None, seeds=(), observed_ports=None):
     note("START optional service discovery")
     evidence.update(
         collect_services(
-            interfaces, allowed, result["records"], add, result["warnings"],
+            interfaces,
+            allowed,
+            result["records"],
+            add,
+            result["warnings"],
             observed_ports=observed_ports,
         )
     )

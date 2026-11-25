@@ -32,7 +32,11 @@ class ServiceTests(unittest.TestCase):
             patch("service_discovery.smb_listing", return_value=("success_empty", [])),
         ):
             coverage = collect(
-                ["eth0"], lambda a: True, rows, lambda *a: None, [],
+                ["eth0"],
+                lambda a: True,
+                rows,
+                lambda *a: None,
+                [],
                 observed_ports={row["ip"]: ["tcp/445"] for row in rows},
             )
         self.assertEqual(coverage["netbios"]["attempted"], 20)
@@ -53,12 +57,24 @@ class ServiceTests(unittest.TestCase):
             patch("service_discovery.shutil.which", return_value="/usr/bin/smbclient"),
             patch(
                 "service_discovery.smb_listing",
-                side_effect=[("access_denied", []), ("remote_timeout", []), ("execution_failed", [])],
+                side_effect=[
+                    ("access_denied", []),
+                    ("remote_timeout", []),
+                    ("execution_failed", []),
+                ],
             ) as listing,
         ):
             result = collect(
-                ["eth0"], lambda a: True, rows, lambda *a: None, warnings,
-                observed_ports={"192.0.2.2": ["tcp/139"], "192.0.2.3": ["tcp/445"], "192.0.2.4": ["tcp/445"]},
+                ["eth0"],
+                lambda a: True,
+                rows,
+                lambda *a: None,
+                warnings,
+                observed_ports={
+                    "192.0.2.2": ["tcp/139"],
+                    "192.0.2.3": ["tcp/445"],
+                    "192.0.2.4": ["tcp/445"],
+                },
             )["smb"]
         self.assertEqual(listing.call_args_list[0].args, ("192.0.2.3", 445))
         self.assertEqual(result["skipped_no_port_evidence"], 1)
@@ -68,7 +84,9 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result["completed"], 2)
         self.assertEqual(len(warnings), 1)
         self.assertEqual(smb_outcome(1, "NT_STATUS_LOGON_FAILURE"), "access_denied")
-        self.assertEqual(smb_outcome(1, "NT_STATUS_CONNECTION_REFUSED"), "connection_refused")
+        self.assertEqual(
+            smb_outcome(1, "NT_STATUS_CONNECTION_REFUSED"), "connection_refused"
+        )
         self.assertEqual(smb_outcome(1, "NT_STATUS_IO_TIMEOUT"), "remote_timeout")
         self.assertEqual(smb_outcome(1, "unknown private error"), "execution_failed")
 
@@ -89,7 +107,10 @@ class ServiceTests(unittest.TestCase):
                 "service_discovery.execute",
                 side_effect=OSError("private exception"),
             ),
-            patch("service_discovery.smb_listing", return_value=("success_with_shares", ["media"])),
+            patch(
+                "service_discovery.smb_listing",
+                return_value=("success_with_shares", ["media"]),
+            ),
         ):
             collect(
                 ["eth0"],
