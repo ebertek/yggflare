@@ -128,3 +128,7 @@ New aggregate gauges: `yggflare_komodo_tracked_stack_inputs_{matched,changed,sam
 
 
 See [Integrations and service assurance](integrations.md) for source-specific interpretation.
+
+## Assurance dashboard
+
+The [importable Grafana dashboard](../dashboards/yggflare.json) includes current and historical tracked-stack input comparisons, numeric monitor port selection and configured/observed probe outcomes. The evidence availability and freshness panel must be interpreted before outcome counts. Missing series are not zero-filled. Import the JSON into Grafana using the existing Prometheus datasource; the dashboard UID is unchanged. No notification rules or automatic deployment are included.
