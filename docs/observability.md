@@ -132,3 +132,5 @@ See [Integrations and service assurance](integrations.md) for source-specific in
 ## Assurance dashboard
 
 The [importable Grafana dashboard](../dashboards/yggflare.json) includes current and historical tracked-stack input comparisons, numeric monitor port selection and configured/observed probe outcomes. The evidence availability and freshness panel must be interpreted before outcome counts. Missing series are not zero-filled. Import the JSON into Grafana using the existing Prometheus datasource; the dashboard UID is unchanged. No notification rules or automatic deployment are included.
+
+Dashboard status colors are presentation cues, not alert rules. Raw host counts, scan age and duration are neutral because their normal values depend on deployment and scheduling. Nonzero review candidates and pending events are amber; stale/unavailable evidence and failed probes are red. Unknown and inconclusive results are not failures. Missing data is not converted to zero.
