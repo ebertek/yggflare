@@ -209,9 +209,22 @@ def render(area, tools, table, params):
     if view in {"show", "dependencies", "ingress"} and not value:
         return nav + "<p>Choose an exact service or alias from the service list.</p>"
     try:
-        result = query(tools, area, view, value, offset, project, params.get("snapshot_id", [""])[0])
+        result = query(
+            tools,
+            area,
+            view,
+            value,
+            offset,
+            project,
+            params.get("snapshot_id", [""])[0],
+        )
     except SnapshotChanged:
-        return nav + "<p>Result set changed; " + link(view, "restart pagination", q=value, project=project) + ".</p>"
+        return (
+            nav
+            + "<p>Result set changed; "
+            + link(view, "restart pagination", q=value, project=project)
+            + ".</p>"
+        )
     context, groups = sections(result)
     content = nav + f"<h2>{escape(views[view][0])}</h2>"
     content += '<div class="toolbar"><input id="filter" type="search" aria-label="Filter this page" placeholder="Filter this page…"></div>'

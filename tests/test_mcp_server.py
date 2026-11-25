@@ -482,7 +482,11 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_evidence_overview_has_typed_schema(self):
         server = build_server(fixture)
         async with Client(server, raise_exceptions=True) as client:
-            tool = next(item for item in (await client.list_tools()).tools if item.name == "get_evidence_overview")
+            tool = next(
+                item
+                for item in (await client.list_tools()).tools
+                if item.name == "get_evidence_overview"
+            )
             self.assertIn("items", tool.output_schema["properties"])
             result = await client.call_tool("get_evidence_overview", {})
             self.assertFalse(result.is_error)

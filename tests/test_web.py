@@ -116,7 +116,11 @@ class WebTests(unittest.TestCase):
             )
 
     def test_finding_pagination_rejects_changed_snapshot(self):
-        html = web.render("findings", {"network_state": {}}, {"offset": ["50"], "snapshot_id": ["old"]})
+        html = web.render(
+            "findings",
+            {"network_state": {}},
+            {"offset": ["50"], "snapshot_id": ["old"]},
+        )
         self.assertIn("Result set changed", html)
         self.assertIn("restart pagination", html)
 

@@ -3,7 +3,7 @@
 import unittest
 from datetime import UTC, datetime
 
-from finding_lifecycle import update, rows
+from finding_lifecycle import rows, update
 from mcp_server import InventoryTools, evidence_source
 
 IP = "192.0.2.10"
@@ -20,10 +20,21 @@ class LifecycleTests(unittest.TestCase):
         row = first["items"][0]
         self.assertEqual(row["status"], "observed")
         self.assertNotIn("private message", str(first))
-        missing = update({"finding_lifecycle": first}, {}, [], {}, {}, set(), LATER, True)
+        missing = update(
+            {"finding_lifecycle": first}, {}, [], {}, {}, set(), LATER, True
+        )
         self.assertEqual(missing["items"][0]["status"], "not_reobserved")
         self.assertEqual(missing["items"][0]["last_seen"], NOW)
-        back = update({"finding_lifecycle": missing}, {KEY: "different message"}, [], {}, HOSTS, set(), LATER, True)
+        back = update(
+            {"finding_lifecycle": missing},
+            {KEY: "different message"},
+            [],
+            {},
+            HOSTS,
+            set(),
+            LATER,
+            True,
+        )
         self.assertEqual(back["items"][0]["finding_id"], row["finding_id"])
         self.assertEqual(back["items"][0]["reappearance_count"], 1)
 
@@ -33,15 +44,35 @@ class LifecycleTests(unittest.TestCase):
         previous = {"finding_lifecycle": first}
         result = update(previous, {}, [], declared, HOSTS, set(), LATER, True)
         self.assertEqual(result["items"][0]["status"], "inventory_match_observed")
-        result = update(previous, {}, [], declared, {IP: {"mac": MAC, "ports": []}}, set(), LATER, True)
+        result = update(
+            previous,
+            {},
+            [],
+            declared,
+            {IP: {"mac": MAC, "ports": []}},
+            set(),
+            LATER,
+            True,
+        )
         self.assertEqual(result["items"][0]["status"], "not_reobserved")
 
     def test_incomplete_dns_does_not_advance_last_seen(self):
         first = update({}, {}, ["demo.local|_http._tcp|80"], {}, {}, set(), NOW, True)
-        result = update({"finding_lifecycle": first}, {}, ["demo.local|_http._tcp|80"], {}, {}, set(), LATER, False)
+        result = update(
+            {"finding_lifecycle": first},
+            {},
+            ["demo.local|_http._tcp|80"],
+            {},
+            {},
+            set(),
+            LATER,
+            False,
+        )
         self.assertEqual(result["items"][0]["status"], "source_incomplete")
         self.assertEqual(result["items"][0]["last_seen"], NOW)
-        result = update({"finding_lifecycle": result}, {}, [], {}, {}, set(), LATER, True)
+        result = update(
+            {"finding_lifecycle": result}, {}, [], {}, {}, set(), LATER, True
+        )
         self.assertEqual(result["items"][0]["status"], "advertisement_not_reobserved")
 
     def test_retention_and_legacy_migration(self):
@@ -57,14 +88,26 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(first["total"], 1024)
         with self.assertRaises(ValueError):
             tools.list_finding_history(offset=1, snapshot_id="changed")
-        self.assertIsNone(rows({"finding_lifecycle": {"version": 1, "available": False}}))
+        self.assertIsNone(
+            rows({"finding_lifecycle": {"version": 1, "available": False}})
+        )
 
     def test_freshness_independent_of_collection_verification(self):
         now = datetime(2026, 1, 2, tzinfo=UTC)
-        row = evidence_source("sample", configured=True, available=True, observed_at=LATER, verified=False, complete=False, now=now)
+        row = evidence_source(
+            "sample",
+            configured=True,
+            available=True,
+            observed_at=LATER,
+            verified=False,
+            complete=False,
+            now=now,
+        )
         self.assertEqual(row["freshness"], "fresh")
         self.assertEqual(row["collection_status"], "unverified")
         self.assertEqual(row["completeness"], "incomplete")
-        row = evidence_source("sample", configured=True, available=True, observed_at=NOW, now=now)
+        row = evidence_source(
+            "sample", configured=True, available=True, observed_at=NOW, now=now
+        )
         self.assertEqual(row["freshness"], "stale")
         self.assertEqual(row["collection_status"], "unknown")

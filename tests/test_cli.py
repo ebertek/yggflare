@@ -154,7 +154,10 @@ class CommandTests(unittest.TestCase):
             contextlib.redirect_stderr(io.StringIO()),
             self.assertRaises(SystemExit) as error,
         ):
-            tools.return_value.list_finding_history.return_value = {"items": [], "snapshot_id": "new"}
+            tools.return_value.list_finding_history.return_value = {
+                "items": [],
+                "snapshot_id": "new",
+            }
             cli.main(["network", "findings", "--offset", "50", "--snapshot-id", "old"])
         self.assertEqual(error.exception.code, 2)
         run.assert_not_called()
