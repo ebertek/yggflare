@@ -23,6 +23,7 @@ from pathlib import Path
 from alert_policy import confirmation_scans, confirmed_alerts
 from device_identity import update_history
 from discord_format import render
+from finding_lifecycle import update as update_findings
 from link_discovery import collect as collect_links
 
 from discord_webhook import validate_webhook_url
@@ -560,6 +561,7 @@ def main():
         "scanned_at": now,
         "scan_duration_seconds": round(time.monotonic() - scan_started, 3),
         "reported": reported,
+        "finding_lifecycle": update_findings(previous, reported, advertisements, inventory, hosts, ignored, now, dns_sd_complete),
         "advertisements": advertisements,
         "hosts": hosts,
         "discovered_hosts": len(hosts),

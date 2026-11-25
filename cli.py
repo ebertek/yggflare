@@ -66,6 +66,8 @@ def main(argv=None):
             "jobs",
             "history",
             "notifications",
+            "findings",
+            "transitions",
             "routes",
             "services",
             "middlewares",

@@ -14,6 +14,7 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from finding_lifecycle import STATES as FINDING_STATES, rows as finding_rows
 from integration_inventory import FIELDS as INTEGRATION_FIELDS
 from integration_inventory import saved as saved_integration
 from job_status import JOBS, artifact_status, backup_checks
@@ -667,6 +668,28 @@ class InventoryTools:
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
+    def list_finding_history(self, query: str = "", status: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = "") -> dict[str, Any]:
+        """Read structured finding lifecycle; disappearance is not proof of resolution."""
+        if status and status not in FINDING_STATES:
+            raise ValueError("Unknown finding status")
+        data = self.loader()
+        history = finding_rows(data.get("network_state", {}))
+        needle = query.strip().casefold()
+        fields = ("finding_id", "kind", "address", "mac", "hostname", "service", "status", "first_seen", "first_seen_lower_bound", "last_seen", "status_changed_at", "observation_count", "reappearance_count")
+        items = [project(row, fields) for row in (history or {}).get("items", []) if (not status or row.get("status") == status) and (not needle or any(needle in str(row.get(key) or "").casefold() for key in ("finding_id", "kind", "address", "mac", "hostname", "service")))]
+        return {**snapshot_context(data), "available": history is not None, "observed_at": (history or {}).get("observed_at"),
+                "history_truncated": (history or {}).get("truncated"), "active_total": (history or {}).get("active_total"),
+                "caveat": "History starts at first retained observation; a missing finding is not proof of repair or service closure. Inventory match means a positive observation agrees with current declaration.",
+                **page(items, offset, limit, snapshot_id)}
+
+    def list_finding_transitions(self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = "") -> dict[str, Any]:
+        """Page bounded lifecycle transitions; no changes to alerts or inventory."""
+        data = self.loader()
+        history = finding_rows(data.get("network_state", {}))
+        needle = query.strip().casefold()
+        items = [project(row, ("finding_id", "kind", "from_status", "to_status", "observed_at")) for row in reversed((history or {}).get("transitions", [])) if not needle or needle in str(row.get("finding_id", "")).casefold() or needle in str(row.get("kind", "")).casefold()]
+        return {**snapshot_context(data), "available": history is not None, "history_limit": 256, **page(items, offset, limit, snapshot_id)}
+
     def get_pending_network_findings(
         self, offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
@@ -1281,6 +1304,8 @@ TOOL_NAMES = (
     "list_network_services",
     "get_pending_network_findings",
     "get_network_findings",
+    "list_finding_history",
+    "list_finding_transitions",
     "get_yggflare_health",
     "get_job_status",
     "get_job_history",
@@ -1323,6 +1348,8 @@ GROUPS = {
         "list_network_services",
         "get_pending_network_findings",
         "get_network_findings",
+        "list_finding_history",
+        "list_finding_transitions",
         "list_docker_services",
         "get_docker_service",
         "get_compose_drift",

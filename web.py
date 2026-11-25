@@ -291,6 +291,7 @@ def page(tab, content):
             ("komodo", "Komodo"),
             ("kuma", "Monitoring"),
             ("probes", "Probes"),
+            ("findings", "Findings"),
         )
     )
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -474,6 +475,7 @@ class Handler(BaseHTTPRequestHandler):
             "/komodo",
             "/kuma",
             "/probes",
+            "/findings",
             "/api/inventory.json",
             "/api/inventory.csv",
             "/metrics",

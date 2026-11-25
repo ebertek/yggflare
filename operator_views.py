@@ -56,6 +56,10 @@ VIEWS = {
         "status": ("Probe collection status", "get_probe_status", ""),
         "results": ("Independent probe results", "list_probe_results", "query"),
     },
+    "findings": {
+        "history": ("Finding lifecycle", "list_finding_history", "query"),
+        "transitions": ("Finding transitions", "list_finding_transitions", "query"),
+    },
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
@@ -87,6 +91,8 @@ CLI_VIEWS = {
     ("system", "history"): ("operations", "history"),
     ("backup", "status"): ("operations", "backup"),
     ("network", "notifications"): ("operations", "notifications"),
+    ("network", "findings"): ("findings", "history"),
+    ("network", "transitions"): ("findings", "transitions"),
     **{
         (area, name): (area, name)
         for area in ("traefik", "komodo", "kuma", "probes")
