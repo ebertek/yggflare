@@ -502,17 +502,41 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 if "offset" not in tool.input_schema.get("properties", {}):
                     continue
                 self.assertIn("snapshot_id", tool.input_schema["properties"], tool.name)
-                self.assertTrue({"schema_version", "total", "offset", "next_offset", "snapshot_id", "items"} <= set(tool.output_schema["required"]), tool.name)
+                self.assertTrue(
+                    {
+                        "schema_version",
+                        "total",
+                        "offset",
+                        "next_offset",
+                        "snapshot_id",
+                        "items",
+                    }
+                    <= set(tool.output_schema["required"]),
+                    tool.name,
+                )
             result = await client.call_tool("list_devices", {"limit": 1})
             first = result.structured_content
             self.assertEqual(first["schema_version"], 1)
             self.assertIn("scan_initialized", first)
-            second = await client.call_tool("list_devices", {"offset": 1, "limit": 1, "snapshot_id": first["snapshot_id"]})
-            self.assertEqual(second.structured_content["snapshot_id"], first["snapshot_id"])
+            second = await client.call_tool(
+                "list_devices",
+                {"offset": 1, "limit": 1, "snapshot_id": first["snapshot_id"]},
+            )
+            self.assertEqual(
+                second.structured_content["snapshot_id"], first["snapshot_id"]
+            )
         async with Client(server, raise_exceptions=False) as client:
-            for tool_name, args in (("list_devices", {}), ("get_cloudflare_access", {}), ("list_komodo_stacks", {}), ("list_probe_results", {}), ("get_service_dependencies", {"identifier": "example"})):
+            for tool_name, args in (
+                ("list_devices", {}),
+                ("get_cloudflare_access", {}),
+                ("list_komodo_stacks", {}),
+                ("list_probe_results", {}),
+                ("get_service_dependencies", {"identifier": "example"}),
+            ):
                 with self.subTest(tool=tool_name):
-                    result = await client.call_tool(tool_name, {**args, "offset": 1, "snapshot_id": "incorrect"})
+                    result = await client.call_tool(
+                        tool_name, {**args, "offset": 1, "snapshot_id": "incorrect"}
+                    )
                     self.assertTrue(result.is_error)
 
     async def test_only_read_only_tools_registered(self):
