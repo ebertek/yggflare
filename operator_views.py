@@ -32,6 +32,12 @@ VIEWS = {
         "services": ("Traefik backend services", "list_traefik_services", "query"),
         "middlewares": ("Traefik middlewares", "list_traefik_middlewares", "query"),
     },
+    "unifi": {
+        "status": ("UniFi collection status", "get_unifi_status", ""),
+        "devices": ("Adopted UniFi devices", "list_unifi_devices", "query"),
+        "clients": ("Connected UniFi clients", "list_unifi_clients", "query"),
+        "networks": ("UniFi network configuration", "list_unifi_networks", "query"),
+    },
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
@@ -46,6 +52,7 @@ UNPAGED = {
     "get_backup_status",
     "get_notification_status",
     "get_traefik_status",
+    "get_unifi_status",
 }
 REQUIRED = {"identifier", "hostname"}
 CLI_VIEWS = {
@@ -61,6 +68,7 @@ CLI_VIEWS = {
     ("backup", "status"): ("operations", "backup"),
     ("network", "notifications"): ("operations", "notifications"),
     **{("traefik", name): ("traefik", name) for name in VIEWS["traefik"]},
+    **{("unifi", name): ("unifi", name) for name in VIEWS["unifi"]},
 }
 
 

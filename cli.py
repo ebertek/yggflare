@@ -33,6 +33,7 @@ def main(argv=None):
             "services",
             "system",
             "traefik",
+            "unifi",
         ),
     )
     parser.add_argument(
@@ -66,6 +67,9 @@ def main(argv=None):
             "routes",
             "services",
             "middlewares",
+            "devices",
+            "clients",
+            "networks",
             "refresh",
         ),
     )
@@ -108,7 +112,7 @@ def main(argv=None):
         return 0
     if args.offset or args.project:
         parser.error("--offset and --project require a read-only operator view")
-    if args.component == "traefik" and args.operation == "refresh":
+    if args.component in {"traefik", "unifi"} and args.operation == "refresh":
         if (
             args.argument
             or args.approval
@@ -116,9 +120,9 @@ def main(argv=None):
             or args.json
             or args.details
         ):
-            parser.error("traefik refresh accepts no additional arguments")
+            parser.error(f"{args.component} refresh accepts no additional arguments")
         return subprocess.run(
-            [sys.executable, "/app/traefik_inventory.py"], check=False
+            [sys.executable, f"/app/{args.component}_inventory.py"], check=False
         ).returncode
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:

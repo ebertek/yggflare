@@ -10,6 +10,8 @@ from pathlib import Path
 
 from job_status import JOBS, read_jobs
 from traefik_inventory import saved as saved_traefik
+from unifi_inventory import KINDS as UNIFI_KINDS
+from unifi_inventory import saved as saved_unifi
 
 MAX_BYTES = 4 * 1024 * 1024
 STALE_CLOUDFLARE_SECONDS = 8 * 60 * 60
@@ -300,6 +302,15 @@ def render(config, data, now=None):
                     sum(row.get("kind") == kind for row in traefik["items"]),
                 )
             )
+    unifi = saved_unifi(Path(data))
+    values.extend([
+        ("yggflare_unifi_snapshot_available", "Configured UniFi snapshot available", unifi["available"]),
+        ("yggflare_unifi_snapshot_fresh", "Latest UniFi snapshot fresh and verified", unifi["fresh"]),
+        ("yggflare_unifi_last_success_timestamp_seconds", "Latest complete saved UniFi observation", epoch(unifi["observed_at"])),
+    ])
+    if unifi["available"]:
+        for kind in UNIFI_KINDS:
+            values.append((f"yggflare_unifi_{kind}", "Resources in last complete UniFi snapshot", sum(row.get("kind") == kind for row in unifi["items"])))
     output = "".join(
         metric(name, description, value) for name, description, value in values
     )

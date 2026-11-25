@@ -288,6 +288,7 @@ def page(tab, content):
             ("assurance", "Cloudflare audit"),
             ("operations", "Operations"),
             ("traefik", "Traefik"),
+            ("unifi", "UniFi"),
         )
     )
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -468,6 +469,7 @@ class Handler(BaseHTTPRequestHandler):
             "/assurance",
             "/operations",
             "/traefik",
+            "/unifi",
             "/api/inventory.json",
             "/api/inventory.csv",
             "/metrics",

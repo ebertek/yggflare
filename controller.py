@@ -19,6 +19,7 @@ from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
 from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
+from unifi_inventory import INTERVAL as UNIFI_INTERVAL
 from watchers import start as start_watchers
 
 CONFIG = Path("/config")
@@ -152,15 +153,15 @@ def job_label(script):
         "cloudflare-live.py": "Cloudflare presentation refresh",
         "audit.py": "Network inventory scan",
         "traefik_inventory.py": "Traefik presentation refresh",
+        "unifi_inventory.py": "UniFi presentation refresh",
     }.get(Path(script).name, "Scheduled job")
 
 
 def run(args, *, env=None):
-    component = (
-        "traefik"
-        if Path(args[1]).name == "traefik_inventory.py"
-        else "cloudflare" if "/cloudflare/" in args[1] else "network"
-    )
+    component = {
+        "traefik_inventory.py": "traefik",
+        "unifi_inventory.py": "unifi",
+    }.get(Path(args[1]).name, "cloudflare" if "/cloudflare/" in args[1] else "network")
     label = job_label(args[1])
     started = time.monotonic()
     log("info", component, f"{label} started")
@@ -328,6 +329,7 @@ def run_scheduler(listener=None):
     next_cloud = dt.datetime.now(dt.timezone.utc)
     last_cloud_completed = 0.0
     next_traefik = 0.0
+    next_unifi = 0.0
     backup_marker = DATA / "backup-last-run.txt"
     last_backup_day = (
         backup_marker.read_text(encoding="utf-8").strip()
@@ -386,6 +388,12 @@ def run_scheduler(listener=None):
                     "Traefik presentation refresh failed; previous snapshot retained",
                 )
             next_traefik = time.monotonic() + TRAEFIK_INTERVAL
+        if os.environ.get("YGGFLARE_UNIFI_API_URL") and time.monotonic() >= next_unifi:
+            try:
+                run([sys.executable, "/app/unifi_inventory.py"])
+            except Exception:
+                log("warning", "controller", "UniFi presentation refresh failed; previous snapshot retained")
+            next_unifi = time.monotonic() + UNIFI_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):
             if last_backup_day != current_utc.date().isoformat():

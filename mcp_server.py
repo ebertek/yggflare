@@ -11,6 +11,8 @@ from mcp.types import ToolAnnotations
 
 from job_status import JOBS, artifact_status, backup_checks
 from traefik_inventory import saved as saved_traefik
+from unifi_inventory import KINDS as UNIFI_KINDS
+from unifi_inventory import saved as saved_unifi
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -981,6 +983,33 @@ class InventoryTools:
         """Read middleware identity, type and status, never middleware configuration."""
         return self._traefik_rows("middlewares", query, protocol, offset, limit)
 
+    def get_unifi_status(self) -> dict[str, Any]:
+        """Read local UniFi snapshot status; counts are observations, not probe results."""
+        data = saved_unifi(Path("/data"))
+        rows = data.pop("items")
+        return {**data, "counts": {kind: sum(row.get("kind") == kind for row in rows) for kind in UNIFI_KINDS} if data.get("available") else None}
+
+    def _unifi_rows(self, kind, query, offset, limit, snapshot_id):
+        data = saved_unifi(Path("/data"))
+        rows = data.pop("items")
+        fields = ("kind", "name", "ip", "mac", "model", "state", "firmware", "firmware_updatable", "client_type", "connected_at", "vlan_id", "enabled", "management")
+        rows = [project(row, fields) for row in rows if row.get("kind") == kind and (
+            not query or any(query.casefold() in str(row.get(key) or "").casefold() for key in ("name", "ip", "mac"))
+        )]
+        return {**data, **page(rows, offset, limit, snapshot_id)}
+
+    def list_unifi_devices(self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = "") -> dict[str, Any]:
+        """Read saved adopted UniFi gateways, switches and access points."""
+        return self._unifi_rows("devices", query, offset, limit, snapshot_id)
+
+    def list_unifi_clients(self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = "") -> dict[str, Any]:
+        """Read clients reported connected at the last complete observation; not DHCP leases."""
+        return self._unifi_rows("clients", query, offset, limit, snapshot_id)
+
+    def list_unifi_networks(self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = "") -> dict[str, Any]:
+        """Read saved configured network overview and VLAN IDs, not physical links."""
+        return self._unifi_rows("networks", query, offset, limit, snapshot_id)
+
     def get_ingress_path(
         self, hostname: str, offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
@@ -1128,6 +1157,10 @@ TOOL_NAMES = (
     "list_traefik_routes",
     "list_traefik_services",
     "list_traefik_middlewares",
+    "get_unifi_status",
+    "list_unifi_devices",
+    "list_unifi_clients",
+    "list_unifi_networks",
 )
 
 

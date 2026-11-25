@@ -364,12 +364,46 @@ URL paths, queries, userinfo, raw middleware settings and error messages are
 excluded. Configuration is optional and should be enabled only after
 validating the API's reachability and access restrictions.
 
+### UniFi runtime evidence
+
+Optional local UniFi OS console collection uses the documented Network
+Integration API. Configure a numeric HTTPS LAN origin in
+`YGGFLARE_UNIFI_API_URL` and mount an API key privately in
+`/config/unifi-api-key.txt`. Select the site UUID with
+`YGGFLARE_UNIFI_SITE_ID` if the console has multiple sites. A single site
+is selected automatically. If the certificate requires a DNS name, set
+`YGGFLARE_UNIFI_TLS_NAME` to its verified identity; the TCP connection
+still uses the configured numeric IP. A private CA can be supplied as
+`/config/unifi-ca.pem`. Certificate validation is mandatory; no HTTP,
+insecure TLS, redirects, cloud connector, legacy login or password
+fallback. Keep the key and backups containing it private.
+
+Every five minutes (and on explicit CLI refresh), collect adopted devices,
+connected clients and configured network/VLAN overview through fixed GET
+endpoints. A changing or incomplete pagination sequence is rejected; the
+previous complete snapshot is retained and marked unverified. This is
+controller-reported evidence, not a DHCP lease database, a physical switch
+map or a reachability test. No UniFi data is used to expand discovery scope
+or modify authoritative inventory.
+
+```sh
+docker exec yggflare yggflare unifi refresh
+docker exec yggflare yggflare unifi status
+docker exec yggflare yggflare unifi devices
+docker exec yggflare yggflare unifi clients
+docker exec yggflare yggflare unifi networks
+```
+
+The UniFi Web UI tab, CLI inspection commands, MCP queries and aggregate
+Prometheus metrics all read saved observations. See the
+[UniFi Network API documentation](https://developer.ui.com/network/v10.0.162).
+
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same thirty-four read-only tools. HTTP is disabled by default.
+use the same thirty-eight read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -450,6 +484,10 @@ in the repository.
 | `list_traefik_routes` | HTTP/TCP/UDP router identities and literal host mentions |
 | `list_traefik_services` | Sanitized backend origins and reported status |
 | `list_traefik_middlewares` | Middleware identity, type and status only |
+| `get_unifi_status` | UniFi collection availability, freshness and counts |
+| `list_unifi_devices` | Saved adopted device identity, firmware and state |
+| `list_unifi_clients` | Saved connected client names, IPs, MACs and connection types |
+| `list_unifi_networks` | Saved configured network names and VLAN IDs |
 
 Service topology uses a separate 30-second sanitized cache. It includes host
 and bridge-only declarations without inventing LAN addresses. Local Docker
