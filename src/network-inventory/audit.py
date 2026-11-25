@@ -551,6 +551,11 @@ def main():
         now,
         ignored,
     )
+    try:
+        lifecycle = update_findings(previous, reported, advertisements, inventory, hosts, ignored, now, dns_sd_complete)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        progress("Finding history unavailable; existing alert policy unchanged")
+        lifecycle = {"version": 1, "available": False}
     snapshot = {
         **identity,
         "supplemental": supplemental,
@@ -561,16 +566,7 @@ def main():
         "scanned_at": now,
         "scan_duration_seconds": round(time.monotonic() - scan_started, 3),
         "reported": reported,
-        "finding_lifecycle": update_findings(
-            previous,
-            reported,
-            advertisements,
-            inventory,
-            hosts,
-            ignored,
-            now,
-            dns_sd_complete,
-        ),
+        "finding_lifecycle": lifecycle,
         "advertisements": advertisements,
         "hosts": hosts,
         "discovered_hosts": len(hosts),

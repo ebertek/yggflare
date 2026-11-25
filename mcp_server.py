@@ -8,8 +8,9 @@ import threading
 import time
 from collections.abc import Callable
 from functools import wraps
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -152,6 +153,46 @@ def cloudflare_context(data):
             "establish unsafe exposure."
         ),
     }
+
+
+class EvidenceSource(TypedDict):
+    source: str
+    configured: bool | None
+    available: bool
+    observed_at: str | None
+    last_attempt_at: str | None
+    age_seconds: float | None
+    freshness: str
+    collection_status: str
+    completeness: str
+    caveat: str
+
+
+class EvidenceOverview(TypedDict):
+    schema_version: int
+    evaluated_at: str
+    items: list[EvidenceSource]
+
+
+def evidence_source(source, *, configured, available, observed_at=None, attempted_at=None,
+                    verified=None, complete=None, max_age=900, now=None, caveat=""):
+    now = now or datetime.now(UTC)
+    age = None
+    try:
+        if observed_at:
+            value = datetime.fromisoformat(observed_at)
+            if value.tzinfo is not None:
+                age = (now - value).total_seconds()
+    except (TypeError, ValueError):
+        pass
+    freshness = "unavailable" if not available else "unknown" if age is None or age < 0 else "stale" if age > max_age else "fresh"
+    return {"source": source, "configured": configured, "available": bool(available),
+            "observed_at": observed_at or None, "last_attempt_at": attempted_at or None,
+            "age_seconds": round(age, 1) if age is not None and age >= 0 else None,
+            "freshness": freshness,
+            "collection_status": "not_configured" if configured is False else "verified" if verified is True else "unverified" if verified is False else "unknown",
+            "completeness": "complete_within_reported_scope" if complete is True else "incomplete" if complete is False else "unknown",
+            "caveat": caveat}
 
 
 def load_model():
@@ -764,6 +805,45 @@ class InventoryTools:
         ]
         return {**snapshot_context(data), **page(rows, offset, limit)}
 
+    def get_evidence_overview(self) -> EvidenceOverview:
+        """Compare source freshness, collection outcome and completeness without active probes."""
+        data = self.loader()
+        state = data.get("network_state", {})
+        jobs = (data.get("job_status") or {}).get("jobs", {})
+        network = jobs.get("network_scan", {})
+        scanned = state.get("scanned_at") or data.get("scanned_at")
+        verified = network.get("status") == "succeeded" if network.get("status") else None
+        supplemental = state.get("supplemental", {})
+        cloud = cloudflare_context(data)
+        view = self.service_loader()
+        now = datetime.now(UTC)
+        def row(source, **kwargs):
+            return evidence_source(source, now=now, **kwargs)
+        items = [
+            row("network_ipv4", configured=True, available=bool(scanned), observed_at=scanned, attempted_at=network.get("started_at"), verified=verified,
+                max_age=36*3600, caveat="Saved host observations; missing TCP or host responses do not prove absence."),
+            row("dns_sd", configured=None, available=bool(state.get("dns_sd_scanned_at")), observed_at=state.get("dns_sd_scanned_at"), attempted_at=scanned,
+                verified=state.get("dns_sd_complete"), complete=state.get("dns_sd_complete"), max_age=36*3600,
+                caveat="A completed browse only reflects received advertisements."),
+            row("supplemental", configured=None, available=bool(supplemental.get("observed_at")), observed_at=supplemental.get("observed_at"), attempted_at=scanned,
+                verified=None, complete=False if supplemental.get("warnings") else None, max_age=36*3600,
+                caveat="Warnings indicate partial evidence; zero warnings do not prove all configured collectors ran."),
+            row("cloudflare", configured=True, available=bool(cloud["audited_at"]), observed_at=cloud["audited_at"], attempted_at=cloud["latest_attempt_at"],
+                verified=cloud["last_refresh_verified"] if cloud["latest_attempt_at"] else None, max_age=8*3600,
+                caveat="Saved audit projection; configuration does not prove reachability or authorization."),
+            row("compose", configured=True, available=bool(view.get("observed_at")), observed_at=view.get("observed_at"), complete=False if view.get("truncated") else view.get("compose_complete"),
+                max_age=120, caveat="Read source only; not all declarations necessarily belong on this host."),
+            row("local_docker", configured=True, available=view.get("runtime_available") is True, observed_at=view.get("observed_at"),
+                verified=view.get("runtime_available"), complete=False if view.get("truncated") else None, max_age=120,
+                caveat="Local engine only; no remote-host or replica completeness guarantee."),
+        ]
+        for source, evidence in (("traefik", saved_traefik(Path("/data"))), ("komodo", saved_integration("komodo", Path("/data"))), ("kuma", saved_integration("kuma", Path("/data"))), ("probes", saved_probes(Path("/data")))):
+            items.append(row(source, configured=evidence.get("configured"), available=evidence.get("available", False),
+                observed_at=evidence.get("observed_at"), attempted_at=evidence.get("last_attempt_at"),
+                verified=evidence.get("last_refresh_verified") if evidence.get("last_attempt_at") else None,
+                caveat="Saved bounded observation; visibility and health are not implied by successful collection."))
+        return {"schema_version": 1, "evaluated_at": now.isoformat(), "items": items}
+
     def get_yggflare_health(self) -> dict[str, Any]:
         """Read controller heartbeat, build identity and saved snapshot context."""
         data = self.loader()
@@ -1367,6 +1447,7 @@ TOOL_NAMES = (
     "list_finding_history",
     "list_finding_transitions",
     "get_yggflare_health",
+    "get_evidence_overview",
     "get_job_status",
     "get_job_history",
     "get_backup_status",
@@ -1449,6 +1530,7 @@ REQUIRED_GROUPS = {name: {group} for group, names in GROUPS.items() for name in 
 REQUIRED_GROUPS.update(
     {
         "get_inventory_status": {"inventory", "cloudflare"},
+    "get_evidence_overview": set(GROUPS),
         "get_yggflare_health": {"inventory", "cloudflare", "operations"},
         "get_service_exposure": {"inventory", "cloudflare"},
         "get_ingress_path": {"inventory", "cloudflare", "traefik"},
@@ -1457,6 +1539,7 @@ REQUIRED_GROUPS.update(
 )
 RESOURCE_METHODS = {
     "inventory": "get_inventory_status",
+    "evidence": "get_evidence_overview",
     "operations": "get_yggflare_health",
     "jobs": "get_job_status",
     "discovery": "get_discovery_status",

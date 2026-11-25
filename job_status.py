@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-JOBS = ("cloudflare_cycle", "cloudflare_view", "network_scan", "backup")
+JOBS = ("cloudflare_cycle", "cloudflare_view", "network_scan", "backup", "traefik", "komodo", "kuma", "probes")
 MAX_HISTORY = 20
 MAX_BYTES = 128 * 1024
 
