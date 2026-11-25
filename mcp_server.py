@@ -204,6 +204,7 @@ class PageContext(TypedDict, total=False):
     last_attempt_at: str | None
     kuma: dict[str, Any]
     coverage_caveat: str
+    coverage_scope: str
     cloudflare: dict[str, Any]
     layers: dict[str, Any]
     traefik_snapshot: dict[str, Any]
@@ -289,17 +290,25 @@ class JobRow(TypedDict, total=False):
 class MonitorMatch(TypedDict, total=False):
     name: str
     monitor_type: str | None
-    target_host: str
+    target_host: str | None
     target_port: int | None
     target_scheme: str | None
     status: str
     match_basis: list[str]
     service_candidates: list[str]
+    service_candidates_truncated: bool
+    ambiguous_service_identity: bool
     shared_or_ambiguous_address: bool
     target_port_declared: bool | None
+    device_candidates: list[str]
+    device_candidates_truncated: bool
+    target_port_observed: bool | None
 
 
 class CoverageRow(TypedDict, total=False):
+    ipv4: str | None
+    ipv6: str | None
+    device_class: str | None
     project: str | None
     service: str | None
     container_name: str | None
@@ -870,9 +879,29 @@ def service_monitor_hosts(service):
     return result
 
 
+def service_identity(row):
+    return bounded(str(row.get("project") or "") + "/" + str(row.get("service") or ""))
+
+
+def docker_name_basis(monitor, service):
+    """A Docker monitor's friendly name is not its configured Docker target."""
+    name = monitor.get("name")
+    if monitor.get("monitor_type") != "docker" or not name:
+        return set()
+    return {
+        basis
+        for field, basis in (
+            ("container_name", "docker_monitor_name_container_name"),
+            ("service", "docker_monitor_name_service_name"),
+        )
+        if name == service.get(field)
+    }
+
+
 def monitor_index(monitors, all_services):
     owners = {}
     by_host = {}
+    docker_monitors = []
     for service in all_services:
         identity = (
             service.get("project"),
@@ -882,15 +911,20 @@ def monitor_index(monitors, all_services):
         for host in service_monitor_hosts(service):
             owners.setdefault(host, set()).add(identity)
     for monitor in monitors:
+        if monitor.get("monitor_type") == "docker":
+            docker_monitors.append(monitor)
+            continue
+        if monitor.get("monitor_type") in {"group", "push"}:
+            continue
         host = normalized_monitor_host(monitor.get("target_host"))
         if host:
             by_host.setdefault(host, []).append(monitor)
-    return owners, by_host
+    return owners, by_host, docker_monitors, all_services
 
 
 def monitor_candidates(index, services, ingress=""):
     """Exact candidate matching with explicit provenance and shared-IP caveats."""
-    owners, by_host = index
+    owners, by_host, docker_monitors, all_services = index
     identities = {}
     for service in services:
         for host, basis in service_monitor_hosts(service).items():
@@ -946,7 +980,113 @@ def monitor_candidates(index, services, ingress=""):
                     "target_port_declared": port_declared,
                 }
             )
+    for monitor in docker_monitors:
+        basis = {
+            reason
+            for service in services
+            for reason in docker_name_basis(monitor, service)
+        }
+        if not basis:
+            continue
+        identities = sorted(
+            {
+                service_identity(service)
+                for service in all_services
+                if docker_name_basis(monitor, service)
+            }
+        )
+        candidates.append(
+            {
+                **project(monitor, INTEGRATION_FIELDS),
+                "target_host": None,
+                "target_port": None,
+                "target_scheme": None,
+                "match_basis": sorted(basis),
+                "service_candidates": identities[:MAX_VALUES],
+                "service_candidates_truncated": len(identities) > MAX_VALUES,
+                "ambiguous_service_identity": len(identities) > 1,
+                "shared_or_ambiguous_address": False,
+                "target_port_declared": None,
+            }
+        )
     return candidates
+
+
+def network_monitor_rows(data, monitors, query, available, fresh):
+    """Correlate explicit numeric targets with saved non-container inventory rows."""
+    devices = [
+        row for row in data.get("hosts", []) if not row.get("container_name")
+    ]
+    owners = {}
+    for device in devices:
+        for field in ("ipv4", "ipv6"):
+            address = normalized_monitor_host(device.get(field))
+            if address:
+                owners.setdefault(address, []).append(device)
+    by_address = {}
+    for monitor in monitors:
+        if monitor.get("monitor_type") in {"docker", "group", "push"}:
+            continue
+        address = normalized_monitor_host(monitor.get("target_host"))
+        try:
+            ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        by_address.setdefault(address, []).append(monitor)
+    rows = []
+    for device in devices:
+        if query and not any(query.casefold() in term for term in terms(device)):
+            continue
+        matches = []
+        for address in sorted(
+            {
+                normalized_monitor_host(device.get(field))
+                for field in ("ipv4", "ipv6")
+            }
+        ):
+            for monitor in by_address.get(address, []):
+                candidates = owners[address]
+                identities = sorted(
+                    {
+                        bounded(str(row.get("hostname") or address))
+                        for row in candidates
+                    }
+                )
+                port = monitor.get("target_port")
+                ports = device.get("observed_ports") or []
+                scheme = monitor.get("target_scheme")
+                observed = None
+                if type(port) is int and ports and scheme in {"tcp", "udp", "http", "https", "ws", "wss"}:
+                    protocol = "udp" if scheme == "udp" else "tcp"
+                    observed = f"{protocol}/{port}" in ports
+                matches.append(
+                    {
+                        **project(monitor, INTEGRATION_FIELDS),
+                        "match_basis": ["network_inventory_address"],
+                        "device_candidates": identities[:MAX_VALUES],
+                        "device_candidates_truncated": len(identities) > MAX_VALUES,
+                        "shared_or_ambiguous_address": len(candidates) > 1,
+                        "target_port_observed": observed,
+                    }
+                )
+        rows.append(
+            {
+                **project(device, ("hostname", "ipv4", "ipv6", "device_class")),
+                "matching_monitor_count": len(matches) if available else None,
+                "monitor_names": [item.get("name") for item in matches[:MAX_VALUES]],
+                "monitor_matches": [
+                    {key: value for key, value in item.items() if key != "kind"}
+                    for item in matches[:MAX_VALUES]
+                ],
+                "monitor_matches_truncated": len(matches) > MAX_VALUES,
+                "match_status": (
+                    "candidate_host_match"
+                    if matches
+                    else "no_exact_host_match" if fresh else "unknown"
+                ),
+            }
+        )
+    return rows
 
 
 class InventoryTools:
@@ -2155,12 +2295,27 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
+        scope: str = "services",
     ) -> CoveragePage:
-        """Correlate exact monitor target hosts with service identities; not proof of coverage."""
-        context, services = self._service_rows(query, project_name)
-        _, all_services = self._service_rows("", "")
+        """Correlate candidate monitor identities; scope is services or devices."""
+        if scope not in {"services", "devices"} or (scope == "devices" and project_name):
+            raise ValueError("Invalid monitoring coverage scope or project filter")
         kuma = saved_integration("kuma", Path("/data"))
         monitors = kuma.pop("items")
+        if scope == "devices":
+            data = self.loader()
+            rows = network_monitor_rows(
+                data, monitors, query, kuma["available"], kuma["fresh"]
+            )
+            return {
+                **snapshot_context(data),
+                "kuma": kuma,
+                "coverage_scope": scope,
+                "coverage_caveat": "Exact saved numeric device address candidates only; DHCP reuse, shared addresses and independent timestamps prevent proof of monitoring or device identity.",
+                **page(rows, offset, limit, snapshot_id),
+            }
+        context, services = self._service_rows(query, project_name)
+        _, all_services = self._service_rows("", "")
         index = monitor_index(monitors, all_services)
         rows = []
         for service in services:
@@ -2189,7 +2344,13 @@ class InventoryTools:
                     ],
                     "monitor_matches_truncated": len(matches) > MAX_VALUES,
                     "match_status": (
-                        "candidate_host_match"
+                        (
+                            "candidate_name_match"
+                            if all(
+                                item.get("monitor_type") == "docker" for item in matches
+                            )
+                            else "candidate_host_match"
+                        )
                         if matches
                         else "no_exact_host_match" if kuma["fresh"] else "unknown"
                     ),
@@ -2198,7 +2359,8 @@ class InventoryTools:
         return {
             **context,
             "kuma": kuma,
-            "coverage_caveat": "Exact hostname, alias and numeric address matches are candidates only. Shared addresses, host-port mapping, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative coverage conclusions.",
+            "coverage_scope": scope,
+            "coverage_caveat": "Exact host, alias, address and Docker friendly-name matches are candidates only. Docker host and container identity are not exported. Shared addresses, host-port mapping, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative coverage conclusions.",
             **page(rows, offset, limit, snapshot_id),
         }
 
@@ -2390,7 +2552,7 @@ class InventoryTools:
             for name, value in (("komodo", komodo), ("kuma", kuma), ("probes", probes))
         }
         result["correlation_caveat"] = (
-            "Exact aliases, project/stack names, monitor hostnames and explicit numeric service addresses are candidate matches only. Shared addresses and port declarations do not prove application identity. "
+            "Exact aliases, project/stack names, monitor hostnames, Docker friendly names and explicit numeric service addresses are candidate matches only. Docker target identity is not exported. Shared addresses and port declarations do not prove application identity. "
             "Probe results apply to their listed numeric destination and local vantage; they do not establish external reachability, proxy routing or authentication. "
             "No match, stale data or an unavailable adapter is inconclusive. Nested layers have independent timestamps and pagination."
         )

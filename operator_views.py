@@ -56,6 +56,11 @@ VIEWS = {
             "get_monitoring_coverage",
             "query",
         ),
+        "devices": (
+            "Candidate device monitoring coverage",
+            "get_monitoring_coverage",
+            "query",
+        ),
     },
     "probes": {
         "status": ("Probe collection status", "get_probe_status", ""),
@@ -136,6 +141,8 @@ def query(tools, area, view, value="", offset=0, project="", snapshot_id=""):
     if project and view in {"ingress", "assurance"}:
         raise ValueError("Project filter is not supported for ingress")
     kwargs = {field: value} if field else {}
+    if (area, view) == ("kuma", "devices"):
+        kwargs["scope"] = "devices"
     if method not in UNPAGED:
         kwargs.update(offset=offset, limit=50)
     elif offset:

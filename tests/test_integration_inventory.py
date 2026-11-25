@@ -83,6 +83,30 @@ class IntegrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adapter.kuma_rows("# TYPE something gauge\nsomething 1")
 
+    def test_kuma_monitor_type_ignores_unused_url(self):
+        for kind, host, port, expected in (
+            ("port", "192.0.2.10", "1080", ("192.0.2.10", 1080, "tcp")),
+            ("port", "example.invalid", "53", ("example.invalid", 53, "tcp")),
+            ("ping", "192.0.2.10", "443", ("192.0.2.10", None, None)),
+            ("docker", "null", "null", (None, None, None)),
+            ("group", "null", "null", (None, None, None)),
+            ("push", "null", "null", (None, None, None)),
+            ("port", "null", "443", (None, None, None)),
+            ("http", "null", "null", (None, None, None)),
+        ):
+            with self.subTest(kind=kind, host=host):
+                self.assertEqual(
+                    adapter.target(
+                        {
+                            "monitor_type": kind,
+                            "monitor_hostname": host,
+                            "monitor_port": port,
+                            "monitor_url": "https://",
+                        }
+                    ),
+                    expected,
+                )
+
     def test_fixed_requests_reject_redirects(self):
         with patch.object(adapter.http.client, "HTTPConnection") as connection:
             response = connection.return_value.getresponse.return_value
