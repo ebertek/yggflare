@@ -163,6 +163,49 @@ def cloudflare_context(data):
 
 # Stable typed pagination envelope. Optional source context is deliberately
 # explicit so structured MCP serialization preserves evidence metadata.
+class PortSelectionSummary(TypedDict, total=False):
+    available: Required[bool]
+    numeric_ipv4_tcp_endpoints: int
+    selected_endpoints: int
+    not_selected_endpoints: int
+    not_selected_ports: list[int]
+    scan_observed_at: str
+    caveat: str
+
+
+class ProbeCoverageSummary(TypedDict, total=False):
+    configuration_available: Required[bool]
+    configured_checks: int
+    observed_checks: int | None
+    passed_checks: int | None
+    failed_checks: int | None
+    inconclusive_checks: int | None
+    fresh: bool
+
+
+class ConfiguredProbeCheck(TypedDict):
+    target: str
+    hostname: str
+    address: str
+    port: int
+    scheme: str
+    check: str
+    expected_http_status_configured: bool | None
+
+
+class ProbeStatus(TypedDict, total=False):
+    configured: bool
+    available: bool
+    fresh: bool
+    last_attempt_at: str | None
+    observed_at: str | None
+    last_refresh_verified: bool
+    configured_checks: list[ConfiguredProbeCheck] | None
+    probe_coverage: ProbeCoverageSummary
+    check_count: int | None
+    caveat: str
+
+
 class PageContext(TypedDict, total=False):
     schema_version: Required[int]
     total: Required[int]
@@ -209,8 +252,8 @@ class PageContext(TypedDict, total=False):
     kuma: dict[str, Any]
     coverage_caveat: str
     coverage_scope: str
-    port_selection_summary: dict[str, Any]
-    probe_coverage: dict[str, Any]
+    port_selection_summary: PortSelectionSummary
+    probe_coverage: ProbeCoverageSummary
     cloudflare: dict[str, Any]
     layers: dict[str, Any]
     traefik_snapshot: dict[str, Any]
@@ -2447,7 +2490,7 @@ class InventoryTools:
             **page(rows, offset, limit, snapshot_id),
         }
 
-    def get_probe_status(self) -> dict[str, Any]:
+    def get_probe_status(self) -> ProbeStatus:
         """Read scheduled independent probe snapshot freshness and count."""
         data = dict(saved_probes(Path("/data")))
         rows = data.pop("items")
@@ -2456,7 +2499,7 @@ class InventoryTools:
             **data,
             "configured_checks": checks,
             "probe_coverage": probe_coverage(
-                checks, rows, data["available"], data["fresh"]
+                checks, rows, data["available"], data.get("fresh", False)
             ),
             "check_count": len(rows) if data["available"] else None,
             "caveat": "Independent observations from the Yggflare host only; no external access or authentication proof.",
@@ -2469,19 +2512,21 @@ class InventoryTools:
         data = dict(saved_probes(Path("/data")))
         rows = data.pop("items")
         checks = data.pop("configured_checks", None)
-        data["probe_coverage"] = probe_coverage(
-            checks, rows, data["available"], data["fresh"]
-        )
         needle = query.strip().casefold()
-        filtered = [
-            project(row, PROBE_FIELDS)
-            for row in rows
-            if not needle
-            or any(
+
+        def matches(row):
+            return not needle or any(
                 needle in str(row.get(key) or "").casefold()
                 for key in ("target", "hostname", "address", "check")
             )
-        ]
+
+        matching_checks = (
+            [row for row in checks if matches(row)] if checks is not None else None
+        )
+        filtered = [project(row, PROBE_FIELDS) for row in rows if matches(row)]
+        data["probe_coverage"] = probe_coverage(
+            matching_checks, filtered, data["available"], data.get("fresh", False)
+        )
         return {**data, **page(filtered, offset, limit, snapshot_id)}
 
     def get_ingress_path(

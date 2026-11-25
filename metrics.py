@@ -445,6 +445,27 @@ def render(config, data, now=None):
                 ),
             ]
         )
+        if adapter == "kuma":
+            selection = monitor_port_summary(source["items"], scan, available=source["available"])
+            for key in (
+                "numeric_ipv4_tcp_endpoints",
+                "selected_endpoints",
+                "not_selected_endpoints",
+            ):
+                values.append(
+                    (
+                        "yggflare_kuma_primary_scan_" + key,
+                        "Distinct numeric IPv4 TCP monitor endpoints by global primary port selection, not reachability",
+                        selection.get(key),
+                    )
+                )
+            values.append(
+                (
+                    "yggflare_kuma_primary_scan_selection_available",
+                    "Saved primary IPv4 port selection is available for monitor comparison",
+                    selection["available"],
+                )
+            )
         if source["available"]:
             kinds = (
                 ("servers", "stacks", "stack_services", "deployments")
@@ -478,26 +499,6 @@ def render(config, data, now=None):
                         )
                     )
             if adapter == "kuma":
-                selection = monitor_port_summary(source["items"], scan, available=True)
-                for key in (
-                    "numeric_ipv4_tcp_endpoints",
-                    "selected_endpoints",
-                    "not_selected_endpoints",
-                ):
-                    values.append(
-                        (
-                            "yggflare_kuma_primary_scan_" + key,
-                            "Distinct numeric IPv4 TCP monitor endpoints by global primary port selection, not reachability",
-                            selection.get(key),
-                        )
-                    )
-                values.append(
-                    (
-                        "yggflare_kuma_primary_scan_selection_available",
-                        "Saved primary IPv4 port selection is available for monitor comparison",
-                        selection["available"],
-                    )
-                )
                 for state in ("up", "down", "pending", "maintenance", "unknown"):
                     values.append(
                         (

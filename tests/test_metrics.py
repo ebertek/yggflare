@@ -131,6 +131,8 @@ class MetricsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             output = metrics.render(root, root, now=1000).decode()
+        self.assertIn("yggflare_kuma_primary_scan_selection_available 0", output)
+        self.assertNotIn("yggflare_kuma_primary_scan_not_selected_endpoints ", output)
         self.assertIn("yggflare_inventory_state_present 0", output)
         self.assertIn("yggflare_network_state_present 0", output)
         self.assertIn("yggflare_cloudflare_snapshot_stale 1", output)
