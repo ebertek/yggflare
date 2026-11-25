@@ -1,0 +1,19 @@
+# Only the application source and runtime requirements are needed in the image.
+.git
+.github
+tests
+docs
+dashboards
+scripts
+**/__pycache__
+**/*.pyc
+.venv
+.ruff_cache
+.pytest_cache
+.env
+.env.*
+config
+data
+backup
+secrets
+legacy-import.*

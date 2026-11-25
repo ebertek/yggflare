@@ -19,7 +19,7 @@ POLICY = "11111111-1111-1111-1111-111111111111"
 TUNNEL = "52acd579-76f3-4b52-bec4-8c505258a7b1"
 
 spec = importlib.util.spec_from_file_location(
-    "cloudflare_live", Path(__file__).with_name("cloudflare-live.py")
+    "cloudflare_live", Path(__file__).resolve().parents[2] / "src" / "cloudflare" / "cloudflare-live.py"
 )
 if spec is None or spec.loader is None:
     raise ImportError("Unable to load cloudflare-live.py")
