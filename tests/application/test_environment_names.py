@@ -8,7 +8,7 @@ from pathlib import Path
 
 class EnvironmentNamesTests(unittest.TestCase):
     def test_no_legacy_environment_names_in_python_or_deployment(self):
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         legacy = re.compile(r"\b(?:YGG|CF)_[A-Z][A-Z0-9_]+\b")
         for path in root.rglob("*.py"):
             for node in ast.walk(ast.parse(path.read_text())):

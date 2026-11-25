@@ -14,9 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from prometheus_client.parser import text_string_to_metric_families
-
 from docker_inventory import image_reference
+from prometheus_client.parser import text_string_to_metric_families
 from stack_revision import enrich_stacks
 from traefik_inventory import read, source_id, timestamp, write
 

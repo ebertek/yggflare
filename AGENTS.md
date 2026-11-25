@@ -1,6 +1,6 @@
 # AGENTS.md — Yggflare contributor and AI-agent guide
 
-This file is repository-local context for developers and coding assistants. Read this and `README.md` before changing code. Treat actual source, tests and current GitHub state as authoritative when documentation may be stale.
+This file is repository-local context for developers and coding assistants. Read this, `README.md` and [development](docs/development.md) before changing code. Treat actual source, tests and current GitHub state as authoritative when documentation may be stale.
 
 ## Purpose and boundaries
 
@@ -15,28 +15,28 @@ Yggflare is a Python 3.15 containerized controller for Cloudflare Access applica
 
 | Component | Responsibility |
 |---|---|
-| `controller.py` | UTC scheduler, Compose snapshot, heartbeat, Cloudflare/scan/backup execution |
-
-The controller is the image's PID 1 by default. It must explicitly handle SIGTERM/SIGINT even without Docker Compose `init: true`, exit promptly during idle loops, and terminate active scheduled subprocess groups on shutdown. Preserve safe state boundaries: scans must not publish a partial successful snapshot; any partially applied Cloudflare operation must be reconciled on restart rather than assumed complete. Test shutdown against a real child process and check bounded TERM/KILL escalation.
-| `watchers.py` | Compose/inventory fingerprint polling and Docker topology change triggers |
-| `cli.py` | Container-facing `docker exec yggflare yggflare …` commands |
+| `src/yggflare/controller.py` | UTC scheduler, Compose snapshot, heartbeat, Cloudflare/scan/backup execution |
+| `src/yggflare/watchers.py` | Compose/inventory fingerprint polling and Docker topology change triggers |
+| `src/yggflare/cli.py` | Container-facing `docker exec yggflare yggflare …` commands |
 | `src/cloudflare/cloudflare-live.py` | Read-only live Cloudflare audit and drift assessment |
 | `src/cloudflare/cloudflare-manage.py` | Guarded Cloudflare plan, approval and opt-in reconciliation |
 | `src/cloudflare/cloudflare_orphans.py` | Ownership registry and fingerprint-approved deletion safeguards |
 | `src/cloudflare/cloudflare-auto-cleanup.py` | Optional grace-period auto retirement; inspect code before enabling |
 | `src/cloudflare/cloudflare_write_api.py` | Narrowly scoped Cloudflare writes; never add unrestricted delete functionality |
-| `src/network-inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
-| `src/network-inventory/device_identity.py` | Vendor-neutral, uncertain MAC/IP identity correlation and bounded history |
-| `src/network-inventory/status.py` | Read-only CLI summary of persisted network findings and identity conflicts |
-| `src/network-inventory/link_discovery.py`, `discovery_ra.py` | Scoped neighbour/Nmap/RA collection; RA metadata must never generate device IP candidates |
-| `src/network-inventory/discord_format.py` | Grouped Discord webhook embeds |
-| `src/network-inventory/alert_policy.py` | Confirm volatile TCP/DNS-SD signals before Discord, preserving immediate identity drift |
-| `backup.py`, `backup_verify.py`, `doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
-| `docker_inventory.py` | Sanitized, cached read-only Compose/Docker metadata for the web UI; never a reconciliation input |
-| `mcp_server.py`, `mcp_http.py` | Read-only MCP tools and opt-in authenticated Streamable HTTP |
-| `web.py`, `web_views.py` | Read-only HTTP inventory, per-port services, drift history and Cloudflare lifecycle views |
+| `src/network_inventory/audit.py` | Nmap/DNS-SD scan, state observations and drift detection |
+| `src/network_inventory/device_identity.py` | Vendor-neutral, uncertain MAC/IP identity correlation and bounded history |
+| `src/network_inventory/status.py` | Read-only CLI summary of persisted network findings and identity conflicts |
+| `src/network_inventory/link_discovery.py`, `discovery_ra.py` | Scoped neighbour/Nmap/RA collection; RA metadata must never generate device IP candidates |
+| `src/network_inventory/discord_format.py` | Grouped Discord webhook embeds |
+| `src/network_inventory/alert_policy.py` | Confirm volatile TCP/DNS-SD signals before Discord, preserving immediate identity drift |
+| `src/yggflare/backup.py`, `src/yggflare/backup_verify.py`, `src/yggflare/doctor.py` | Backups, isolated restore rehearsal, local diagnostics |
+| `src/yggflare/docker_inventory.py` | Sanitized, cached read-only Compose/Docker metadata for the web UI; never a reconciliation input |
+| `src/yggflare/mcp_server.py`, `src/yggflare/mcp_http.py` | Read-only MCP tools and opt-in authenticated Streamable HTTP |
+| `src/yggflare/web.py`, `src/yggflare/web_views.py` | Read-only HTTP inventory, per-port services, drift history and Cloudflare lifecycle views |
 | `src/cloudflare/cloudflare_view.py` | Allowlisted, atomic presentation snapshots; never used to authorize writes |
-| `tests/`, `src/cloudflare/test_*.py`, `src/network-inventory/test_*.py` | Regression tests |
+| `tests/application/`, `tests/cloudflare/`, `tests/network_inventory/` | Regression tests |
+
+The controller is the image's PID 1 by default. It must explicitly handle SIGTERM/SIGINT even without Docker Compose `init: true`, exit promptly during idle loops, and terminate active scheduled subprocess groups on shutdown. Preserve safe state boundaries: scans must not publish a partial successful snapshot; any partially applied Cloudflare operation must be reconciled on restart rather than assumed complete. Test shutdown against a real child process and check bounded TERM/KILL escalation.
 
 The inventory UI and automatic cleanup modules have landed on `main`. Check actual runtime deployment independently.
 
@@ -48,7 +48,7 @@ The inventory UI and automatic cleanup modules have landed on `main`. Check actu
 4. Ownership must be proven and persisted before any cleanup. Manual retirement uses a plan fingerprint and deletes **external DNS → Tunnel route → Access app**; leave Access protection until its route and DNS are gone. Preserve unrelated ingress routes. Recover safely after partial errors.
 5. Never enable new external-facing listeners by default. A web UI must remain read-only and loopback-only unless protected by an authenticated reverse proxy/Access policy. Do not expose secret contents or unauthenticated operational actions. MCP HTTP is disabled by default, uses a separate loopback listener, requires a private bearer token, rejects browser origins and validates exact Host headers. Never add mutation tools or enable wildcard binds. Inventory presentation may distinguish explicit shared namespaces, local macvlan interface evidence, observed discrepancies, inconclusive observations and historical findings, but must preserve conflicting evidence and never turn those classifications into reconciliation or alert-suppression inputs.
 6. Network scanning is bounded by configured LAN CIDRs. Avoid turning scan results into authoritative DNS changes automatically. Optional `YGGFLARE_DISCOVERY_RA` requires explicit IPv6 scope and interfaces, sends a short `rdisc6` solicitation on each, treats no-reply status 2 as normal, and stores only numeric, scoped topology hints with an empty device IP. Never promote RA prefixes or link-local router addresses into Nmap targets, confirmed identities, Discord alerts, DNS or Cloudflare writes. Future inventory adoption should propose reviewed changes for the host-mounted `/config`, never mutate the read-only container mount or write to the merged Compose checkout.
-7. Discord webhook URLs and Cloudflare tokens are secrets. No credential values in exceptions, test output or logs. Validate Discord webhook URL structure offline in `doctor` and before delivery using the shared `discord_webhook.py` helper; never print webhook IDs/tokens or turn malformed secret data into external HTTP requests.
+7. Discord webhook URLs and Cloudflare tokens are secrets. No credential values in exceptions, test output or logs. Validate Discord webhook URL structure offline in `doctor` and before delivery using the shared `src/yggflare/discord_webhook.py` helper; never print webhook IDs/tokens or turn malformed secret data into external HTTP requests.
 8. Archive restoration tests operate only on private temporary storage; never overwrite production config, state or secrets. Block traversal, symlinks, hardlinks and extraction bombs.
 
 ## Environment variable convention
@@ -62,12 +62,15 @@ work around a validation failure. Keep public setup examples host-neutral.
 
 ## Build, test and release
 
+Source is under `src/`; all regression tests are under `tests/`. Keep runtime `/app` paths stable when moving repository files. Runtime dependencies are in `requirements.txt`. See [development](docs/development.md) for the exact CI fixture environment and setup.
+
 - Image: `ghcr.io/ebertek/yggflare`. `:main` is development; `:vMAJOR.MINOR.PATCH` is stable. Prefer pinning to a digest in Compose so Renovate can update moving tags. The publish workflow passes `YGGFLARE_BUILD_VERSION` and `YGGFLARE_BUILD_REVISION` as Docker build args; the image exposes them for the early `[startup]` log and `yggflare --version`. Release logs must identify the real source commit; a local build without args deliberately reports `dev/unknown`. Keep the version/revision consistent with image OCI labels and test both text and JSON log modes.
 - Before PR: run `ruff check .`, `black --check .`, and:
   ```bash
-  python -m unittest discover -s tests -p 'test_*.py'
-  python -m unittest discover -s src/cloudflare -p 'test_*.py'
-  python -m unittest discover -s src/network-inventory -p 'test_*.py'
+  export PYTHONPATH=src/yggflare:src/cloudflare:src/network_inventory
+  python -m unittest discover -s tests/application -p 'test_*.py'
+  python -m unittest discover -s tests/cloudflare -p 'test_*.py'
+  python -m unittest discover -s tests/network_inventory -p 'test_*.py'
   ```
 - CI, Lint, Python autofix and GHCR publish workflows are under `.github/workflows/`. Check **the latest PR head SHA** before declaring checks green; autofix can create additional commits.
 - A `vX.Y.Z` tag triggers GHCR publishing. Release tags should represent reviewed `main` commits and must not be moved after publication. Consult the actual `publish.yml` for current `:main` tagging behavior.
@@ -102,8 +105,8 @@ Prometheus `/metrics` is opt-in via `YGGFLARE_METRICS_ENABLED=true` and is serve
 
 ## Adapter and probe safety
 
-- `integration_inventory.py` reads only Komodo's documented list RPCs and Kuma's Prometheus metrics. Never expose a generic API call, use a write/execute endpoint, return raw API responses or use admin credentials. Prefer explicitly configured, fixed-path read-only Docker secret mounts; legacy private config files retain strict private permissions. Never copy secrets into the config directory as a deployment workaround, read arbitrary paths or fall back after an explicitly selected secret fails. The read-only presentation paths must not load credentials.
-- `probe_inventory.py` runs only privately declared targets. Connect to explicitly scoped numeric addresses, use normal TLS verification and fixed HTTP HEAD requests without following redirects. DNS answers never authorize additional connection targets. Only the scheduler and explicit local CLI refresh may initiate collection.
+- `src/yggflare/integration_inventory.py` reads only Komodo's documented list RPCs and Kuma's Prometheus metrics. Never expose a generic API call, use a write/execute endpoint, return raw API responses or use admin credentials. Prefer explicitly configured, fixed-path read-only Docker secret mounts; legacy private config files retain strict private permissions. Never copy secrets into the config directory as a deployment workaround, read arbitrary paths or fall back after an explicitly selected secret fails. The read-only presentation paths must not load credentials.
+- `src/yggflare/probe_inventory.py` runs only privately declared targets. Connect to explicitly scoped numeric addresses, use normal TLS verification and fixed HTTP HEAD requests without following redirects. DNS answers never authorize additional connection targets. Only the scheduler and explicit local CLI refresh may initiate collection.
 - A complete collection is not proof that all resources are visible, all checks passed, or the endpoint is reachable externally. Keep the most recent successful collection on failed refresh; never report an unavailable source as an empty healthy inventory.
 - MCP global group restrictions are an upper bound. Opt-in HTTP principal mode dispatches each authenticated request to a separately scoped stateless server; no fallback to the legacy token, arbitrary token paths, non-loopback bind or cross-group calls. Principal servers share the global concurrency limit. This is group-level authorization, not resource tenancy. Cross-source queries require all relevant groups. Keep local CLI and Web UI authorization separate from MCP. Log only fixed operation names, elapsed time and outcomes, never query arguments or payloads.
 
@@ -137,14 +140,14 @@ Keep this guide evergreen. Update it when architecture or safety invariants chan
 - Network state retains service detection metadata, resolved DNS-SD addresses (no TXT data), and at most 200 recent events. Keep scan-confirmed ports, probed identities, port-name hints and advertisements distinct.
 
 - Existing inventory details (including hostnames, IPs and MACs) remain visible by default in pages and exports. `YGGFLARE_WEB_SHOW_SECRETS` is not implemented; do not use it to mask existing fields. Credentials and raw environment remain excluded.
-- `inventory_view.py` derives review flags and static/observed diffs. Optional `device_class` and boolean `retired` are presentation metadata only: never change DNS/scanning/cleanup semantics based on them. Offline is not retired; unobserved ports are unknown, not closed.
+- `src/yggflare/inventory_view.py` derives review flags and static/observed diffs. Optional `device_class` and boolean `retired` are presentation metadata only: never change DNS/scanning/cleanup semantics based on them. Offline is not retired; unobserved ports are unknown, not closed.
 - Scan state retains first/last-seen timestamps by LAN address and a separate bounded `identity_history` keyed only by declared inventory identity, unique MAC evidence, or provisional address observation. Competing MAC claims and shared/proxy MACs must never be silently merged. Preserve confidence labels, provenance, explicit uncertainty, and `not observed != offline`. The `identity_changes` timeline is strictly informational and cannot authorize inventory/DNS changes.
 - New TCP ports and DNS-SD service identities require two consecutive successful observations by default (`YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS`, valid 1-10). Keep raw observations and active drift immediately visible; suppress only the *Discord notification* until confirmed. No reply or incomplete DNS-SD browsing is not evidence of withdrawal. Preserve pending Discord delivery independently from alert confirmations, and prevent replays when migrating old state. Identity changes (new device, MAC/IP drift) must still alert immediately.
 - Scheduled subprocess logs identify reconciliation, managed orphan cleanup, presentation refresh and network scans independently, including wall-clock durations, outcomes and interrupt handling; never log command arguments or secrets.
 
 - Container destinations `/config`, `/data`, `/backup`, `/compose-source` are fixed. Do not reintroduce path or container-name environment knobs. The image owns `PYTHONPATH`; host bind sources remain configurable. Printed approvals and documentation use `docker exec yggflare`, which works from any directory. Do not use Compose exec commands. If the operator changes `container_name`, they substitute that name in the command.
 - Docker inventory omits services without LAN endpoints and resolves shared-network parents uniquely (Compose service references within project). Never assign all parent ports to every child or infer process ownership from an endpoint scan.
-- `inventory_catalog.py` projects optional reserved/retired JSON catalogs into separate read-only tabs, never reconciliation inputs. Missing/invalid optional catalogs must not disable the active UI. Private deployment schemas have not been verified from this public repository.
+- `src/yggflare/inventory_catalog.py` projects optional reserved/retired JSON catalogs into separate read-only tabs, never reconciliation inputs. Missing/invalid optional catalogs must not disable the active UI. Private deployment schemas have not been verified from this public repository.
 
 Paged MCP tools must expose the shared typed page envelope and accept the preceding result-set fingerprint. Preserve existing source context in structured serialization; validate the full filtered set before slicing. Nested evidence is not a frozen multi-source snapshot.
 

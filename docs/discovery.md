@@ -1,8 +1,64 @@
-# Additional discovery sources
+# Network discovery and alerts
+
+[Documentation index](README.md) · [Project README](../README.md)
+
+The daily IPv4 scan checks responsive non-Docker addresses using Nmap's popular ports
+plus configured and declared TCP ports. Avahi supplies separate DNS-SD service
+evidence. Scans never change DNS records or device declarations.
+
+Optional ARP, NDP, IPv6 and OS discovery are limited to explicitly configured
+interfaces and address ranges:
+
+```yaml
+YGGFLARE_DISCOVERY_INTERFACES: "eth0,eth1"
+YGGFLARE_DISCOVERY_IPV6_CIDRS: "fd00:1234:5678::/64"
+YGGFLARE_DISCOVERY_ARP_SCAN: "true"
+YGGFLARE_DISCOVERY_NDP_PROBE: "true"
+YGGFLARE_DISCOVERY_RA: "false"
+YGGFLARE_DISCOVERY_IPV6_SCAN: "true"
+YGGFLARE_DISCOVERY_OS_DETECTION: "true"
+```
+
+These optional collector switches default to `false`. IPv6 scanning never
+sweeps an entire /64. `YGGFLARE_DISCOVERY_RA` optionally solicits router
+advertisements on selected interfaces, recording scoped, read-only topology
+evidence—not device identities or DNS inputs. The
+supplemental target budget defaults to 512 unique addresses per IP family
+(`YGGFLARE_DISCOVERY_MAX_TARGETS`, 1–4096). Nmap processes targets in batches of at
+most 64; this batch size is **not** a discovery cutoff.
+
+Additional SSDP, NetBIOS, LLDP, SMB, SNMP and passive fingerprint sources are
+described in [supplemental discovery options](#additional-discovery-sources). Only enable sources appropriate
+to your network.
+
+### Identity and history
+
+Yggflare correlates inventory declarations, observed MACs, IPv4/IPv6 addresses and
+discovery evidence. It retains first/last observed timestamps, address changes and an
+identity timeline.
+
+Confidence is **high**, **medium** or **low** based on corroborating evidence—not a
+proof of ownership. IP-only sightings remain provisional. Conflicting MAC claims are
+presented separately; DNS-SD names and OS guesses are hints, not identity keys.
+
+A missing observation does **not** prove that a device is offline. Histories are
+bounded and saved in `/data/network-inventory/state.json`.
+
+### Notifications
+
+Unknown devices and changed MAC/IP observations notify immediately. Newly open TCP
+ports and new DNS-SD service identities require **two successful observations** by
+default; setting `YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS=1` restores immediate
+reporting.
+
+Unconfirmed findings remain visible in the UI. Changing a DNS-SD service's dynamic
+port does not create a new identity. A failed notification doesn't lose a scan: queued
+Discord messages are retried later.
+
+## Additional discovery sources
 
 All collectors use `YGGFLARE_DISCOVERY_INTERFACES` and the existing IPv4/IPv6
-scope. Enable only the sources you want. Every switch below defaults to `false`
-and requires literal `true` or `false`; the supplied Compose passes them through.
+scope. Enable only the sources you want. Optional collector switches default to `false` and require literal `true` or `false`. Forward additional environment settings through the deployment Compose file when needed.
 Results appear in **Discovery**, not authoritative inventory or Cloudflare state.
 A failed source produces a sanitized warning while other sources continue.
 
@@ -12,7 +68,9 @@ A failed source produces a sanitized warning while other sources continue.
 | `YGGFLARE_DISCOVERY_LLDP` | Read LLDP/CDP neighbours from an existing lldpd socket |
 | `YGGFLARE_DISCOVERY_RA` | Solicit scoped ICMPv6 Router Advertisements with `rdisc6`; one short probe per configured interface |
 | `YGGFLARE_DISCOVERY_NETBIOS` | NetBIOS node-status names for all observed, in-scope IPv4 addresses, with bounded workers and per-target timeouts |
-| `YGGFLARE_DISCOVERY_SMB` | Anonymous SMB share listing for the same bounded addresses |
+| `YGGFLARE_DISCOVERY_SMB` | Anonymous listing for scoped targets with observed TCP/445 or TCP/139 |
+| `YGGFLARE_DISCOVERY_SMB_MAX_TARGETS` | 1–4096; inherits general discovery limit (default 512) |
+| `YGGFLARE_DISCOVERY_SMB_WORKERS` | 1–16; default 8 |
 | `YGGFLARE_DISCOVERY_SNMP` | Query explicitly configured SNMP targets with mounted credentials |
 | `YGGFLARE_DISCOVERY_SNMP_TARGETS` | Comma-separated IPv4 addresses within the LAN scope; empty by default, maximum 16 |
 | `YGGFLARE_DISCOVERY_MAX_TARGETS` | Maximum distinct active-probe candidates per address family; default 512, configurable 1–4096 |
@@ -42,8 +100,7 @@ NetBIOS: exit code 1 and the collector's per-target timeout yield no identity
 evidence and no warning. Missing executables and unexpected exit codes remain
 warnings. The reduced timeout may miss unusually slow legitimate responders;
 this is a lightweight supplementary identity signal, not a full NetBIOS audit.
-Anonymous SMB discovery still visits only the first 16 addresses by design.
-No SMB file content is read. Cached target addresses need not still be reachable.
+Anonymous SMB enumeration requires observed open TCP/445 or TCP/139, preferring 445. No SMB file content is read. Cached addresses need not still be reachable.
 
 ## Scan runtime and progress
 
@@ -203,3 +260,14 @@ permissions are required. Do not interpret an empty sample as device disappearan
 These collectors are best-effort identity evidence. They do not produce automatic
 DNS changes, ownership claims or Discord drift alerts. Missing utilities, daemon
 sockets or permissions are shown as collector warnings.
+
+
+## Saved coverage evidence
+
+Network discovery now retains aggregate scan coverage evidence: Nmap completion metadata, TCP requested/represented/omitted targets, explicit timeouts, port-evidence target count, selected port count, Docker exclusions and DNS-SD browse outcome. `get_discovery_status` exposes this metadata; legacy/offline snapshots are marked unavailable. Omissions from Nmap `--open` are not evidence of closed ports, timeouts or offline devices. Existing discovery/alert decisions are unchanged. All paginated MCP tools expose concrete typed row fields, with mixed legacy values retained where necessary.
+
+The same discovery coverage is available in the Web UI under Operations → Discovery coverage, and through `yggflare network coverage --json`. It becomes available after a new live scan; no historical coverage is fabricated.
+
+Supplemental discovery coverage reports the saved per-collector configuration, execution counts, no-reply outcomes, parse failures, unavailable executables, target limits and unverified Nmap completion for the fixed supported sources. It is available in MCP `get_discovery_status`, Web Operations → Discovery coverage and `yggflare network coverage --json`. Counts are invocations/batches, not complete device or port coverage; a configured source with no eligible targets can remain unattempted. SMB's configurable target limit and worker counts are explicit. No changes to discovery scope or alert policy.
+
+SMB enumeration uses scoped targets with previously observed open TCP/445 or TCP/139, preferring 445. Set `YGGFLARE_DISCOVERY_SMB_MAX_TARGETS` (1–4096; defaults to `YGGFLARE_DISCOVERY_MAX_TARGETS`, otherwise 512) and `YGGFLARE_DISCOVERY_SMB_WORKERS` (1–16; default 8) to bound concurrent anonymous listings. Each listing retains its 10-second execution deadline. Invalid SMB settings disable only that collector and produce a sanitized warning. Missing port evidence is not proof of closure. Aggregate selection and outcomes (access denied, refusal, remote timeout, local deadline, execution failure and successful listings with/without shares) are reported without raw diagnostics. No credentials, new scan scope or alert policy changes.

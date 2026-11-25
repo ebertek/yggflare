@@ -6,3 +6,7 @@ data/
 backup/
 secrets/
 .venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+legacy-import.*/

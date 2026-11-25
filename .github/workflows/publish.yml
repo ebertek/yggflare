@@ -13,7 +13,7 @@ env:
   YGGFLARE_DOCKER_CIDR: 10.4.21.0/24
   YGGFLARE_INTERNAL_DOMAIN: ygg.nu
   YGGFLARE_EXTERNAL_DOMAIN: ebi.nu
-  PYTHONPATH: src/cloudflare
+  PYTHONPATH: src/yggflare:src/cloudflare:src/network_inventory
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
           python-version: "3.15"
       - name: Install test and lint dependencies
         run: |
-          python -m pip install -r src/cloudflare/requirements.txt
+          python -m pip install -r requirements.txt
           python -m pip install "ruff==0.14.14" "black==25.12.0"
       - name: Validate lint and format
         run: |
@@ -41,9 +41,9 @@ jobs:
           black --check .
       - name: Run unit tests
         run: |
-          python -m unittest discover -s tests -p 'test_*.py'
-          python -m unittest discover -s src/cloudflare -p 'test_*.py'
-          python -m unittest discover -s src/network-inventory -p 'test_*.py'
+          python -m unittest discover -s tests/application -p 'test_*.py'
+          python -m unittest discover -s tests/cloudflare -p 'test_*.py'
+          python -m unittest discover -s tests/network_inventory -p 'test_*.py'
       - name: Verify version tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
