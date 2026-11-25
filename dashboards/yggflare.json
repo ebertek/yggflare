@@ -41,7 +41,7 @@
   "editable": true,
   "graphTooltip": 0,
   "schemaVersion": 41,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-24h",
@@ -76,7 +76,8 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -89,10 +90,11 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "value",
+        "colorMode": "none",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Observed responsive IPv4 host count, not a health threshold."
     },
     {
       "id": 2,
@@ -122,7 +124,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -138,7 +157,8 @@
         "colorMode": "value",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Unknown devices warrant identity review; not proof of unauthorized access."
     },
     {
       "id": 3,
@@ -168,7 +188,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -184,7 +221,8 @@
         "colorMode": "value",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Active findings warrant review; not necessarily service failures or security incidents."
     },
     {
       "id": 4,
@@ -214,7 +252,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -230,7 +285,8 @@
         "colorMode": "value",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Orphan candidates warrant ownership review, not automatic deletion."
     },
     {
       "id": 5,
@@ -260,7 +316,8 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 1
+          "decimals": 1,
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -273,10 +330,11 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "value",
+        "colorMode": "none",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Age of last successful scan. Normal age depends on the configured scan schedule; no generic alarm threshold."
     },
     {
       "id": 6,
@@ -306,7 +364,8 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 1
+          "decimals": 1,
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -319,10 +378,11 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "value",
+        "colorMode": "none",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Runtime of the last completed scan. No generic duration alarm threshold."
     },
     {
       "id": 7,
@@ -352,7 +412,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -368,7 +445,8 @@
         "colorMode": "value",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "1 means the saved Cloudflare snapshot is stale."
     },
     {
       "id": 8,
@@ -398,7 +476,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -414,7 +509,8 @@
         "colorMode": "value",
         "graphMode": "area",
         "textMode": "auto"
-      }
+      },
+      "description": "Pending events are a queue observation; not proof of failed delivery."
     },
     {
       "id": 9,
@@ -709,7 +805,40 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "noValue": "No data"
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "No",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Yes",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -722,7 +851,7 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value_and_name"
       }
@@ -792,9 +921,74 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "noValue": "No data"
+          "noValue": "No data",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "changed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -805,7 +999,7 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value_and_name"
       }
@@ -864,9 +1058,44 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "noValue": "No data"
+          "noValue": "No data",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Not selected"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -877,7 +1106,7 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value_and_name"
       }
@@ -958,9 +1187,74 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "noValue": "No data"
+          "noValue": "No data",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "inconclusive"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -971,7 +1265,7 @@
           "values": false
         },
         "orientation": "auto",
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value_and_name"
       }
