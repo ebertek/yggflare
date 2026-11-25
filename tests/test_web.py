@@ -116,7 +116,20 @@ class WebTests(unittest.TestCase):
             )
 
     def test_probe_view_uses_saved_projection(self):
-        with patch("mcp_server.saved_probes", return_value={"available": True, "items": [{"target": "demo", "status": "response_received", "http_status": 302, "private": "never-export"}]}):
+        with patch(
+            "mcp_server.saved_probes",
+            return_value={
+                "available": True,
+                "items": [
+                    {
+                        "target": "demo",
+                        "status": "response_received",
+                        "http_status": 302,
+                        "private": "never-export",
+                    }
+                ],
+            },
+        ):
             html = web.render("probes", {}, {"view": ["results"]})
             self.assertIn("response_received", html)
             self.assertNotIn("never-export", html)

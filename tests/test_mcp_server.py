@@ -456,9 +456,20 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
         server = build_server(fixture, env={"YGGFLARE_MCP_TOOL_GROUPS": "operations"})
         async with Client(server, raise_exceptions=True) as client:
             tools = (await client.list_tools()).tools
-            self.assertEqual({tool.name for tool in tools}, {"get_job_status", "get_job_history", "get_backup_status", "get_notification_status"})
+            self.assertEqual(
+                {tool.name for tool in tools},
+                {
+                    "get_job_status",
+                    "get_job_history",
+                    "get_backup_status",
+                    "get_notification_status",
+                },
+            )
             resources = (await client.list_resources()).resources
-            self.assertEqual({str(item.uri) for item in resources}, {"yggflare://schema", "yggflare://jobs"})
+            self.assertEqual(
+                {str(item.uri) for item in resources},
+                {"yggflare://schema", "yggflare://jobs"},
+            )
             prompts = (await client.list_prompts()).prompts
             self.assertEqual({item.name for item in prompts}, {"review_operations"})
             result = await client.read_resource("yggflare://schema")

@@ -149,7 +149,9 @@ class CommandTests(unittest.TestCase):
 
     def test_probe_results_and_refresh_are_separate(self):
         with (
-            patch("mcp_server.saved_probes", return_value={"available": True, "items": []}),
+            patch(
+                "mcp_server.saved_probes", return_value={"available": True, "items": []}
+            ),
             patch.object(cli.subprocess, "run") as run,
             contextlib.redirect_stdout(io.StringIO()),
         ):
@@ -157,7 +159,9 @@ class CommandTests(unittest.TestCase):
             run.assert_not_called()
             run.return_value = SimpleNamespace(returncode=0)
             self.assertEqual(cli.main(["probes", "refresh"]), 0)
-            run.assert_called_once_with([cli.sys.executable, "/app/probe_inventory.py"], check=False)
+            run.assert_called_once_with(
+                [cli.sys.executable, "/app/probe_inventory.py"], check=False
+            )
 
     def test_mcp_serve_does_not_take_a_controller_snapshot(self):
         with (

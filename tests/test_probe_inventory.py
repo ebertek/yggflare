@@ -11,9 +11,15 @@ from unittest.mock import patch
 import probe_inventory as probes
 
 ENV = {"YGGFLARE_PROBES_ENABLED": "true", "YGGFLARE_LAN_CIDR": "192.168.1.0/24"}
-TARGET = {"name": "demo", "hostname": "demo.invalid", "address": "192.168.1.20",
-          "port": 443, "scheme": "https", "checks": ["dns", "tcp", "tls", "http"],
-          "expected_statuses": [200, 302]}
+TARGET = {
+    "name": "demo",
+    "hostname": "demo.invalid",
+    "address": "192.168.1.20",
+    "port": 443,
+    "scheme": "https",
+    "checks": ["dns", "tcp", "tls", "http"],
+    "expected_statuses": [200, 302],
+}
 
 
 class ProbeTests(unittest.TestCase):
@@ -23,15 +29,23 @@ class ProbeTests(unittest.TestCase):
         self.root = Path(folder.name)
 
     def config(self, target=TARGET):
-        (self.root / "probes.json").write_text(json.dumps({"version": 1, "targets": [target]}))
+        (self.root / "probes.json").write_text(
+            json.dumps({"version": 1, "targets": [target]})
+        )
 
     def test_scope_and_fixed_configuration(self):
         self.assertIsNone(probes.settings(self.root, {}))
         self.config()
         target = probes.settings(self.root, ENV)[0]
         self.assertEqual(target["address"], "192.168.1.20")
-        for changes in ({"address": "8.8.8.8"}, {"hostname": "bad\r\nHost: x"}, {"path": "/private"},
-                        {"port": 0}, {"checks": ["shell"]}, {"scheme": "http"}):
+        for changes in (
+            {"address": "8.8.8.8"},
+            {"hostname": "bad\r\nHost: x"},
+            {"path": "/private"},
+            {"port": 0},
+            {"checks": ["shell"]},
+            {"scheme": "http"},
+        ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.config({**TARGET, **changes})
                 probes.settings(self.root, ENV)
@@ -39,7 +53,13 @@ class ProbeTests(unittest.TestCase):
     def test_dns_and_tcp_are_separate(self):
         self.config()
         target = probes.settings(self.root, ENV)[0]
-        with patch.object(probes.socket, "getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.21", 0))]):
+        with patch.object(
+            probes.socket,
+            "getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.21", 0))
+            ],
+        ):
             result = probes.probe(target, "dns")
             self.assertEqual(result["status"], "mismatch")
             self.assertFalse(result["expected_address_match"])
@@ -51,12 +71,20 @@ class ProbeTests(unittest.TestCase):
     def test_tls_invalid_and_http_head_no_redirect(self):
         self.config()
         target = probes.settings(self.root, ENV)[0]
-        with patch.object(probes, "connect"), patch.object(probes, "tls_socket", side_effect=ssl.SSLCertVerificationError("SECRET")):
+        with (
+            patch.object(probes, "connect"),
+            patch.object(
+                probes, "tls_socket", side_effect=ssl.SSLCertVerificationError("SECRET")
+            ),
+        ):
             result = probes.probe(target, "tls")
             self.assertFalse(result["tls_verified"])
             self.assertNotIn("SECRET", str(result))
         target["scheme"] = "http"
-        with patch.object(probes, "connect") as connect, patch.object(probes.http.client, "HTTPResponse") as response:
+        with (
+            patch.object(probes, "connect") as connect,
+            patch.object(probes.http.client, "HTTPResponse") as response,
+        ):
             response.return_value.status = 302
             result = probes.probe(target, "http")
             self.assertTrue(result["expected_status_match"])
@@ -70,12 +98,23 @@ class ProbeTests(unittest.TestCase):
 
     def test_failed_collection_retains_last_good_and_invalidates_changed_config(self):
         self.config()
-        probes.refresh(self.root, self.root, ENV, lambda target, check: {"target": target["target"], "check": check, "status": "check_failed"})
+        probes.refresh(
+            self.root,
+            self.root,
+            ENV,
+            lambda target, check: {
+                "target": target["target"],
+                "check": check,
+                "status": "check_failed",
+            },
+        )
         original = probes.saved(self.root, self.root, ENV)
         self.assertTrue(original["fresh"])
         self.assertEqual(len(original["items"]), 4)
+
         def fail(*args):
             raise ValueError("SECRET")
+
         with self.assertRaises(ValueError):
             probes.refresh(self.root, self.root, ENV, fail)
         after = probes.saved(self.root, self.root, ENV)
