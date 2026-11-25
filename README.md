@@ -345,8 +345,12 @@ API endpoint; do not enable an insecure/public dashboard for this feature.
 HTTPS uses normal certificate verification. No credentials, redirects,
 proxies, arbitrary paths or client-selected endpoints are supported.
 Every five minutes the controller collects the documented HTTP/TCP/UDP
-list endpoints (including pagination); failed collection retains the
-last complete snapshot and marks it unverified. See the
+list endpoints (including pagination); Traefik's terminal
+`X-Next-Page: 1` is handled explicitly, including exactly full final
+pages. Invalid continuations, duplicate rows and exceeded bounds fail
+closed. Failed collection retains the last complete snapshot and marks
+it unverified. Logs identify the fixed endpoint and page with a sanitized
+failure category, never raw API content. See the
 [Traefik API documentation](https://doc.traefik.io/traefik/reference/install-configuration/api-dashboard/).
 
 ```sh

@@ -101,10 +101,19 @@ def get_page(config, protocol, kind, page):
         ):
             raise ValueError("Invalid Traefik API list response")
         next_page = response.getheader("X-Next-Page", "").strip()
-        if next_page not in {"", str(page + 1)}:
+        # Traefik v3.8 (pkg/api/criterion.go) returns 1 on the terminal
+        # page, including an empty list or an exactly full final page.
+        # Never request page one again or infer continuation in that case.
+        if next_page == "1":
+            return rows, False
+        if next_page == str(page + 1):
+            if len(rows) != PAGE_SIZE:
+                raise ValueError("Incomplete Traefik page with continuation")
+            return rows, True
+        if next_page:
             raise ValueError("Unexpected Traefik pagination")
-        # A full page without a header may be an older implementation.
-        return rows, bool(next_page) or len(rows) == PAGE_SIZE
+        # Retain bounded compatibility for implementations without a header.
+        return rows, len(rows) == PAGE_SIZE
     finally:
         connection.close()
 
@@ -219,13 +228,27 @@ def collect(config, fetch=get_page):
     for protocol, kind in SECTIONS:
         seen = set()
         for page in range(1, MAX_PAGES + 1):
-            raw, more = fetch(config, protocol, kind, page)
-            for item in raw:
-                row = project(protocol, kind, item)
-                if row["name"] in seen:
-                    raise ValueError("Duplicate Traefik resource during pagination")
-                seen.add(row["name"])
-                rows.append(row)
+            try:
+                raw, more = fetch(config, protocol, kind, page)
+                for item in raw:
+                    row = project(protocol, kind, item)
+                    if row["name"] in seen:
+                        raise ValueError("Duplicate Traefik resource during pagination")
+                    seen.add(row["name"])
+                    rows.append(row)
+            except (OSError, ValueError, TypeError, http.client.HTTPException) as error:
+                # Only fixed endpoint names, page numbers and allowlisted
+                # categories are logged, never raw API fields or exceptions.
+                category = (
+                    "transport"
+                    if isinstance(error, (OSError, http.client.HTTPException))
+                    else "invalid_response"
+                )
+                print(
+                    f"Traefik {protocol}/{kind} page {page}: {category}",
+                    file=sys.stderr,
+                )
+                raise
             if not more:
                 break
         else:
