@@ -114,16 +114,26 @@ class TraefikTests(unittest.TestCase):
                 with patch.object(traefik.http.client, "HTTPConnection") as connection:
                     response = connection.return_value.getresponse.return_value
                     response.status = 200
-                    response.read.return_value = json.dumps([{"name": f"router-{i}@docker"} for i in range(count)]).encode()
+                    response.read.return_value = json.dumps(
+                        [{"name": f"router-{i}@docker"} for i in range(count)]
+                    ).encode()
                     response.getheader.return_value = header
-                    rows, continuation = traefik.get_page(config, "http", "routers", page)
+                    rows, continuation = traefik.get_page(
+                        config, "http", "routers", page
+                    )
                     self.assertEqual(len(rows), count)
                     self.assertEqual(continuation, more)
                     connection.return_value.close.assert_called_once()
 
     def test_pagination_rejects_invalid_continuations(self):
         config = traefik.settings(ENV)
-        for page, count, header in ((1, 0, "2"), (1, 99, "2"), (1, 100, "3"), (3, 100, "2"), (1, 100, "https://example.invalid")):
+        for page, count, header in (
+            (1, 0, "2"),
+            (1, 99, "2"),
+            (1, 100, "3"),
+            (3, 100, "2"),
+            (1, 100, "https://example.invalid"),
+        ):
             with self.subTest(page=page, count=count, header=header):
                 with patch.object(traefik.http.client, "HTTPConnection") as connection:
                     response = connection.return_value.getresponse.return_value
@@ -136,9 +146,11 @@ class TraefikTests(unittest.TestCase):
     def test_all_endpoints_with_terminal_headers_and_full_last_page(self):
         config = traefik.settings(ENV)
         calls = []
+
         def request(method, path, **kwargs):
             self.assertEqual(method, "GET")
             calls.append(path)
+
         def respond():
             path = calls[-1]
             first = path.startswith("/api/http/routers?")
@@ -147,9 +159,12 @@ class TraefikTests(unittest.TestCase):
             base = 0 if page_one else 100
             response = connection.return_value.getresponse.return_value
             response.status = 200
-            response.read.return_value = json.dumps([{"name": f"router-{base+i}@docker"} for i in range(count)]).encode()
+            response.read.return_value = json.dumps(
+                [{"name": f"router-{base+i}@docker"} for i in range(count)]
+            ).encode()
             response.getheader.return_value = "2" if first and page_one else "1"
             return response
+
         with patch.object(traefik.http.client, "HTTPConnection") as connection:
             connection.return_value.request.side_effect = request
             connection.return_value.getresponse.side_effect = respond
@@ -162,6 +177,7 @@ class TraefikTests(unittest.TestCase):
     def test_failure_diagnostics_do_not_expose_raw_exception(self):
         def fail(*args):
             raise ValueError("PRIVATE RESPONSE")
+
         with contextlib.redirect_stderr(io.StringIO()) as output:
             with self.assertRaises(ValueError):
                 traefik.collect(traefik.settings(ENV), fail)
