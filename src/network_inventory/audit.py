@@ -23,10 +23,9 @@ from pathlib import Path
 from alert_policy import confirmation_scans, confirmed_alerts
 from device_identity import update_history
 from discord_format import render
-from link_discovery import collect as collect_links
-
 from discord_webhook import validate_webhook_url
 from finding_lifecycle import update as update_findings
+from link_discovery import collect as collect_links
 
 NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
 DEFAULT_PORTS = (

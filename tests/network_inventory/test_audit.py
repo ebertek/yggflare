@@ -9,7 +9,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
-    "network_audit", Path(__file__).resolve().parents[2] / "src" / "network_inventory" / "audit.py"
+    "network_audit",
+    Path(__file__).resolve().parents[2] / "src" / "network_inventory" / "audit.py",
 )
 if SPEC is None or SPEC.loader is None:
     raise ImportError("Cannot load audit.py")

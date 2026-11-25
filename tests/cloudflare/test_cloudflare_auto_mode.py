@@ -9,7 +9,8 @@ from unittest.mock import patch
 from cloudflare_guarded import UnsafePlan
 
 SPEC = importlib.util.spec_from_file_location(
-    "cloudflare_manage_cli", Path(__file__).resolve().parents[2] / "src" / "cloudflare" / "cloudflare-manage.py"
+    "cloudflare_manage_cli",
+    Path(__file__).resolve().parents[2] / "src" / "cloudflare" / "cloudflare-manage.py",
 )
 if SPEC is None or SPEC.loader is None:
     raise ImportError("Unable to load cloudflare-manage.py")

@@ -15,10 +15,9 @@ from pathlib import Path
 
 import uvicorn
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp_server import GROUPS, build_server, enabled_tools
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
-
-from mcp_server import GROUPS, build_server, enabled_tools
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9._~-]{32,256}")
 HOST_PATTERN = re.compile(r"[A-Za-z0-9.:\[\]-]{1,253}")

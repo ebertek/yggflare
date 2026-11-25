@@ -7,8 +7,6 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from starlette.testclient import TestClient
-
 from mcp_http import (
     HTTPListener,
     PrincipalApp,
@@ -19,6 +17,7 @@ from mcp_http import (
     read_token,
     settings,
 )
+from starlette.testclient import TestClient
 
 TOKEN = b"a" * 64
 HEADERS = {

@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-SOURCE = Path(__file__).resolve().parents[2] / "src" / "cloudflare" / "cloudflare-auto-cleanup.py"
+SOURCE = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "cloudflare"
+    / "cloudflare-auto-cleanup.py"
+)
 SPEC = importlib.util.spec_from_file_location("cloudflare_auto_cleanup_cli", SOURCE)
 if SPEC is None or SPEC.loader is None:
     raise ImportError("Cannot import automatic cleanup")
