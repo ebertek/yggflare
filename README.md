@@ -454,7 +454,12 @@ docker exec yggflare yggflare kuma coverage --project PROJECT
 ### Independent connectivity evidence
 
 Enable `YGGFLARE_PROBES_ENABLED=true` only after creating the private
-`/config/probes.json` allowlist. Example schema (illustrative addresses only):
+`/config/probes.json` allowlist or a read-only Docker Compose config mounted
+at `/yggflare-probes.json` with `YGGFLARE_PROBES_CONFIG_FILE=/yggflare-probes.json`.
+Prefer the latter for GitOps: it avoids copying into the private config directory.
+An explicitly configured missing, writable or invalid mount fails closed;
+no fallback to the legacy file. Recreate the container after replacing the
+source file. Example schema (illustrative addresses only):
 
 ```json
 {

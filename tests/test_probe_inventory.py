@@ -1,11 +1,13 @@
 """Scoped probe configuration, independent check results and snapshot regressions."""
 
 import json
+import os
 import socket
 import ssl
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import probe_inventory as probes
@@ -49,6 +51,34 @@ class ProbeTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.config({**TARGET, **changes})
                 probes.settings(self.root, ENV)
+
+    def test_docker_config_mount_is_explicit_and_read_only(self):
+        self.config()
+        mount = self.root / "mounted.json"
+        mount.write_text(json.dumps({"version": 1, "targets": [{**TARGET, "address": "192.168.1.21"}]}))
+        mount.chmod(0o644)
+        env = {**ENV, "YGGFLARE_PROBES_CONFIG_FILE": "/yggflare-probes.json"}
+        with (
+            patch.object(probes, "CONFIG_MOUNT", mount),
+            patch.object(probes.os, "fstatvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)) as info,
+        ):
+            self.assertEqual(probes.settings(self.root, env)[0]["address"], "192.168.1.21")
+            info.return_value = SimpleNamespace(f_flag=0)
+            with self.assertRaises(ValueError):
+                probes.settings(self.root, env)
+            info.return_value = SimpleNamespace(f_flag=os.ST_RDONLY)
+            mount.chmod(0o666)
+            with self.assertRaises(ValueError):
+                probes.settings(self.root, env)
+            mount.unlink()
+            with self.assertRaises(OSError):
+                probes.settings(self.root, env)
+            mount.symlink_to(self.root / "probes.json")
+            with self.assertRaises(OSError):
+                probes.settings(self.root, env)
+            with self.assertRaises(ValueError):
+                probes.settings(self.root, {**env, "YGGFLARE_PROBES_CONFIG_FILE": "/etc/passwd"})
+            self.assertEqual(probes.settings(self.root, ENV)[0]["address"], TARGET["address"])
 
     def test_dns_and_tcp_are_separate(self):
         self.config()

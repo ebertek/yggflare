@@ -20,6 +20,7 @@ from traefik_inventory import read, timestamp, write
 
 INTERVAL = 300
 MAX_TARGETS = 16
+CONFIG_MOUNT = Path('/yggflare-probes.json')
 CHECKS = ("dns", "tcp", "tls", "http")
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}")
 FIELDS = (
@@ -47,11 +48,21 @@ def settings(config_dir, env):
         return None
     if enabled != "true":
         raise ValueError("Invalid probe enable setting")
-    path = config_dir / "probes.json"
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_size > 64 * 1024:
-        raise ValueError("Invalid private probe configuration")
-    document = json.loads(path.read_text(encoding="utf-8"))
+    selected = env.get("YGGFLARE_PROBES_CONFIG_FILE", "")
+    if selected and selected != "/yggflare-probes.json":
+        raise ValueError("Probe configuration requires its fixed Docker config path")
+    path = CONFIG_MOUNT if selected else config_dir / "probes.json"
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 64 * 1024:
+            raise ValueError("Invalid private probe configuration")
+        if selected and (info.st_mode & 0o022 or not os.fstatvfs(handle.fileno()).f_flag & os.ST_RDONLY):
+            raise ValueError("Probe Docker config must be read-only and not group/world writable")
+        payload = handle.read(64 * 1024 + 1)
+    if len(payload) > 64 * 1024:
+        raise ValueError("Probe configuration exceeds size limit")
+    document = json.loads(payload)
     lan = ipaddress.ip_network(env["YGGFLARE_LAN_CIDR"])
     ipv6 = [
         ipaddress.ip_network(value.strip())
