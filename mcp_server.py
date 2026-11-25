@@ -1683,13 +1683,20 @@ class InventoryTools:
         # matching. Candidate ownership is exact project/stack name only.
         _, services = self._service_rows(hostname, "")
         matching_services = [
-            row for row in services
-            if needle in {str(value).casefold().rstrip(".") for value in row.get("aliases", [])}
+            row
+            for row in services
+            if needle
+            in {str(value).casefold().rstrip(".") for value in row.get("aliases", [])}
         ]
-        projects = {str(row.get("project")).casefold() for row in matching_services if row.get("project")}
+        projects = {
+            str(row.get("project")).casefold()
+            for row in matching_services
+            if row.get("project")
+        }
         identities = {
             (str(row.get("project")).casefold(), str(row.get("service")).casefold())
-            for row in matching_services if row.get("project") and row.get("service")
+            for row in matching_services
+            if row.get("project") and row.get("service")
         }
         komodo = saved_integration("komodo", Path("/data"))
         kuma = saved_integration("kuma", Path("/data"))
@@ -1698,8 +1705,18 @@ class InventoryTools:
             "komodo": [
                 project(row, INTEGRATION_FIELDS)
                 for row in komodo.get("items", [])
-                if (row.get("kind") == "stacks" and str(row.get("name")).casefold() in projects)
-                or (row.get("kind") == "stack_services" and (str(row.get("stack")).casefold(), str(row.get("service")).casefold()) in identities)
+                if (
+                    row.get("kind") == "stacks"
+                    and str(row.get("name")).casefold() in projects
+                )
+                or (
+                    row.get("kind") == "stack_services"
+                    and (
+                        str(row.get("stack")).casefold(),
+                        str(row.get("service")).casefold(),
+                    )
+                    in identities
+                )
             ],
             "kuma": [
                 project(row, INTEGRATION_FIELDS)
@@ -1714,9 +1731,22 @@ class InventoryTools:
         }
         for source, rows in matches.items():
             layer = page(rows, 0, MAX_PAGE)
-            result["layers"][source] = {**layer, "source_truncated": layer["next_offset"] is not None}
+            result["layers"][source] = {
+                **layer,
+                "source_truncated": layer["next_offset"] is not None,
+            }
         result["integration_snapshots"] = {
-            name: {key: value.get(key) for key in ("configured", "available", "observed_at", "last_attempt_at", "fresh", "last_refresh_verified")}
+            name: {
+                key: value.get(key)
+                for key in (
+                    "configured",
+                    "available",
+                    "observed_at",
+                    "last_attempt_at",
+                    "fresh",
+                    "last_refresh_verified",
+                )
+            }
             for name, value in (("komodo", komodo), ("kuma", kuma), ("probes", probes))
         }
         result["correlation_caveat"] = (
@@ -1866,7 +1896,14 @@ REQUIRED_GROUPS.update(
         "get_yggflare_health": {"inventory", "cloudflare", "operations"},
         "get_service_exposure": {"inventory", "cloudflare"},
         "get_ingress_path": {"inventory", "cloudflare", "traefik"},
-        "get_ingress_evidence": {"inventory", "cloudflare", "traefik", "komodo", "kuma", "probes"},
+        "get_ingress_evidence": {
+            "inventory",
+            "cloudflare",
+            "traefik",
+            "komodo",
+            "kuma",
+            "probes",
+        },
         "get_monitoring_coverage": {"inventory", "kuma"},
     }
 )

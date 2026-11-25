@@ -444,22 +444,55 @@ class CrossSourceTests(unittest.TestCase):
     def test_exact_matches_and_source_metadata(self):
         tools = InventoryTools(
             lambda: {},
-            lambda: {"items": [{"project": "core", "service": "demo", "aliases": ["demo.invalid"]}]},
+            lambda: {
+                "items": [
+                    {"project": "core", "service": "demo", "aliases": ["demo.invalid"]}
+                ]
+            },
         )
+
         def saved(adapter, path):
             rows = (
-                [{"kind": "stacks", "name": "core", "secret": "never-export"},
-                 {"kind": "stacks", "name": "core-extra"},
-                 {"kind": "stack_services", "stack": "core", "service": "demo"},
-                 {"kind": "stack_services", "stack": "core", "service": "other"}]
-                if adapter == "komodo" else
-                [{"kind": "monitors", "target_host": "demo.invalid", "name": "Demo"},
-                 {"kind": "monitors", "target_host": "demo.invalid.example", "name": "Other"}]
+                [
+                    {"kind": "stacks", "name": "core", "secret": "never-export"},
+                    {"kind": "stacks", "name": "core-extra"},
+                    {"kind": "stack_services", "stack": "core", "service": "demo"},
+                    {"kind": "stack_services", "stack": "core", "service": "other"},
+                ]
+                if adapter == "komodo"
+                else [
+                    {"kind": "monitors", "target_host": "demo.invalid", "name": "Demo"},
+                    {
+                        "kind": "monitors",
+                        "target_host": "demo.invalid.example",
+                        "name": "Other",
+                    },
+                ]
             )
             return {"available": True, "fresh": True, "items": rows}
+
         with (
             patch("mcp_server.saved_integration", side_effect=saved),
-            patch("mcp_server.saved_probes", return_value={"available": True, "fresh": False, "items": [{"hostname": "demo.invalid", "check": "tcp", "status": "connected", "address": "192.0.2.1"}, {"hostname": "other.invalid", "check": "tcp", "status": "connected"}]}),
+            patch(
+                "mcp_server.saved_probes",
+                return_value={
+                    "available": True,
+                    "fresh": False,
+                    "items": [
+                        {
+                            "hostname": "demo.invalid",
+                            "check": "tcp",
+                            "status": "connected",
+                            "address": "192.0.2.1",
+                        },
+                        {
+                            "hostname": "other.invalid",
+                            "check": "tcp",
+                            "status": "connected",
+                        },
+                    ],
+                },
+            ),
         ):
             result = tools.get_ingress_evidence("demo.invalid")
         self.assertEqual(result["layers"]["komodo"]["total"], 2)

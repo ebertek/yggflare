@@ -16,7 +16,11 @@ VIEWS = {
             "identifier",
         ),
         "ingress": ("Ingress evidence", "get_ingress_path", "hostname"),
-        "assurance": ("Cross-source ingress evidence", "get_ingress_evidence", "hostname"),
+        "assurance": (
+            "Cross-source ingress evidence",
+            "get_ingress_evidence",
+            "hostname",
+        ),
     },
     "topology": {
         "networks": ("Network relationships", "get_network_topology", ""),
@@ -257,7 +261,11 @@ def render(area, tools, table, params):
                     + link("dependencies", "Dependencies", **options)
                 )
             for alias in row.get("aliases", []):
-                links.append(link("ingress", "Ingress: " + alias, q=alias) + " · " + link("assurance", "Cross-source evidence", q=alias))
+                links.append(
+                    link("ingress", "Ingress: " + alias, q=alias)
+                    + " · "
+                    + link("assurance", "Cross-source evidence", q=alias)
+                )
         if links:
             content += (
                 '<h2>Investigate a service</h2><div class="card">'
