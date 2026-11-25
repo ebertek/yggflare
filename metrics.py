@@ -8,7 +8,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from integration_inventory import ADAPTERS
+from integration_inventory import saved as saved_integration
 from job_status import JOBS, read_jobs
+from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
 
 MAX_BYTES = 4 * 1024 * 1024
@@ -298,6 +301,97 @@ def render(config, data, now=None):
                     f"yggflare_traefik_{kind}",
                     "Resources in the last complete Traefik snapshot",
                     sum(row.get("kind") == kind for row in traefik["items"]),
+                )
+            )
+    for adapter in ADAPTERS:
+        source = saved_integration(adapter, Path(data))
+        values.extend(
+            [
+                (
+                    f"yggflare_{adapter}_snapshot_available",
+                    "Saved integration snapshot available",
+                    source["available"],
+                ),
+                (
+                    f"yggflare_{adapter}_snapshot_fresh",
+                    "Saved integration snapshot fresh and verified",
+                    source["fresh"],
+                ),
+                (
+                    f"yggflare_{adapter}_last_success_timestamp_seconds",
+                    "Latest complete saved integration observation",
+                    epoch(source["observed_at"]),
+                ),
+            ]
+        )
+        if source["available"]:
+            kinds = (
+                ("servers", "stacks", "stack_services", "deployments")
+                if adapter == "komodo"
+                else ("monitors",)
+            )
+            for kind in kinds:
+                values.append(
+                    (
+                        f"yggflare_{adapter}_{kind}",
+                        "Resources visible in the last complete integration snapshot",
+                        sum(row.get("kind") == kind for row in source["items"]),
+                    )
+                )
+            if adapter == "kuma":
+                for state in ("up", "down", "pending", "maintenance", "unknown"):
+                    values.append(
+                        (
+                            f"yggflare_kuma_monitors_{state}",
+                            "Exported monitors reporting this status",
+                            sum(row.get("status") == state for row in source["items"]),
+                        )
+                    )
+    probes = saved_probes(Path(data), Path(config))
+    values.extend(
+        [
+            (
+                "yggflare_probe_snapshot_available",
+                "Saved independent probe snapshot available",
+                probes["available"],
+            ),
+            (
+                "yggflare_probe_snapshot_fresh",
+                "Saved independent probe snapshot fresh and verified",
+                probes["fresh"],
+            ),
+            (
+                "yggflare_probe_last_success_timestamp_seconds",
+                "Latest complete saved probe collection",
+                epoch(probes["observed_at"]),
+            ),
+        ]
+    )
+    if probes["available"]:
+        values.append(
+            (
+                "yggflare_probe_checks",
+                "Checks in last complete independent probe collection",
+                len(probes["items"]),
+            )
+        )
+        for status in (
+            "matched",
+            "mismatch",
+            "connected",
+            "verified",
+            "response_received",
+            "certificate_invalid",
+            "resolution_failed",
+            "timeout",
+            "connection_refused",
+            "check_failed",
+        ):
+            values.append(
+                (
+                    f"yggflare_probe_{status}",
+                    "Saved independent checks reporting this outcome",
+                    sum(row.get("status") == status for row in probes["items"]),
                 )
             )
     output = "".join(

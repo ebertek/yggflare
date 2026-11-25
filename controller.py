@@ -14,10 +14,13 @@ import time
 from pathlib import Path
 
 from backup import create_snapshot, prune_snapshots
+from integration_inventory import ADAPTERS
+from integration_inventory import INTERVAL as INTEGRATION_INTERVAL
 from job_status import track
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
+from probe_inventory import INTERVAL as PROBE_INTERVAL
 from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
 from watchers import start as start_watchers
 
@@ -152,14 +155,24 @@ def job_label(script):
         "cloudflare-live.py": "Cloudflare presentation refresh",
         "audit.py": "Network inventory scan",
         "traefik_inventory.py": "Traefik presentation refresh",
+        "integration_inventory.py": "Integration presentation refresh",
+        "probe_inventory.py": "Independent connectivity probes",
     }.get(Path(script).name, "Scheduled job")
 
 
 def run(args, *, env=None):
     component = (
-        "traefik"
-        if Path(args[1]).name == "traefik_inventory.py"
-        else "cloudflare" if "/cloudflare/" in args[1] else "network"
+        "probe"
+        if Path(args[1]).name == "probe_inventory.py"
+        else (
+            "integration"
+            if Path(args[1]).name == "integration_inventory.py"
+            else (
+                "traefik"
+                if Path(args[1]).name == "traefik_inventory.py"
+                else "cloudflare" if "/cloudflare/" in args[1] else "network"
+            )
+        )
     )
     label = job_label(args[1])
     started = time.monotonic()
@@ -328,6 +341,8 @@ def run_scheduler(listener=None):
     next_cloud = dt.datetime.now(dt.timezone.utc)
     last_cloud_completed = 0.0
     next_traefik = 0.0
+    next_probe = 0.0
+    next_integration = dict.fromkeys(ADAPTERS, 0.0)
     backup_marker = DATA / "backup-last-run.txt"
     last_backup_day = (
         backup_marker.read_text(encoding="utf-8").strip()
@@ -386,6 +401,33 @@ def run_scheduler(listener=None):
                     "Traefik presentation refresh failed; previous snapshot retained",
                 )
             next_traefik = time.monotonic() + TRAEFIK_INTERVAL
+        for adapter in ADAPTERS:
+            if (
+                os.environ.get("YGGFLARE_" + adapter.upper() + "_API_URL")
+                and time.monotonic() >= next_integration[adapter]
+            ):
+                try:
+                    run([sys.executable, "/app/integration_inventory.py", adapter])
+                except Exception:
+                    log(
+                        "warning",
+                        "controller",
+                        f"{adapter} presentation refresh failed; previous snapshot retained",
+                    )
+                next_integration[adapter] = time.monotonic() + INTEGRATION_INTERVAL
+        if (
+            os.environ.get("YGGFLARE_PROBES_ENABLED") == "true"
+            and time.monotonic() >= next_probe
+        ):
+            try:
+                run([sys.executable, "/app/probe_inventory.py"])
+            except Exception:
+                log(
+                    "warning",
+                    "controller",
+                    "Probe collection failed; previous snapshot retained",
+                )
+            next_probe = time.monotonic() + PROBE_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):
             if last_backup_day != current_utc.date().isoformat():

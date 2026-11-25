@@ -100,6 +100,13 @@ docker exec yggflare yggflare network discord-test
 
 Prometheus `/metrics` is opt-in via `YGGFLARE_METRICS_ENABLED=true` and is served on the existing read-only web HTTP listener. It reads bounded, persisted snapshots only; never trigger scanners, Docker inspection, Cloudflare API calls or mutation from a scrape. Keep metric series aggregate and low-cardinality: no hostname, IP, MAC, account, resource ID, token or user-controlled labels. The host-networked listener must be restricted to trusted scrape clients at the network/firewall layer; a Cloudflare Access policy does not protect direct LAN access.
 
+## Adapter and probe safety
+
+- `integration_inventory.py` reads only Komodo's documented list RPCs and Kuma's Prometheus metrics. Never expose a generic API call, use a write/execute endpoint, return raw API responses or use admin credentials. Credential files belong in the private mounted configuration; the read-only presentation paths must not load them.
+- `probe_inventory.py` runs only privately declared targets. Connect to explicitly scoped numeric addresses, use normal TLS verification and fixed HTTP HEAD requests without following redirects. DNS answers never authorize additional connection targets. Only the scheduler and explicit local CLI refresh may initiate collection.
+- A complete collection is not proof that all resources are visible, all checks passed, or the endpoint is reachable externally. Keep the most recent successful collection on failed refresh; never report an unavailable source as an empty healthy inventory.
+- MCP group restrictions control registered tools, resources and prompts for one server process, not per-principal RBAC. Cross-source queries require all relevant groups. Keep local CLI and Web UI authorization separate from MCP. Log only fixed operation names, elapsed time and outcomes, never query arguments or payloads.
+
 ## Operator interface parity
 
 New evidence collectors and assurance features must have a shared sanitized query layer and be available through the read-only Web UI, operator CLI and MCP where applicable. Keep explicit action commands separate from evidence views; rendering, JSON output and MCP requests must not trigger network collectors, reconciliation or mutations. Document commands and views, and test all three interfaces. Do not expose raw adapter payloads, credentials, untrusted HTML or terminal control characters.

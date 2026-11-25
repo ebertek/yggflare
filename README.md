@@ -364,12 +364,95 @@ URL paths, queries, userinfo, raw middleware settings and error messages are
 excluded. Configuration is optional and should be enabled only after
 validating the API's reachability and access restrictions.
 
+### Komodo and Uptime Kuma
+
+Both optional collectors run every five minutes when configured and keep
+the last complete snapshot on failure. They accept numeric LAN/loopback
+origins only. HTTPS verifies certificates; LAN HTTP requires an explicit
+`YGGFLARE_KOMODO_ALLOW_HTTP=true` or `YGGFLARE_KUMA_ALLOW_HTTP=true`
+opt-in (credentials would traverse the LAN in plaintext). Prefer a restricted
+TLS endpoint and do not use an administrator credential.
+
+| Adapter | Origin setting | Private credential files (mode 0600) |
+|---|---|---|
+| Komodo | `YGGFLARE_KOMODO_API_URL` | `/config/komodo-api-key.txt`, `/config/komodo-api-secret.txt` |
+| Kuma | `YGGFLARE_KUMA_API_URL` | `/config/kuma-api-key.txt` |
+
+Create a Komodo service user with read permission only on intended servers,
+stacks and deployments. Use a dedicated Kuma Prometheus API key. Never
+commit either credential or pass it on the command line. Credential files
+must be regular, non-symlink files inaccessible to group/other users.
+The only Komodo calls are documented read RPCs ListServers, ListStacks and
+ListDeployments; Kuma uses GET /metrics. No redirects, proxy environment,
+raw configuration, URLs with credentials, logs or mutation API calls.
+See [Komodo API](https://komo.do/docs/ecosystem/api) and
+[Kuma Prometheus API keys](https://github.com/louislam/uptime-kuma/wiki/Prometheus-API-Keys).
+The available resources are limited by credential permissions and the
+exporter; no exact host match does not prove absence of monitoring.
+Kuma's endpoint does not prove notification configuration or receipt.
+
+The Komodo and Monitoring Web UI tabs, MCP queries and aggregate metrics
+consume saved snapshots. Explicit operator refresh is separate.
+
+```sh
+docker exec yggflare yggflare komodo refresh
+docker exec yggflare yggflare komodo status
+docker exec yggflare yggflare komodo servers
+docker exec yggflare yggflare komodo stacks
+docker exec yggflare yggflare komodo services
+docker exec yggflare yggflare komodo deployments
+docker exec yggflare yggflare kuma refresh
+docker exec yggflare yggflare kuma status
+docker exec yggflare yggflare kuma monitors
+docker exec yggflare yggflare kuma coverage --project PROJECT
+```
+
+### Independent connectivity evidence
+
+Enable `YGGFLARE_PROBES_ENABLED=true` only after creating the private
+`/config/probes.json` allowlist. Example schema (illustrative addresses only):
+
+```json
+{
+  "version": 1,
+  "targets": [
+    {
+      "name": "internal-web",
+      "hostname": "demo.example.invalid",
+      "address": "192.168.1.20",
+      "port": 443,
+      "scheme": "https",
+      "checks": ["dns", "tcp", "tls", "http"],
+      "expected_statuses": [200, 302]
+    }
+  ]
+}
+```
+
+At most 16 explicit targets and four checks per target are supported.
+Numeric addresses must belong to the configured LAN/IPv6 CIDRs or loopback.
+DNS uses the host resolver; TCP/TLS/HTTP connect directly to the numeric
+address and do not follow DNS answers. TLS uses the normal trust store and
+hostname validation. HTTP sends HEAD / only, no credentials, redirects,
+body reads or arbitrary path. The five-minute collector has a 120-second
+overall deadline and bounded socket timeouts. Failure preserves the last
+complete snapshot. An HTTP response (including 302/401) is not proof of
+Access enforcement or external reachability.
+
+```sh
+docker exec yggflare yggflare probes refresh
+docker exec yggflare yggflare probes status
+docker exec yggflare yggflare probes results
+```
+
+The Web UI Probes tab, aggregate metrics and MCP read saved evidence only.
+
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same thirty-four read-only tools. HTTP is disabled by default.
+use the same forty-four read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -450,6 +533,16 @@ in the repository.
 | `list_traefik_routes` | HTTP/TCP/UDP router identities and literal host mentions |
 | `list_traefik_services` | Sanitized backend origins and reported status |
 | `list_traefik_middlewares` | Middleware identity, type and status only |
+| `get_komodo_status` | Saved Komodo collection state |
+| `list_komodo_servers` | Reported server identities and states |
+| `list_komodo_stacks` | Stack ownership, state and deployed/latest commit hashes |
+| `list_komodo_services` | Stack service image/update metadata |
+| `list_komodo_deployments` | Standalone deployment state and image metadata |
+| `get_kuma_status` | Saved monitor collection state |
+| `list_kuma_monitors` | Exported status and sanitized target host/port |
+| `get_monitoring_coverage` | Candidate exact host matches, not verified per-service coverage |
+| `get_probe_status` | Independent probe snapshot status |
+| `list_probe_results` | Saved scoped DNS/TCP/TLS/HTTP outcomes |
 
 Service topology uses a separate 30-second sanitized cache. It includes host
 and bridge-only declarations without inventing LAN addresses. Local Docker
@@ -506,6 +599,25 @@ and returns separate counts even when filtered. Recent findings indicate
 whether their message is still in the latest reported findings; historical
 absence does not prove recovery. Cloudflare ownership counts are not a
 configuration drift or security assessment.
+
+### Resources, prompts and tool groups
+
+Both transports expose fixed JSON resources (`yggflare://schema`, inventory,
+operations, jobs, discovery, traefik, komodo, monitoring, probes) and six
+review prompts where their required tools are enabled. No arbitrary paths,
+live collectors or actions are exposed. Clients may still use tools directly.
+
+`YGGFLARE_MCP_TOOL_GROUPS` defaults to `all`. Set a comma-separated subset
+of `inventory,cloudflare,operations,traefik,komodo,kuma,probes` to restrict
+registered tools, resources and prompts for that server process. Cross-source
+queries require all relevant groups. Unknown groups fail startup. This is
+a server-wide exposure control, not per-user authorization or isolation
+from local CLI/Web UI access. The existing bearer and loopback safeguards
+remain unchanged. Each server allows four concurrent queries with a two-second
+admission wait and a 1 MiB serialized result limit. Optional
+`YGGFLARE_MCP_AUDIT_LOG=true` writes fixed tool names, outcome and elapsed
+time to stderr; no inputs or result data are logged. These bounds do not
+provide a hard execution deadline for an already-started local read.
 
 ### Streamable HTTP transport
 
