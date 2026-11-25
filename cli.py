@@ -59,6 +59,7 @@ def main(argv=None):
             "drift",
             "dependencies",
             "ingress",
+            "assurance",
             "topology",
             "dns",
             "access",

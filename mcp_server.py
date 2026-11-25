@@ -207,6 +207,8 @@ class PageResult(TypedDict, total=False):
     cloudflare: dict[str, Any]
     layers: dict[str, Any]
     traefik_snapshot: dict[str, Any]
+    integration_snapshots: dict[str, Any]
+    correlation_caveat: str
     traefik_runtime_verified: bool | None
     reachability_verified: bool | None
 
@@ -1671,6 +1673,59 @@ class InventoryTools:
             **page(rows, offset, limit, snapshot_id),
         }
 
+    def get_ingress_evidence(
+        self, hostname: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
+        """Correlate saved ingress, deployment, monitor and local probe evidence by exact names."""
+        result = self.get_ingress_path(hostname, offset, limit, snapshot_id)
+        needle = hostname.strip().casefold().rstrip(".")
+        # Do not use the paginated service subset as the basis of cross-source
+        # matching. Candidate ownership is exact project/stack name only.
+        _, services = self._service_rows(hostname, "")
+        matching_services = [
+            row for row in services
+            if needle in {str(value).casefold().rstrip(".") for value in row.get("aliases", [])}
+        ]
+        projects = {str(row.get("project")).casefold() for row in matching_services if row.get("project")}
+        identities = {
+            (str(row.get("project")).casefold(), str(row.get("service")).casefold())
+            for row in matching_services if row.get("project") and row.get("service")
+        }
+        komodo = saved_integration("komodo", Path("/data"))
+        kuma = saved_integration("kuma", Path("/data"))
+        probes = saved_probes(Path("/data"))
+        matches = {
+            "komodo": [
+                project(row, INTEGRATION_FIELDS)
+                for row in komodo.get("items", [])
+                if (row.get("kind") == "stacks" and str(row.get("name")).casefold() in projects)
+                or (row.get("kind") == "stack_services" and (str(row.get("stack")).casefold(), str(row.get("service")).casefold()) in identities)
+            ],
+            "kuma": [
+                project(row, INTEGRATION_FIELDS)
+                for row in kuma.get("items", [])
+                if str(row.get("target_host") or "").casefold().rstrip(".") == needle
+            ],
+            "probes": [
+                project(row, PROBE_FIELDS)
+                for row in probes.get("items", [])
+                if str(row.get("hostname") or "").casefold().rstrip(".") == needle
+            ],
+        }
+        for source, rows in matches.items():
+            layer = page(rows, 0, MAX_PAGE)
+            result["layers"][source] = {**layer, "source_truncated": layer["next_offset"] is not None}
+        result["integration_snapshots"] = {
+            name: {key: value.get(key) for key in ("configured", "available", "observed_at", "last_attempt_at", "fresh", "last_refresh_verified")}
+            for name, value in (("komodo", komodo), ("kuma", kuma), ("probes", probes))
+        }
+        result["correlation_caveat"] = (
+            "Exact aliases, project/stack names and monitor/probe hostnames are candidate matches only. "
+            "Probe results apply to their listed numeric destination and local vantage; they do not establish external reachability, proxy routing or authentication. "
+            "No match, stale data or an unavailable adapter is inconclusive. Nested layers have independent timestamps and pagination."
+        )
+        return result
+
     def get_service_exposure(
         self, identifier: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
     ) -> PageResult:
@@ -1733,6 +1788,7 @@ TOOL_NAMES = (
     "get_compose_drift",
     "get_service_dependencies",
     "get_ingress_path",
+    "get_ingress_evidence",
     "get_network_topology",
     "get_traefik_status",
     "list_traefik_routes",
@@ -1810,6 +1866,7 @@ REQUIRED_GROUPS.update(
         "get_yggflare_health": {"inventory", "cloudflare", "operations"},
         "get_service_exposure": {"inventory", "cloudflare"},
         "get_ingress_path": {"inventory", "cloudflare", "traefik"},
+        "get_ingress_evidence": {"inventory", "cloudflare", "traefik", "komodo", "kuma", "probes"},
         "get_monitoring_coverage": {"inventory", "kuma"},
     }
 )
@@ -1832,6 +1889,10 @@ PROMPTS = {
     "review_ingress": (
         ("get_ingress_path", "get_cloudflare_access", "list_traefik_routes"),
         "Review a user-specified ingress hostname across DNS, Access, Tunnel and Traefik observations. Report missing evidence and configuration mismatch separately; do not infer security or reachability from a configured route.",
+    ),
+    "review_ingress_evidence": (
+        ("get_ingress_evidence",),
+        "Review a user-specified hostname across saved ingress, deployment, monitoring and independent local probe evidence. Respect each source timestamp, scope and candidate-only matches. Never infer external reachability or authentication from local results.",
     ),
     "review_operations": (
         ("get_job_status", "get_backup_status", "get_notification_status"),
