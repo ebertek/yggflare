@@ -35,6 +35,7 @@ def main(argv=None):
             "traefik",
             "komodo",
             "kuma",
+            "probes",
         ),
     )
     parser.add_argument(
@@ -73,6 +74,7 @@ def main(argv=None):
             "deployments",
             "monitors",
             "coverage",
+            "results",
             "refresh",
         ),
     )
@@ -115,7 +117,7 @@ def main(argv=None):
         return 0
     if args.offset or args.project:
         parser.error("--offset and --project require a read-only operator view")
-    if args.component in {"traefik", "komodo", "kuma"} and args.operation == "refresh":
+    if args.component in {"traefik", "komodo", "kuma", "probes"} and args.operation == "refresh":
         if (
             args.argument
             or args.approval
@@ -124,11 +126,12 @@ def main(argv=None):
             or args.details
         ):
             parser.error("Integration refresh accepts no additional arguments")
-        command = (
-            [sys.executable, "/app/traefik_inventory.py"]
-            if args.component == "traefik"
-            else [sys.executable, "/app/integration_inventory.py", args.component]
-        )
+        if args.component == "probes":
+            command = [sys.executable, "/app/probe_inventory.py"]
+        elif args.component == "traefik":
+            command = [sys.executable, "/app/traefik_inventory.py"]
+        else:
+            command = [sys.executable, "/app/integration_inventory.py", args.component]
         return subprocess.run(command, check=False).returncode
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:

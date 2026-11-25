@@ -290,6 +290,7 @@ def page(tab, content):
             ("traefik", "Traefik"),
             ("komodo", "Komodo"),
             ("kuma", "Monitoring"),
+            ("probes", "Probes"),
         )
     )
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -472,6 +473,7 @@ class Handler(BaseHTTPRequestHandler):
             "/traefik",
             "/komodo",
             "/kuma",
+            "/probes",
             "/api/inventory.json",
             "/api/inventory.csv",
             "/metrics",

@@ -52,6 +52,10 @@ VIEWS = {
             "query",
         ),
     },
+    "probes": {
+        "status": ("Probe collection status", "get_probe_status", ""),
+        "results": ("Independent probe results", "list_probe_results", "query"),
+    },
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
@@ -68,6 +72,7 @@ UNPAGED = {
     "get_traefik_status",
     "get_komodo_status",
     "get_kuma_status",
+    "get_probe_status",
 }
 REQUIRED = {"identifier", "hostname"}
 CLI_VIEWS = {
@@ -84,7 +89,7 @@ CLI_VIEWS = {
     ("network", "notifications"): ("operations", "notifications"),
     **{
         (area, name): (area, name)
-        for area in ("traefik", "komodo", "kuma")
+        for area in ("traefik", "komodo", "kuma", "probes")
         for name in VIEWS[area]
     },
 }
