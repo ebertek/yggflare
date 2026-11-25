@@ -635,8 +635,8 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_populated_adapter_rows_preserve_observed_fields(self):
         from integration_inventory import FIELDS as integration_fields
-        from probe_inventory import FIELDS as probe_fields
         from mcp_server import IntegrationRow, ProbeRow
+        from probe_inventory import FIELDS as probe_fields
 
         self.assertEqual(set(IntegrationRow.__annotations__), set(integration_fields))
         self.assertEqual(set(ProbeRow.__annotations__), set(probe_fields))
