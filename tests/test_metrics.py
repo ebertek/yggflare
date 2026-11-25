@@ -35,6 +35,52 @@ class MetricsTests(unittest.TestCase):
             self.assertNotIn("yggflare_job_backup_last_attempt_success ", output)
             self.assertNotIn("private", output)
 
+    def test_coverage_metrics_are_aggregate_and_allowlisted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "network-inventory").mkdir()
+            (root / "network-inventory/state.json").write_text(
+                json.dumps(
+                    {
+                        "scan_coverage": {
+                            "version": 1,
+                            "mode": "live",
+                            "tcp": {
+                                "requested_target_count": 4,
+                                "omitted_target_count": 2,
+                                "explicit_timeout_count": 0,
+                                "represented_target_count": 2,
+                                "secret": "never-export",
+                            },
+                        },
+                        "supplemental": {
+                            "collector_evidence": {
+                                "version": 1,
+                                "sources": {
+                                    "ndp": {
+                                        "configured": True,
+                                        "attempted": 2,
+                                        "completed": 2,
+                                        "no_reply": 1,
+                                        "failed": 0,
+                                        "parse_errors": 0,
+                                    },
+                                    "private": {"configured": True, "attempted": 42},
+                                    "arp": {"configured": False, "attempted": 0},
+                                },
+                            }
+                        },
+                    }
+                )
+            )
+            output = metrics.render(root, root).decode()
+        self.assertIn("yggflare_network_tcp_requested_target_count 4", output)
+        self.assertIn("yggflare_network_tcp_omitted_target_count 2", output)
+        self.assertIn("yggflare_discovery_ndp_no_reply 1", output)
+        self.assertNotIn("yggflare_discovery_private", output)
+        self.assertNotIn("yggflare_discovery_arp_attempted", output)
+        self.assertNotIn("never-export", output)
+
     def test_empty_state_has_presence_gauges_not_fake_scan_timestamps(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -440,6 +440,41 @@ class InventoryToolTests(unittest.TestCase):
             self.assertIsNone(ingress["traefik_runtime_verified"])
 
 
+class SupplementalCoverageTests(unittest.TestCase):
+    def test_fixed_sources_and_validated_counts(self):
+        from mcp_server import SUPPLEMENTAL_SOURCES, supplemental_coverage_context
+
+        baseline = {
+            "configured": False,
+            "attempted": 0,
+            "completed": 0,
+            "failed": 0,
+            "no_reply": 0,
+            "parse_errors": 0,
+        }
+        sources = {name: dict(baseline) for name in SUPPLEMENTAL_SOURCES}
+        sources["ndp"].update(configured=True, attempted=1, completed=1, no_reply=1)
+        sources["smb"].update(configured=True, attempted=16, completed=16, limited=True)
+        sources["ipv6_nmap"].update(configured=True)
+        sources["private"] = {"token": "never-export"}
+        coverage = supplemental_coverage_context(
+            {"collector_evidence": {"version": 1, "sources": sources}}
+        )
+        self.assertTrue(coverage["available"])
+        rows = {row["source"]: row for row in coverage["sources"]}
+        self.assertEqual(rows["ndp"]["status"], "completed")
+        self.assertEqual(rows["smb"]["status"], "partial_or_failed")
+        self.assertEqual(rows["ipv6_nmap"]["status"], "not_attempted")
+        self.assertEqual(rows["arp"]["status"], "not_configured")
+        self.assertNotIn("never-export", str(coverage))
+        sources["ndp"]["completed"] = 2
+        self.assertFalse(
+            supplemental_coverage_context(
+                {"collector_evidence": {"version": 1, "sources": sources}}
+            )["available"]
+        )
+
+
 class DiscoveryCoverageTests(unittest.TestCase):
     def test_old_offline_and_live_coverage(self):
         state = {}
@@ -709,6 +744,34 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 if "$ref" in row:
                     row = tool.output_schema["$defs"][row["$ref"].rsplit("/", 1)[-1]]
                 self.assertTrue(row.get("properties"), tool.name)
+
+    async def test_every_tool_returns_safe_structured_fixture_evidence(self):
+        data = fixture()
+        before = deepcopy(data)
+        arguments = {
+            "get_device": {"identifier": "example.invalid"},
+            "get_docker_service": {"identifier": "example.invalid"},
+            "get_service_dependencies": {"identifier": "example.invalid"},
+            "get_ingress_path": {"hostname": "example.invalid"},
+            "get_ingress_evidence": {"hostname": "example.invalid"},
+            "get_service_exposure": {"identifier": "example.internal"},
+        }
+        async with Client(
+            build_server(lambda: data, env={}), raise_exceptions=True
+        ) as client:
+            for name in TOOL_NAMES:
+                with self.subTest(tool=name):
+                    result = await client.call_tool(name, arguments.get(name, {}))
+                    self.assertFalse(result.is_error, name)
+                    self.assertIsInstance(result.structured_content, dict, name)
+                    for private in (
+                        "never-export",
+                        "private notes",
+                        "private-app-id",
+                        "private-dns-id",
+                    ):
+                        self.assertNotIn(private, str(result.structured_content), name)
+        self.assertEqual(data, before)
 
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)

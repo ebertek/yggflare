@@ -228,6 +228,82 @@ def render(config, data, now=None):
             orphan_count,
         ),
     ]
+    coverage = scan.get("scan_coverage")
+    if (
+        isinstance(coverage, dict)
+        and coverage.get("version") == 1
+        and coverage.get("mode") == "live"
+    ):
+        tcp = coverage.get("tcp")
+        if isinstance(tcp, dict):
+            for field in (
+                "requested_target_count",
+                "represented_target_count",
+                "omitted_target_count",
+                "explicit_timeout_count",
+                "selected_port_count",
+            ):
+                count = tcp.get(field)
+                if type(count) is int and 0 <= count <= 100000:
+                    values.append(
+                        (
+                            f"yggflare_network_tcp_{field}",
+                            "Aggregate saved Nmap scan coverage; omissions do not establish absence",
+                            count,
+                        )
+                    )
+    # Only fixed collector identities and bounded aggregate counts. Never turn
+    # arbitrary saved dictionary keys into metric names or labels.
+    collector_evidence = supplementary.get("collector_evidence")
+    if isinstance(collector_evidence, dict) and collector_evidence.get("version") == 1:
+        sources = collector_evidence.get("sources")
+        if isinstance(sources, dict):
+            allowed_sources = (
+                "neighbor_cache",
+                "arp",
+                "ndp",
+                "router_advertisement",
+                "ipv4_nmap",
+                "ipv6_nmap",
+                "docker_ipv6_candidates",
+                "candidate_routing",
+                "ssdp",
+                "lldp",
+                "netbios",
+                "smb",
+                "snmp",
+                "p0f",
+            )
+            for name in allowed_sources:
+                row = sources.get(name)
+                if not isinstance(row, dict) or row.get("configured") is not True:
+                    continue
+                for field in (
+                    "attempted",
+                    "completed",
+                    "failed",
+                    "no_reply",
+                    "parse_errors",
+                ):
+                    count = row.get(field)
+                    if type(count) is int and 0 <= count <= 100000:
+                        values.append(
+                            (
+                                f"yggflare_discovery_{name}_{field}",
+                                "Saved collector invocation count; not device coverage",
+                                count,
+                            )
+                        )
+                for field in ("limited", "unavailable", "completion_unverified"):
+                    flag = row.get(field)
+                    if type(flag) is bool:
+                        values.append(
+                            (
+                                f"yggflare_discovery_{name}_{field}",
+                                "Saved collector limitation or uncertainty",
+                                flag,
+                            )
+                        )
     history = finding_rows(scan)
     values.append(
         (

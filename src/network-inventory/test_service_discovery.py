@@ -16,6 +16,27 @@ class ServiceTests(unittest.TestCase):
             collect(["eth0"], lambda a: True, [], lambda *a: None, [])
         run.assert_not_called()
 
+    def test_smb_limit_and_netbios_no_reply_are_explicit(self):
+        rows = [{"ip": f"10.0.0.{i}"} for i in range(1, 21)]
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_DISCOVERY_NETBIOS": "true",
+                    "YGGFLARE_DISCOVERY_SMB": "true",
+                },
+                clear=True,
+            ),
+            patch("service_discovery.shutil.which", return_value="/usr/bin/nmblookup"),
+            patch("service_discovery.execute", return_value=""),
+        ):
+            coverage = collect(["eth0"], lambda a: True, rows, lambda *a: None, [])
+        self.assertEqual(coverage["netbios"]["attempted"], 20)
+        self.assertEqual(coverage["netbios"]["no_reply"], 20)
+        self.assertEqual(coverage["smb"]["attempted"], 16)
+        self.assertEqual(coverage["smb"]["eligible_targets"], 20)
+        self.assertTrue(coverage["smb"]["limited"])
+
     def test_netbios_failure_does_not_prevent_smb(self):
         rows = [{"ip": "10.0.0.2"}]
         output, warnings = [], []
