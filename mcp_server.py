@@ -2001,7 +2001,7 @@ def prompt_reader(text):
     return prompt
 
 
-def build_server(loader: Callable = load_model, *, env=None):
+def build_server(loader: Callable = load_model, *, env=None, slots=None):
     """Register only the explicit read-only tool allowlist."""
     server = MCPServer(
         "Yggflare",
@@ -2014,7 +2014,8 @@ def build_server(loader: Callable = load_model, *, env=None):
     tools = InventoryTools(loader)
     env = os.environ if env is None else env
     enabled = enabled_tools(env)
-    slots = threading.BoundedSemaphore(4)
+    if slots is None:
+        slots = threading.BoundedSemaphore(4)
     audit = env.get("YGGFLARE_MCP_AUDIT_LOG", "false")
     if audit not in {"true", "false"}:
         raise ValueError("Invalid MCP audit log setting")

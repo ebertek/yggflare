@@ -718,6 +718,7 @@ must send a bearer token. Browser origins are rejected (no browser CORS).
 | `YGGFLARE_MCP_BIND` | `127.0.0.1` | Specific numeric local address; wildcard binds are rejected |
 | `YGGFLARE_MCP_PORT` | `8788` | Dedicated MCP listener port |
 | `YGGFLARE_MCP_TOKEN_FILE` | `/config/mcp-token.txt` | File containing a random bearer token |
+| `YGGFLARE_MCP_PRINCIPALS_FILE` | unset | Opt-in per-client scopes using `/config/mcp-principals.json` |
 | `YGGFLARE_MCP_ALLOWED_HOSTS` | Bind address and port (also localhost on loopback) | Optional comma-separated exact HTTP Host values |
 
 Generate a secret in the private host-mounted configuration directory
@@ -733,6 +734,40 @@ normal deployment process. The listener refuses to start with a missing,
 invalid or unreadable token, invalid configuration or occupied port.
 Rotate the token by replacing the file and recreating the container.
 The token is private and may be included in protected backup archives.
+
+### Optional per-client authorization
+
+The default single-token configuration is unchanged. For several trusted
+HTTP clients with different information needs, create a private
+`/config/mcp-principals.json` file, e.g.:
+
+```json
+{
+  "version": 1,
+  "principals": [
+    {"name": "codex", "groups": ["inventory", "cloudflare", "operations", "traefik", "komodo", "kuma", "probes"]},
+    {"name": "monitor", "groups": ["operations", "kuma"]}
+  ]
+}
+```
+
+Generate a distinct random token in each corresponding
+`/config/mcp-token-NAME.txt` file (e.g. `mcp-token-codex.txt`).
+Manifest and token files must be regular, non-symlink files with no group
+or other permissions (use mode 0600). The manifest contains no token values,
+arbitrary paths or wildcards. Each principal must explicitly list its
+groups, all within the global `YGGFLARE_MCP_TOOL_GROUPS` ceiling.
+A maximum of eight principals is supported. Set
+`YGGFLARE_MCP_PRINCIPALS_FILE=/config/mcp-principals.json` and recreate the
+container. This opt-in requires a loopback listener, replaces the original
+single-token mode entirely, and fails startup on invalid configuration.
+Rotate/revoke clients by editing the private files and recreating the
+container. Each request authenticates against the configured tokens and
+dispatches to a distinct stateless MCP server with only its allowed tools,
+resources and prompts. All principal servers share the four-query
+concurrency limit. This is group-level read-only authorization, not
+per-resource tenancy, OAuth, or isolation from local CLI/Web UI access.
+Stdio remains controlled by the server-wide tool groups.
 
 With default settings the URL is `http://127.0.0.1:8788/mcp` on the Docker
 host. For access from a workstation use an SSH tunnel:
