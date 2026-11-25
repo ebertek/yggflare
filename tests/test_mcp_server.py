@@ -620,7 +620,15 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 if "$ref" in row:
                     row = schema["$defs"][row["$ref"].rsplit("/", 1)[-1]]
                 self.assertIn(field, row["properties"], tool_name)
-            for name in ("list_traefik_routes", "list_komodo_stacks", "list_kuma_monitors", "list_probe_results", "get_job_history", "get_monitoring_coverage", "list_finding_history"):
+            for name in (
+                "list_traefik_routes",
+                "list_komodo_stacks",
+                "list_kuma_monitors",
+                "list_probe_results",
+                "get_job_history",
+                "get_monitoring_coverage",
+                "list_finding_history",
+            ):
                 result = await client.call_tool(name, {})
                 self.assertFalse(result.is_error, name)
                 self.assertEqual(result.structured_content["schema_version"], 1)
