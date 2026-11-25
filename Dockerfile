@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC PYTHONPATH=/app:/app/clo
 ENV YGGFLARE_BUILD_VERSION=${YGGFLARE_BUILD_VERSION} \
     YGGFLARE_BUILD_REVISION=${YGGFLARE_BUILD_REVISION}
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nmap arp-scan ndisc6 avahi-utils lldpd p0f smbclient samba-common-bin snmp util-linux iproute2 ca-certificates tzdata \
+    nmap arp-scan ndisc6 avahi-utils lldpd p0f smbclient samba-common-bin snmp util-linux iproute2 ca-certificates tzdata git \
     && rm -rf /var/lib/apt/lists/*
 # nmblookup is provided by samba-common-bin, not smbclient.
 RUN command -v nmblookup && command -v smbclient && command -v rdisc6 \
@@ -17,7 +17,7 @@ RUN docker --version
 WORKDIR /app
 COPY src/cloudflare/ /app/cloudflare/
 COPY src/network-inventory/ /app/network-inventory/
-COPY controller.py job_status.py backup.py backup_verify.py doctor.py discord_webhook.py watchers.py web.py web_views.py operator_views.py traefik_inventory.py integration_inventory.py probe_inventory.py finding_lifecycle.py metrics.py inventory_view.py inventory_catalog.py docker_inventory.py mcp_server.py mcp_http.py /app/
+COPY controller.py job_status.py backup.py backup_verify.py doctor.py discord_webhook.py watchers.py web.py web_views.py operator_views.py traefik_inventory.py integration_inventory.py stack_revision.py probe_inventory.py finding_lifecycle.py metrics.py inventory_view.py inventory_catalog.py docker_inventory.py mcp_server.py mcp_http.py /app/
 COPY --chmod=755 cli.py /usr/local/bin/yggflare
 RUN pip install --no-cache-dir -r /app/cloudflare/requirements.txt
 RUN python -c 'import metrics, web, mcp_server, mcp_http; mcp_server.build_server(); mcp_http.build_http_app(mcp_http.settings({}), b"a" * 64)'

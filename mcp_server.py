@@ -247,6 +247,7 @@ class IntegrationRow(TypedDict, total=False):
     deployed_hash: str | None
     latest_hash: str | None
     revision_match: bool | None
+    tracked_stack_inputs: str
     project_missing: bool | None
     service: str | None
     stack: str
@@ -2850,7 +2851,7 @@ PROMPTS = {
     ),
     "review_deployment": (
         ("list_komodo_stacks", "list_komodo_services", "get_compose_drift"),
-        "Review deployment revision and candidate local Compose drift. Distinguish Komodo reported ownership from local runtime; do not treat a remote declaration as a stopped container.",
+        "Review deployment revision and candidate local Compose drift. Distinguish Komodo repository revision mismatch from tracked stack input comparison and local runtime drift. Unchanged tracked inputs are not a redeployment decision; external config and runtime settings may differ.",
     ),
     "review_monitoring": (
         ("get_monitoring_coverage", "list_kuma_monitors"),

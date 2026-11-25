@@ -458,6 +458,19 @@ def render(config, data, now=None):
                         sum(row.get("kind") == kind for row in source["items"]),
                     )
                 )
+            if adapter == "komodo":
+                for state in ("matched", "changed", "same_reported_revision", "unknown"):
+                    values.append(
+                        (
+                            f"yggflare_komodo_tracked_stack_inputs_{state}",
+                            "Saved stack candidates with this tracked input comparison; not a deploy decision",
+                            sum(
+                                row.get("kind") == "stacks"
+                                and row.get("tracked_stack_inputs", "unknown") == state
+                                for row in source["items"]
+                            ),
+                        )
+                    )
             if adapter == "kuma":
                 for state in ("up", "down", "pending", "maintenance", "unknown"):
                     values.append(
