@@ -135,7 +135,9 @@ def credentials(adapter, directory=Path("/config"), *, env=None):
         if mounted:
             path = DOCKER_SECRETS / mount_name
             if configured != "/run/secrets/" + mount_name:
-                raise ValueError("Integration secret file must use its fixed Docker secret path")
+                raise ValueError(
+                    "Integration secret file must use its fixed Docker secret path"
+                )
         else:
             path = directory / filename
         # Check the opened descriptor, not a separately resolved pathname.
@@ -148,7 +150,9 @@ def credentials(adapter, directory=Path("/config"), *, env=None):
                 or not 0 < info.st_size <= 4096
                 or (info.st_mode & (0o022 if mounted else 0o077))
             ):
-                raise ValueError("Integration credential file has unsafe type or permissions")
+                raise ValueError(
+                    "Integration credential file has unsafe type or permissions"
+                )
             if mounted and not (os.fstatvfs(handle.fileno()).f_flag & os.ST_RDONLY):
                 raise ValueError("Integration Docker secret must be mounted read-only")
             raw = handle.read(4097)

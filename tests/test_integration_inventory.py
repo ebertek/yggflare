@@ -147,9 +147,15 @@ class IntegrationTests(unittest.TestCase):
             env = {**ENV, "YGGFLARE_KUMA_API_KEY_FILE": "/run/secrets/kuma_api_key"}
             with (
                 patch.object(adapter, "DOCKER_SECRETS", docker),
-                patch.object(adapter.os, "fstatvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)) as mount,
+                patch.object(
+                    adapter.os,
+                    "fstatvfs",
+                    return_value=SimpleNamespace(f_flag=os.ST_RDONLY),
+                ) as mount,
             ):
-                self.assertEqual(adapter.credentials("kuma", config, env=env), ["mounted-key"])
+                self.assertEqual(
+                    adapter.credentials("kuma", config, env=env), ["mounted-key"]
+                )
                 mount.return_value = SimpleNamespace(f_flag=0)
                 with self.assertRaises(ValueError):
                     adapter.credentials("kuma", config, env=env)
@@ -164,8 +170,14 @@ class IntegrationTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     adapter.credentials("kuma", config, env=env)
                 with self.assertRaises(ValueError):
-                    adapter.credentials("kuma", config, env={**env, "YGGFLARE_KUMA_API_KEY_FILE": "/etc/passwd"})
-                self.assertEqual(adapter.credentials("kuma", config, env={}), ["legacy-key"])
+                    adapter.credentials(
+                        "kuma",
+                        config,
+                        env={**env, "YGGFLARE_KUMA_API_KEY_FILE": "/etc/passwd"},
+                    )
+                self.assertEqual(
+                    adapter.credentials("kuma", config, env={}), ["legacy-key"]
+                )
 
     def test_compose_komodo_credentials_passed_only_to_collector(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -176,21 +188,31 @@ class IntegrationTests(unittest.TestCase):
                 path = docker / filename
                 path.write_text("test-" + filename)
                 path.chmod(0o444)
-            env = {**ENV,
-                   "YGGFLARE_KOMODO_API_KEY_FILE": "/run/secrets/komodo_api_key",
-                   "YGGFLARE_KOMODO_API_SECRET_FILE": "/run/secrets/komodo_api_secret"}
+            env = {
+                **ENV,
+                "YGGFLARE_KOMODO_API_KEY_FILE": "/run/secrets/komodo_api_key",
+                "YGGFLARE_KOMODO_API_SECRET_FILE": "/run/secrets/komodo_api_secret",
+            }
             with (
                 patch.object(adapter, "DOCKER_SECRETS", docker),
-                patch.object(adapter.os, "fstatvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)),
+                patch.object(
+                    adapter.os,
+                    "fstatvfs",
+                    return_value=SimpleNamespace(f_flag=os.ST_RDONLY),
+                ),
                 patch.object(adapter, "fetch") as unused,
             ):
                 seen = []
+
                 def request(adapter_name, origin, credentials, kind):
                     seen.append((adapter_name, kind, credentials))
                     return []
+
                 result = adapter.refresh("komodo", root, env, root, request)
                 self.assertEqual(len(seen), 3)
-                self.assertEqual(seen[0][2], ["test-komodo_api_key", "test-komodo_api_secret"])
+                self.assertEqual(
+                    seen[0][2], ["test-komodo_api_key", "test-komodo_api_secret"]
+                )
                 self.assertNotIn("test-komodo_api", json.dumps(result))
                 unused.assert_not_called()
 
