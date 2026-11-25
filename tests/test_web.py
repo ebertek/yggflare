@@ -92,6 +92,17 @@ class WebTests(unittest.TestCase):
         self.assertIn("demo.invalid", html)
         self.assertNotIn("never-export", html)
 
+    def test_unifi_view_escapes_evidence(self):
+        result = {"available": True, "fresh": True, "items": [
+            {"kind": "clients", "name": "<script>alert(1)</script>", "mac": "00:11:22:33:44:55", "access": "never-export"}
+        ]}
+        with patch("mcp_server.saved_unifi", return_value=result):
+            html = web.render("unifi", {}, {"view": ["clients"]})
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("00:11:22:33:44:55", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertNotIn("never-export", html)
+
     def test_web_bind_requires_numeric_ipv4_or_ipv6(self):
         for address, family in (
             ("127.0.0.1", 4),

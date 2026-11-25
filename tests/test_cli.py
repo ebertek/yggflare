@@ -127,6 +127,19 @@ class CommandTests(unittest.TestCase):
                 [cli.sys.executable, "/app/traefik_inventory.py"], check=False
             )
 
+    def test_unifi_read_and_refresh_are_separate(self):
+        with (
+            patch("mcp_server.saved_unifi", return_value={"available": True, "items": []}),
+            patch.object(cli.subprocess, "run") as run,
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(cli.main(["unifi", "clients", "--json"]), 0)
+            self.assertIn('"available": true', output.getvalue())
+            run.assert_not_called()
+            run.return_value = SimpleNamespace(returncode=0)
+            self.assertEqual(cli.main(["unifi", "refresh"]), 0)
+            run.assert_called_once_with([cli.sys.executable, "/app/unifi_inventory.py"], check=False)
+
     def test_mcp_serve_does_not_take_a_controller_snapshot(self):
         with (
             patch.object(cli.controller, "snapshot") as snapshot,

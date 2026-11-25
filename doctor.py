@@ -16,6 +16,8 @@ from pathlib import Path
 import controller
 from backup import verify_archive
 from discord_webhook import read_webhook
+from traefik_inventory import saved as saved_traefik
+from unifi_inventory import saved as saved_unifi
 
 DAY = dt.timedelta(days=1)
 
@@ -108,6 +110,13 @@ def checks():
         (data / "network-inventory/state.json").is_file(),
         "no completed inventory state file",
     )
+    for name, setting, reader in (
+        ("Traefik", "YGGFLARE_TRAEFIK_API_URL", saved_traefik),
+        ("UniFi", "YGGFLARE_UNIFI_API_URL", saved_unifi),
+    ):
+        if os.environ.get(setting):
+            evidence = reader(data)
+            add(name + " snapshot", evidence["fresh"], "configured adapter has no fresh verified snapshot; review collection status")
     archives = sorted(backup.glob("yggflare-????????T??????Z.tar.gz"))
     if archives:
         latest = archives[-1]

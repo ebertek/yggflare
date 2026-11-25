@@ -439,6 +439,18 @@ class InventoryToolTests(unittest.TestCase):
             self.assertIsNone(ingress["reachability_verified"])
             self.assertIsNone(ingress["traefik_runtime_verified"])
 
+    def test_unifi_filters_and_pagination(self):
+        rows = [{"kind": "clients", "name": "client-a", "mac": "00:11:22:33:44:55", "access": "never-export"}, {"kind": "clients", "name": "client-b"}]
+        with patch("mcp_server.saved_unifi", side_effect=lambda _: {"available": True, "items": rows}):
+            first = self.tools.list_unifi_clients(limit=1)
+            self.assertEqual(first["total"], 2)
+            self.assertNotIn("never-export", str(first))
+            self.assertEqual(self.tools.list_unifi_clients("00:11:22:33:44:55")["total"], 1)
+            self.assertEqual(self.tools.list_unifi_clients(offset=1, snapshot_id=first["snapshot_id"])["items"][0]["name"], "client-b")
+            rows[0]["name"] = "changed"
+            with self.assertRaises(ValueError):
+                self.tools.list_unifi_clients(offset=1, snapshot_id=first["snapshot_id"])
+
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):

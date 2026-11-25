@@ -168,6 +168,13 @@ def render(area, tools, table, params):
     result = query(tools, area, view, value, offset, project)
     context, groups = sections(result)
     content = nav + f"<h2>{escape(views[view][0])}</h2>"
+    if views[view][2] or area in {"services", "topology"}:
+        content += f'<form method="get" action="/{area}" class="toolbar"><input type="hidden" name="view" value="{escape(view, quote=True)}">'
+        if views[view][2]:
+            content += f'<label>Search evidence <input name="q" type="search" maxlength="512" value="{escape(value, quote=True)}"></label>'
+        if area in {"services", "topology"} and view != "ingress":
+            content += f'<label>Project <input name="project" maxlength="253" value="{escape(project, quote=True)}"></label>'
+        content += '<button type="submit">Search</button></form>'
     content += '<div class="toolbar"><input id="filter" type="search" aria-label="Filter this page" placeholder="Filter this page…"></div>'
     content += (
         '<div class="card">'
