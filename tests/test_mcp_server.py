@@ -602,6 +602,29 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertTrue(result.is_error)
 
+    async def test_adapter_specific_row_schema_and_projection(self):
+        server = build_server(fixture)
+        async with Client(server, raise_exceptions=True) as client:
+            tools = {item.name: item for item in (await client.list_tools()).tools}
+            for tool_name, field in (
+                ("list_traefik_routes", "literal_hosts"),
+                ("list_komodo_stacks", "revision_match"),
+                ("list_kuma_monitors", "target_port"),
+                ("list_probe_results", "tls_verified"),
+                ("get_job_history", "duration_seconds"),
+                ("get_monitoring_coverage", "matching_monitor_count"),
+                ("list_finding_history", "observation_count"),
+            ):
+                schema = tools[tool_name].output_schema
+                row = schema["properties"]["items"]["items"]
+                if "$ref" in row:
+                    row = schema["$defs"][row["$ref"].rsplit("/", 1)[-1]]
+                self.assertIn(field, row["properties"], tool_name)
+            for name in ("list_traefik_routes", "list_komodo_stacks", "list_kuma_monitors", "list_probe_results", "get_job_history", "get_monitoring_coverage", "list_finding_history"):
+                result = await client.call_tool(name, {})
+                self.assertFalse(result.is_error, name)
+                self.assertEqual(result.structured_content["schema_version"], 1)
+
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
         async with Client(server, raise_exceptions=True) as client:

@@ -859,3 +859,5 @@ Ruff, Black and the Docker build.
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
 
 Use `yggflare services assurance HOSTNAME` or the Services → Cross-source ingress evidence view to correlate saved ingress evidence with candidate exact Komodo stack/service identities, Kuma target hostnames and local probe observations. Each nested source is independently timestamped and bounded; an exact hostname or project match is not proof of ownership, external reachability or authentication. MCP `get_ingress_evidence` requires all six relevant source groups.
+
+Adapter-specific row schemas are exposed for Traefik, Komodo, Kuma, probe results, scheduler history, candidate monitoring coverage and finding history. Fields not present in a saved observation remain optional; no synthetic defaults imply success.

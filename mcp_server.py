@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Required, TypedDict
+from typing import Any, Generic, Required, TypedDict, TypeVar
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -158,13 +158,16 @@ def cloudflare_context(data):
 
 # Stable typed pagination envelope. Optional source context is deliberately
 # explicit so structured MCP serialization preserves evidence metadata.
-class PageResult(TypedDict, total=False):
+RowT = TypeVar("RowT", default=dict[str, Any])
+
+
+class PageResult(TypedDict, Generic[RowT], total=False):
     schema_version: Required[int]
     total: Required[int]
     offset: Required[int]
     next_offset: Required[int | None]
     snapshot_id: Required[str]
-    items: Required[list[dict[str, Any]]]
+    items: Required[list[RowT]]
     caveat: str
     scanned_at: str | None
     scan_initialized: bool
@@ -211,6 +214,105 @@ class PageResult(TypedDict, total=False):
     correlation_caveat: str
     traefik_runtime_verified: bool | None
     reachability_verified: bool | None
+
+
+class TraefikRow(TypedDict, total=False):
+    protocol: str
+    kind: str
+    name: str
+    provider: str | None
+    status: str
+    error_count: int | None
+    literal_hosts: list[str]
+    simple_host_rule: bool
+    entrypoints: list[str]
+    middlewares: list[str]
+    service: str | None
+    tls_configured: bool
+    backend_count: int
+    backend_origins: list[str]
+    backend_list_truncated: bool
+    backend_up_count: int
+    backend_down_count: int
+    service_type: str | None
+    middleware_type: str | None
+
+
+class IntegrationRow(TypedDict, total=False):
+    kind: str
+    name: str
+    server: str | None
+    swarm: str | None
+    state: str
+    template: bool | None
+    version: str | None
+    deployed_hash: str | None
+    latest_hash: str | None
+    revision_match: bool | None
+    project_missing: bool | None
+    service: str | None
+    stack: str
+    image: str | None
+    latest_image: str | None
+    update_available: bool | None
+    container_name: str | None
+    monitor_type: str | None
+    target_host: str | None
+    target_port: int | None
+    target_scheme: str | None
+    status: str
+
+
+class ProbeRow(TypedDict, total=False):
+    target: str
+    hostname: str
+    address: str
+    port: int
+    scheme: str
+    check: str
+    status: str
+    elapsed_ms: float
+    http_status: int
+    expected_status_match: bool | None
+    resolved_count: int
+    expected_address_match: bool
+    tls_verified: bool | None
+    certificate_not_after: str | None
+
+
+class JobRow(TypedDict, total=False):
+    job: str
+    started_at: str | None
+    finished_at: str | None
+    duration_seconds: float | None
+    status: str
+
+
+class CoverageRow(TypedDict, total=False):
+    project: str | None
+    service: str | None
+    container_name: str | None
+    hostname: str | None
+    shared_network: str | None
+    matching_monitor_count: int | None
+    monitor_names: list[str | None]
+    match_status: str
+
+
+class FindingRow(TypedDict, total=False):
+    finding_id: str
+    kind: str
+    address: str | None
+    mac: str | None
+    hostname: str | None
+    service: str | None
+    status: str
+    first_seen: str | None
+    first_seen_lower_bound: bool
+    last_seen: str | None
+    status_changed_at: str | None
+    observation_count: int
+    reappearance_count: int
 
 
 class EvidenceSource(TypedDict):
@@ -865,7 +967,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> PageResult[FindingRow]:
         """Read structured finding lifecycle; disappearance is not proof of resolution."""
         if status and status not in FINDING_STATES:
             raise ValueError("Unknown finding status")
@@ -1096,7 +1198,7 @@ class InventoryTools:
 
     def get_job_history(
         self, job: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[JobRow]:
         """Page retained scheduler outcomes without reading logs or executing jobs."""
         if job and job not in JOBS:
             raise ValueError("Unknown scheduled job")
@@ -1384,7 +1486,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> PageResult[TraefikRow]:
         """Read saved HTTP/TCP/UDP routers; literal host mentions are not evaluated rules."""
         return self._traefik_rows(
             "routers", query, protocol, offset, limit, snapshot_id
@@ -1397,7 +1499,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> PageResult[TraefikRow]:
         """Read saved backend origins and reported status, not active probe results."""
         return self._traefik_rows(
             "services", query, protocol, offset, limit, snapshot_id
@@ -1410,7 +1512,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> PageResult[TraefikRow]:
         """Read middleware identity, type and status, never middleware configuration."""
         return self._traefik_rows(
             "middlewares", query, protocol, offset, limit, snapshot_id
@@ -1462,7 +1564,7 @@ class InventoryTools:
 
     def list_komodo_servers(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[IntegrationRow]:
         """Read reported Komodo server state, not direct host probes."""
         return self._integration_rows(
             "komodo", "servers", query, offset, limit, snapshot_id
@@ -1470,7 +1572,7 @@ class InventoryTools:
 
     def list_komodo_stacks(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[IntegrationRow]:
         """Read reported stack state, ownership and deployed/latest revisions."""
         return self._integration_rows(
             "komodo", "stacks", query, offset, limit, snapshot_id
@@ -1478,7 +1580,7 @@ class InventoryTools:
 
     def list_komodo_services(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[IntegrationRow]:
         """Read Komodo-reported stack service images, not proof containers are running."""
         return self._integration_rows(
             "komodo", "stack_services", query, offset, limit, snapshot_id
@@ -1486,7 +1588,7 @@ class InventoryTools:
 
     def list_komodo_deployments(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[IntegrationRow]:
         """Read standalone deployment state and image metadata."""
         return self._integration_rows(
             "komodo", "deployments", query, offset, limit, snapshot_id
@@ -1494,7 +1596,7 @@ class InventoryTools:
 
     def list_kuma_monitors(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[IntegrationRow]:
         """Read Kuma-exported monitor status and sanitized target host/port."""
         return self._integration_rows(
             "kuma", "monitors", query, offset, limit, snapshot_id
@@ -1507,7 +1609,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> PageResult:
+    ) -> PageResult[CoverageRow]:
         """Correlate exact monitor target hosts with service identities; not proof of coverage."""
         context, services = self._service_rows(query, project_name)
         kuma = saved_integration("kuma", Path("/data"))
@@ -1574,7 +1676,7 @@ class InventoryTools:
 
     def list_probe_results(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> PageResult:
+    ) -> PageResult[ProbeRow]:
         """Read saved DNS/TCP/TLS/HTTP HEAD observations; never initiate requests."""
         data = saved_probes(Path("/data"))
         rows = data.pop("items")
