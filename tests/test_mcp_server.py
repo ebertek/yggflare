@@ -452,6 +452,22 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                         {tool.name for tool in result.tools}, set(TOOL_NAMES)
                     )
 
+    async def test_group_allowlist_applies_to_tools_resources_and_prompts(self):
+        server = build_server(fixture, env={"YGGFLARE_MCP_TOOL_GROUPS": "operations"})
+        async with Client(server, raise_exceptions=True) as client:
+            tools = (await client.list_tools()).tools
+            self.assertEqual({tool.name for tool in tools}, {"get_job_status", "get_job_history", "get_backup_status", "get_notification_status"})
+            resources = (await client.list_resources()).resources
+            self.assertEqual({str(item.uri) for item in resources}, {"yggflare://schema", "yggflare://jobs"})
+            prompts = (await client.list_prompts()).prompts
+            self.assertEqual({item.name for item in prompts}, {"review_operations"})
+            result = await client.read_resource("yggflare://schema")
+            self.assertIn("schema_version", result.contents[0].text)
+            prompt = await client.get_prompt("review_operations")
+            self.assertIn("recipient receipt", prompt.messages[0].content.text)
+        with self.assertRaises(ValueError):
+            build_server(fixture, env={"YGGFLARE_MCP_TOOL_GROUPS": "invented"})
+
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
         async with Client(server, raise_exceptions=True) as client:

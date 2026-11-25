@@ -407,12 +407,52 @@ docker exec yggflare yggflare kuma monitors
 docker exec yggflare yggflare kuma coverage --project PROJECT
 ```
 
+### Independent connectivity evidence
+
+Enable `YGGFLARE_PROBES_ENABLED=true` only after creating the private
+`/config/probes.json` allowlist. Example schema (illustrative addresses only):
+
+```json
+{
+  "version": 1,
+  "targets": [
+    {
+      "name": "internal-web",
+      "hostname": "demo.example.invalid",
+      "address": "192.168.1.20",
+      "port": 443,
+      "scheme": "https",
+      "checks": ["dns", "tcp", "tls", "http"],
+      "expected_statuses": [200, 302]
+    }
+  ]
+}
+```
+
+At most 16 explicit targets and four checks per target are supported.
+Numeric addresses must belong to the configured LAN/IPv6 CIDRs or loopback.
+DNS uses the host resolver; TCP/TLS/HTTP connect directly to the numeric
+address and do not follow DNS answers. TLS uses the normal trust store and
+hostname validation. HTTP sends HEAD / only, no credentials, redirects,
+body reads or arbitrary path. The five-minute collector has a 120-second
+overall deadline and bounded socket timeouts. Failure preserves the last
+complete snapshot. An HTTP response (including 302/401) is not proof of
+Access enforcement or external reachability.
+
+```sh
+docker exec yggflare yggflare probes refresh
+docker exec yggflare yggflare probes status
+docker exec yggflare yggflare probes results
+```
+
+The Web UI Probes tab, aggregate metrics and MCP read saved evidence only.
+
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same forty-two read-only tools. HTTP is disabled by default.
+use the same forty-four read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -501,6 +541,8 @@ in the repository.
 | `get_kuma_status` | Saved monitor collection state |
 | `list_kuma_monitors` | Exported status and sanitized target host/port |
 | `get_monitoring_coverage` | Candidate exact host matches, not verified per-service coverage |
+| `get_probe_status` | Independent probe snapshot status |
+| `list_probe_results` | Saved scoped DNS/TCP/TLS/HTTP outcomes |
 
 Service topology uses a separate 30-second sanitized cache. It includes host
 and bridge-only declarations without inventing LAN addresses. Local Docker
@@ -557,6 +599,25 @@ and returns separate counts even when filtered. Recent findings indicate
 whether their message is still in the latest reported findings; historical
 absence does not prove recovery. Cloudflare ownership counts are not a
 configuration drift or security assessment.
+
+### Resources, prompts and tool groups
+
+Both transports expose fixed JSON resources (`yggflare://schema`, inventory,
+operations, jobs, discovery, traefik, komodo, monitoring, probes) and six
+review prompts where their required tools are enabled. No arbitrary paths,
+live collectors or actions are exposed. Clients may still use tools directly.
+
+`YGGFLARE_MCP_TOOL_GROUPS` defaults to `all`. Set a comma-separated subset
+of `inventory,cloudflare,operations,traefik,komodo,kuma,probes` to restrict
+registered tools, resources and prompts for that server process. Cross-source
+queries require all relevant groups. Unknown groups fail startup. This is
+a server-wide exposure control, not per-user authorization or isolation
+from local CLI/Web UI access. The existing bearer and loopback safeguards
+remain unchanged. Each server allows four concurrent queries with a two-second
+admission wait and a 1 MiB serialized result limit. Optional
+`YGGFLARE_MCP_AUDIT_LOG=true` writes fixed tool names, outcome and elapsed
+time to stderr; no inputs or result data are logged. These bounds do not
+provide a hard execution deadline for an already-started local read.
 
 ### Streamable HTTP transport
 
