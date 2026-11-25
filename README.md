@@ -454,7 +454,12 @@ docker exec yggflare yggflare kuma coverage --project PROJECT
 ### Independent connectivity evidence
 
 Enable `YGGFLARE_PROBES_ENABLED=true` only after creating the private
-`/config/probes.json` allowlist. Example schema (illustrative addresses only):
+`/config/probes.json` allowlist or a read-only Docker Compose config mounted
+at `/yggflare-probes.json` with `YGGFLARE_PROBES_CONFIG_FILE=/yggflare-probes.json`.
+Prefer the latter for GitOps: it avoids copying into the private config directory.
+An explicitly configured missing, writable or invalid mount fails closed;
+no fallback to the legacy file. Recreate the container after replacing the
+source file. Example schema (illustrative addresses only):
 
 ```json
 {
@@ -519,13 +524,17 @@ docker exec yggflare yggflare system evidence --json
 Web pagination links carry the previous result-set fingerprint. CLI users
 may pass `--snapshot-id` with `--offset` to reject changed result sets.
 This fingerprint is not a frozen server-side snapshot or source timestamp.
+Every paged MCP tool also accepts its own optional `snapshot_id` alongside
+`offset` and `limit`. Reuse the same filters and restart on a mismatch.
+Paged structured output includes the versioned, typed pagination envelope
+and source-specific context; row fields remain adapter-specific.
 
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same forty-seven read-only tools. HTTP is disabled by default.
+use the same forty-eight read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -600,6 +609,7 @@ in the repository.
 | `get_docker_service` | Exact project-scoped service or endpoint lookup |
 | `get_compose_drift` | Candidate image, address, health and presence discrepancies |
 | `get_service_dependencies` | Declared dependencies and shared-network evidence |
+| `get_ingress_evidence` | Cross-source ingress, candidate deployment and monitor matches, local probe observations |
 | `get_ingress_path` | Correlate exact service aliases with saved Cloudflare configuration |
 | `get_network_topology` | Declared and local runtime network memberships and resolved namespace ownership |
 | `get_traefik_status` | Saved Traefik snapshot availability, freshness and counts |
@@ -812,3 +822,5 @@ See [AGENTS.md](AGENTS.md) for development and test commands. CI checks Python t
 Ruff, Black and the Docker build.
 
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
+
+Use `yggflare services assurance HOSTNAME` or the Services → Cross-source ingress evidence view to correlate saved ingress evidence with candidate exact Komodo stack/service identities, Kuma target hostnames and local probe observations. Each nested source is independently timestamped and bounded; an exact hostname or project match is not proof of ownership, external reachability or authentication. MCP `get_ingress_evidence` requires all six relevant source groups.

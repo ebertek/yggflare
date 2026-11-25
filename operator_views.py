@@ -16,6 +16,11 @@ VIEWS = {
             "identifier",
         ),
         "ingress": ("Ingress evidence", "get_ingress_path", "hostname"),
+        "assurance": (
+            "Cross-source ingress evidence",
+            "get_ingress_evidence",
+            "hostname",
+        ),
     },
     "topology": {
         "networks": ("Network relationships", "get_network_topology", ""),
@@ -125,7 +130,7 @@ def query(tools, area, view, value="", offset=0, project="", snapshot_id=""):
         and (area, view) != ("kuma", "coverage")
     ):
         raise ValueError("Project filter is not supported for this view")
-    if project and view == "ingress":
+    if project and view in {"ingress", "assurance"}:
         raise ValueError("Project filter is not supported for ingress")
     kwargs = {field: value} if field else {}
     if method not in UNPAGED:
@@ -206,7 +211,7 @@ def render(area, tools, table, params):
         + " · ".join(link(key, item[0]) for key, item in views.items())
         + "</div>"
     )
-    if view in {"show", "dependencies", "ingress"} and not value:
+    if view in {"show", "dependencies", "ingress", "assurance"} and not value:
         return nav + "<p>Choose an exact service or alias from the service list.</p>"
     try:
         result = query(
@@ -256,7 +261,11 @@ def render(area, tools, table, params):
                     + link("dependencies", "Dependencies", **options)
                 )
             for alias in row.get("aliases", []):
-                links.append(link("ingress", "Ingress: " + alias, q=alias))
+                links.append(
+                    link("ingress", "Ingress: " + alias, q=alias)
+                    + " · "
+                    + link("assurance", "Cross-source evidence", q=alias)
+                )
         if links:
             content += (
                 '<h2>Investigate a service</h2><div class="card">'

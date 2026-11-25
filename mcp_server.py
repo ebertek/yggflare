@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Required, TypedDict
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
@@ -104,6 +104,7 @@ def page(rows, offset, limit, expected_snapshot_id=""):
         used += size
     end = offset + len(items)
     return {
+        "schema_version": 1,
         "total": len(rows),
         "offset": offset,
         "next_offset": end if end < len(rows) else None,
@@ -153,6 +154,63 @@ def cloudflare_context(data):
             "establish unsafe exposure."
         ),
     }
+
+
+# Stable typed pagination envelope. Optional source context is deliberately
+# explicit so structured MCP serialization preserves evidence metadata.
+class PageResult(TypedDict, total=False):
+    schema_version: Required[int]
+    total: Required[int]
+    offset: Required[int]
+    next_offset: Required[int | None]
+    snapshot_id: Required[str]
+    items: Required[list[dict[str, Any]]]
+    caveat: str
+    scanned_at: str | None
+    scan_initialized: bool
+    warning_count: int
+    identities: dict[str, Any]
+    ambiguous: bool
+    lookup_relationship: str
+    observed_discrepancies: int
+    inconclusive_observations: int
+    pending_confirmations: int
+    identity_conflicts: int
+    audited_at: str | None
+    latest_attempt_at: str | None
+    last_refresh_verified: bool
+    ownership_counts: dict[str, int]
+    audit_available: bool
+    static_dns_enabled: bool | None
+    internal_dns_enabled: bool | None
+    snapshot_total_findings: int | None
+    snapshot_total: int | None
+    snapshot_truncated: bool | None
+    configuration_available: bool
+    internal_dns_collected: bool | None
+    supplemental_observed_at: str | None
+    supplemental_warning_count: int
+    dns_sd_complete: bool | None
+    dns_sd_scanned_at: str | None
+    available: bool
+    observed_at: str | None
+    history_truncated: bool | None
+    active_total: int | None
+    history_limit: int
+    runtime_available: bool | None
+    compose_complete: bool | None
+    configured: bool
+    fresh: bool
+    last_attempt_at: str | None
+    kuma: dict[str, Any]
+    coverage_caveat: str
+    cloudflare: dict[str, Any]
+    layers: dict[str, Any]
+    traefik_snapshot: dict[str, Any]
+    integration_snapshots: dict[str, Any]
+    correlation_caveat: str
+    traefik_runtime_verified: bool | None
+    reachability_verified: bool | None
 
 
 class EvidenceSource(TypedDict):
@@ -332,7 +390,8 @@ class InventoryTools:
         unknown_only: bool = False,
         offset: int = 0,
         limit: int = 25,
-    ) -> dict[str, Any]:
+        snapshot_id: str = "",
+    ) -> PageResult:
         """List declared/discovered devices and Docker services; filter by name or address."""
         data = self.loader()
         needle = query.casefold().strip()
@@ -342,11 +401,11 @@ class InventoryTools:
             if (not unknown_only or host.get("status") == "unmanaged")
             and (not needle or any(needle in term for term in terms(host)))
         ]
-        return {**snapshot_context(data), **page(rows, offset, limit)}
+        return {**snapshot_context(data), **page(rows, offset, limit, snapshot_id)}
 
     def get_device(
-        self, identifier: str, offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, identifier: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Find exact hostname, alias, IP or MAC matches and saved identity evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
@@ -383,7 +442,12 @@ class InventoryTools:
         )
         return {
             **snapshot_context(data),
-            **page([project(host, DEVICE_FIELDS) for host in matches], offset, limit),
+            **page(
+                [project(host, DEVICE_FIELDS) for host in matches],
+                offset,
+                limit,
+                snapshot_id,
+            ),
             "identities": page(identities, 0, MAX_PAGE),
             "ambiguous": len(matches) > 1 and not shared,
             "lookup_relationship": (
@@ -398,8 +462,12 @@ class InventoryTools:
         }
 
     def get_inventory_drift(
-        self, offset: int = 0, limit: int = 25, severity: str = ""
-    ) -> dict[str, Any]:
+        self,
+        offset: int = 0,
+        limit: int = 25,
+        severity: str = "",
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Compare declared inventory and saved observations; missing evidence is unknown."""
         data = self.loader()
         fields = ("hostname", "ipv4", "field", "expected", "observed", "severity")
@@ -413,11 +481,13 @@ class InventoryTools:
         ]
         return {
             **snapshot_context(data),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
             **discrepancy_counts(data),
         }
 
-    def get_discovery_changes(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_discovery_changes(
+        self, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read recent saved discovery events, newest first, including baseline flags."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -433,14 +503,18 @@ class InventoryTools:
             rows.append(row)
         return {
             **snapshot_context(data),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
             "pending_confirmations": len(state.get("alert_pending_confirmations", [])),
             "identity_conflicts": len(state.get("identity_conflicts", [])),
         }
 
     def get_cloudflare_lifecycle(
-        self, hostname: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        hostname: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read saved Cloudflare lifecycle and DNS/Access/Tunnel presence, not policy rules."""
         data = self.loader()
         rows = []
@@ -460,13 +534,18 @@ class InventoryTools:
         }
         return {
             **cloudflare_context(data),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
             "ownership_counts": counts,
         }
 
     def get_cloudflare_audit(
-        self, hostname: str = "", section: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        hostname: str = "",
+        section: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read saved configuration discrepancies, not an executable write plan."""
         sections = (
             "proposed",
@@ -519,10 +598,10 @@ class InventoryTools:
                 audit.get("total_findings") if available else None
             ),
             "snapshot_truncated": audit.get("truncated") if available else None,
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
         }
 
-    def _cloudflare_configuration(self, section, hostname, offset, limit):
+    def _cloudflare_configuration(self, section, hostname, offset, limit, snapshot_id):
         data = self.loader()
         config = data.get("cloudflare_view", {}).get("configuration", {})
         available = config.get("version") == 1
@@ -570,26 +649,44 @@ class InventoryTools:
             ),
             "snapshot_total": dataset.get("total"),
             "snapshot_truncated": dataset.get("truncated"),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
         }
 
     def get_cloudflare_access(
-        self, hostname: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        hostname: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read ordered Access decisions and assignment match, never policy selectors."""
-        return self._cloudflare_configuration("access", hostname, offset, limit)
+        return self._cloudflare_configuration(
+            "access", hostname, offset, limit, snapshot_id
+        )
 
     def get_cloudflare_dns(
-        self, hostname: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        hostname: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read saved DNS metadata, numeric addresses and configured tunnel match."""
-        return self._cloudflare_configuration("dns", hostname, offset, limit)
+        return self._cloudflare_configuration(
+            "dns", hostname, offset, limit, snapshot_id
+        )
 
     def get_cloudflare_tunnel(
-        self, hostname: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        hostname: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read ordered saved routes and sanitized origin metadata, not connector health."""
-        return self._cloudflare_configuration("tunnel", hostname, offset, limit)
+        return self._cloudflare_configuration(
+            "tunnel", hostname, offset, limit, snapshot_id
+        )
 
     def get_discovery_status(self) -> dict[str, Any]:
         """Summarize saved collector evidence; zero observations do not prove coverage."""
@@ -615,8 +712,13 @@ class InventoryTools:
         }
 
     def get_discovery_evidence(
-        self, address: str = "", source: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        address: str = "",
+        source: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read supplemental evidence, including topology-only records without an IP."""
         data = self.loader()
         supplemental = data.get("network_state", {}).get("supplemental", {})
@@ -630,12 +732,12 @@ class InventoryTools:
             **snapshot_context(data),
             "supplemental_observed_at": supplemental.get("observed_at"),
             "supplemental_warning_count": len(supplemental.get("warnings", [])),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
         }
 
     def get_identity_conflicts(
-        self, address: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, address: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read competing identity evidence without selecting an authoritative MAC."""
         data = self.loader()
         rows = [
@@ -643,11 +745,15 @@ class InventoryTools:
             for item in data.get("network_state", {}).get("identity_conflicts", [])
             if not address or item.get("address") == address
         ]
-        return {**snapshot_context(data), **page(rows, offset, limit)}
+        return {**snapshot_context(data), **page(rows, offset, limit, snapshot_id)}
 
     def get_device_history(
-        self, identifier: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        identifier: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Page identities by canonical ID, label, address or observed MAC."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -661,11 +767,15 @@ class InventoryTools:
                 rows.append(
                     {"identity": bounded(key), **project(item, IDENTITY_FIELDS)}
                 )
-        return {**snapshot_context(data), **page(rows, offset, limit)}
+        return {**snapshot_context(data), **page(rows, offset, limit, snapshot_id)}
 
     def get_identity_changes(
-        self, identity: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        identity: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read the retained identity timeline, newest first."""
         data = self.loader()
         rows = [
@@ -675,11 +785,11 @@ class InventoryTools:
             )
             if not identity or item.get("identity") == identity
         ]
-        return {**snapshot_context(data), **page(rows, offset, limit)}
+        return {**snapshot_context(data), **page(rows, offset, limit, snapshot_id)}
 
     def list_network_services(
-        self, address: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, address: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """List saved scan-confirmed ports and DNS-SD hints as distinct evidence."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -733,10 +843,12 @@ class InventoryTools:
             **snapshot_context(data),
             "dns_sd_complete": state.get("dns_sd_complete"),
             "dns_sd_scanned_at": state.get("dns_sd_scanned_at"),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
         }
 
-    def get_network_findings(self, offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def get_network_findings(
+        self, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read latest reported finding keys; absence does not establish resolution."""
         data = self.loader()
         state = data.get("network_state", {})
@@ -744,7 +856,7 @@ class InventoryTools:
             {"finding_id": bounded(key), "message": bounded(message)}
             for key, message in sorted(state.get("reported", {}).items())
         ]
-        return {**snapshot_context(data), **page(rows, offset, limit)}
+        return {**snapshot_context(data), **page(rows, offset, limit, snapshot_id)}
 
     def list_finding_history(
         self,
@@ -753,7 +865,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> dict[str, Any]:
+    ) -> PageResult:
         """Read structured finding lifecycle; disappearance is not proof of resolution."""
         if status and status not in FINDING_STATES:
             raise ValueError("Unknown finding status")
@@ -806,7 +918,7 @@ class InventoryTools:
 
     def list_finding_transitions(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
-    ) -> dict[str, Any]:
+    ) -> PageResult:
         """Page bounded lifecycle transitions; no changes to alerts or inventory."""
         data = self.loader()
         history = finding_rows(data.get("network_state", {}))
@@ -828,8 +940,8 @@ class InventoryTools:
         }
 
     def get_pending_network_findings(
-        self, offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read findings awaiting repeated observation, not notification payloads."""
         data = self.loader()
         rows = [
@@ -839,7 +951,7 @@ class InventoryTools:
             )
             if isinstance(item, str)
         ]
-        return {**snapshot_context(data), **page(rows, offset, limit)}
+        return {**snapshot_context(data), **page(rows, offset, limit, snapshot_id)}
 
     def get_evidence_overview(self) -> EvidenceOverview:
         """Compare source freshness, collection outcome and completeness without active probes."""
@@ -983,8 +1095,8 @@ class InventoryTools:
         }
 
     def get_job_history(
-        self, job: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, job: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Page retained scheduler outcomes without reading logs or executing jobs."""
         if job and job not in JOBS:
             raise ValueError("Unknown scheduled job")
@@ -1003,7 +1115,10 @@ class InventoryTools:
             if isinstance(item, dict)
         ]
         rows.sort(key=lambda row: str(row.get("started_at") or ""), reverse=True)
-        return {"available": document is not None, **page(rows, offset, limit)}
+        return {
+            "available": document is not None,
+            **page(rows, offset, limit, snapshot_id),
+        }
 
     def get_backup_status(self) -> dict[str, Any]:
         """Read archive metadata and recorded explicit checks; never open archives."""
@@ -1084,14 +1199,19 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> dict[str, Any]:
+    ) -> PageResult:
         """List Compose and local runtime services including non-LAN services."""
         context, rows = self._service_rows(query, project_name)
         return {**context, **page(rows, offset, limit, snapshot_id)}
 
     def get_docker_service(
-        self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        identifier: str,
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Exact service, container, hostname, alias or LAN endpoint lookup."""
         if not identifier.strip():
             raise ValueError("identifier must not be empty")
@@ -1112,11 +1232,19 @@ class InventoryTools:
                 )
             }
         ]
-        return {**context, "ambiguous": len(rows) > 1, **page(rows, offset, limit)}
+        return {
+            **context,
+            "ambiguous": len(rows) > 1,
+            **page(rows, offset, limit, snapshot_id),
+        }
 
     def get_compose_drift(
-        self, project_name: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Review candidate discrepancies without assuming absent services are required locally."""
         context, rows = self._service_rows("", project_name)
         findings = []
@@ -1142,13 +1270,20 @@ class InventoryTools:
                 kinds.append("lan_address_mismatch")
             if kinds:
                 findings.append({**row, "review_reasons": kinds})
-        return {**context, **page(findings, offset, limit)}
+        return {**context, **page(findings, offset, limit, snapshot_id)}
 
     def get_service_dependencies(
-        self, identifier: str, project_name: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        identifier: str,
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read explicit Compose depends_on and namespace evidence, not inferred traffic."""
-        result = self.get_docker_service(identifier, project_name, offset, limit)
+        result = self.get_docker_service(
+            identifier, project_name, offset, limit, snapshot_id
+        )
         fields = (
             "project",
             "service",
@@ -1168,7 +1303,7 @@ class InventoryTools:
         offset: int = 0,
         limit: int = 25,
         snapshot_id: str = "",
-    ) -> dict[str, Any]:
+    ) -> PageResult:
         """List declared and local runtime network relationships, not physical links."""
         context, services = self._service_rows("", project_name)
         rows = []
@@ -1202,7 +1337,7 @@ class InventoryTools:
             },
         }
 
-    def _traefik_rows(self, kind, query, protocol, offset, limit):
+    def _traefik_rows(self, kind, query, protocol, offset, limit, snapshot_id):
         if protocol and protocol not in {"http", "tcp", "udp"}:
             raise ValueError("Unknown Traefik protocol")
         data = saved_traefik(Path("/data"))
@@ -1240,25 +1375,46 @@ class InventoryTools:
                 in {str(host).casefold() for host in row.get("literal_hosts", [])}
             )
         ]
-        return {**data, **page(rows, offset, limit)}
+        return {**data, **page(rows, offset, limit, snapshot_id)}
 
     def list_traefik_routes(
-        self, query: str = "", protocol: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        query: str = "",
+        protocol: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read saved HTTP/TCP/UDP routers; literal host mentions are not evaluated rules."""
-        return self._traefik_rows("routers", query, protocol, offset, limit)
+        return self._traefik_rows(
+            "routers", query, protocol, offset, limit, snapshot_id
+        )
 
     def list_traefik_services(
-        self, query: str = "", protocol: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        query: str = "",
+        protocol: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read saved backend origins and reported status, not active probe results."""
-        return self._traefik_rows("services", query, protocol, offset, limit)
+        return self._traefik_rows(
+            "services", query, protocol, offset, limit, snapshot_id
+        )
 
     def list_traefik_middlewares(
-        self, query: str = "", protocol: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        query: str = "",
+        protocol: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Read middleware identity, type and status, never middleware configuration."""
-        return self._traefik_rows("middlewares", query, protocol, offset, limit)
+        return self._traefik_rows(
+            "middlewares", query, protocol, offset, limit, snapshot_id
+        )
 
     def _integration_status(self, adapter):
         data = saved_integration(adapter, Path("/data"))
@@ -1286,7 +1442,7 @@ class InventoryTools:
         """Read saved Kuma metrics collection state."""
         return self._integration_status("kuma")
 
-    def _integration_rows(self, adapter, kind, query, offset, limit):
+    def _integration_rows(self, adapter, kind, query, offset, limit, snapshot_id):
         data = saved_integration(adapter, Path("/data"))
         rows = data.pop("items")
         needle = query.strip().casefold()
@@ -1302,41 +1458,56 @@ class InventoryTools:
                 )
             )
         ]
-        return {**data, **page(filtered, offset, limit)}
+        return {**data, **page(filtered, offset, limit, snapshot_id)}
 
     def list_komodo_servers(
-        self, query: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read reported Komodo server state, not direct host probes."""
-        return self._integration_rows("komodo", "servers", query, offset, limit)
+        return self._integration_rows(
+            "komodo", "servers", query, offset, limit, snapshot_id
+        )
 
     def list_komodo_stacks(
-        self, query: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read reported stack state, ownership and deployed/latest revisions."""
-        return self._integration_rows("komodo", "stacks", query, offset, limit)
+        return self._integration_rows(
+            "komodo", "stacks", query, offset, limit, snapshot_id
+        )
 
     def list_komodo_services(
-        self, query: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read Komodo-reported stack service images, not proof containers are running."""
-        return self._integration_rows("komodo", "stack_services", query, offset, limit)
+        return self._integration_rows(
+            "komodo", "stack_services", query, offset, limit, snapshot_id
+        )
 
     def list_komodo_deployments(
-        self, query: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read standalone deployment state and image metadata."""
-        return self._integration_rows("komodo", "deployments", query, offset, limit)
+        return self._integration_rows(
+            "komodo", "deployments", query, offset, limit, snapshot_id
+        )
 
     def list_kuma_monitors(
-        self, query: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read Kuma-exported monitor status and sanitized target host/port."""
-        return self._integration_rows("kuma", "monitors", query, offset, limit)
+        return self._integration_rows(
+            "kuma", "monitors", query, offset, limit, snapshot_id
+        )
 
     def get_monitoring_coverage(
-        self, query: str = "", project_name: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self,
+        query: str = "",
+        project_name: str = "",
+        offset: int = 0,
+        limit: int = 25,
+        snapshot_id: str = "",
+    ) -> PageResult:
         """Correlate exact monitor target hosts with service identities; not proof of coverage."""
         context, services = self._service_rows(query, project_name)
         kuma = saved_integration("kuma", Path("/data"))
@@ -1388,7 +1559,7 @@ class InventoryTools:
             **context,
             "kuma": kuma,
             "coverage_caveat": "Shared IPs, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative per-service coverage conclusions.",
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
         }
 
     def get_probe_status(self) -> dict[str, Any]:
@@ -1402,8 +1573,8 @@ class InventoryTools:
         }
 
     def list_probe_results(
-        self, query: str = "", offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Read saved DNS/TCP/TLS/HTTP HEAD observations; never initiate requests."""
         data = saved_probes(Path("/data"))
         rows = data.pop("items")
@@ -1417,11 +1588,11 @@ class InventoryTools:
                 for key in ("target", "hostname", "address", "check")
             )
         ]
-        return {**data, **page(filtered, offset, limit)}
+        return {**data, **page(filtered, offset, limit, snapshot_id)}
 
     def get_ingress_path(
-        self, hostname: str, offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, hostname: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Correlate exact aliases and saved Cloudflare configuration, not reachability."""
         if not hostname.strip():
             raise ValueError("hostname must not be empty")
@@ -1499,12 +1670,95 @@ class InventoryTools:
             },
             "traefik_runtime_verified": None,
             "reachability_verified": None,
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
         }
 
+    def get_ingress_evidence(
+        self, hostname: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
+        """Correlate saved ingress, deployment, monitor and local probe evidence by exact names."""
+        result = self.get_ingress_path(hostname, offset, limit, snapshot_id)
+        needle = hostname.strip().casefold().rstrip(".")
+        # Do not use the paginated service subset as the basis of cross-source
+        # matching. Candidate ownership is exact project/stack name only.
+        _, services = self._service_rows(hostname, "")
+        matching_services = [
+            row
+            for row in services
+            if needle
+            in {str(value).casefold().rstrip(".") for value in row.get("aliases", [])}
+        ]
+        projects = {
+            str(row.get("project")).casefold()
+            for row in matching_services
+            if row.get("project")
+        }
+        identities = {
+            (str(row.get("project")).casefold(), str(row.get("service")).casefold())
+            for row in matching_services
+            if row.get("project") and row.get("service")
+        }
+        komodo = saved_integration("komodo", Path("/data"))
+        kuma = saved_integration("kuma", Path("/data"))
+        probes = saved_probes(Path("/data"))
+        matches = {
+            "komodo": [
+                project(row, INTEGRATION_FIELDS)
+                for row in komodo.get("items", [])
+                if (
+                    row.get("kind") == "stacks"
+                    and str(row.get("name")).casefold() in projects
+                )
+                or (
+                    row.get("kind") == "stack_services"
+                    and (
+                        str(row.get("stack")).casefold(),
+                        str(row.get("service")).casefold(),
+                    )
+                    in identities
+                )
+            ],
+            "kuma": [
+                project(row, INTEGRATION_FIELDS)
+                for row in kuma.get("items", [])
+                if str(row.get("target_host") or "").casefold().rstrip(".") == needle
+            ],
+            "probes": [
+                project(row, PROBE_FIELDS)
+                for row in probes.get("items", [])
+                if str(row.get("hostname") or "").casefold().rstrip(".") == needle
+            ],
+        }
+        for source, rows in matches.items():
+            layer = page(rows, 0, MAX_PAGE)
+            result["layers"][source] = {
+                **layer,
+                "source_truncated": layer["next_offset"] is not None,
+            }
+        result["integration_snapshots"] = {
+            name: {
+                key: value.get(key)
+                for key in (
+                    "configured",
+                    "available",
+                    "observed_at",
+                    "last_attempt_at",
+                    "fresh",
+                    "last_refresh_verified",
+                )
+            }
+            for name, value in (("komodo", komodo), ("kuma", kuma), ("probes", probes))
+        }
+        result["correlation_caveat"] = (
+            "Exact aliases, project/stack names and monitor/probe hostnames are candidate matches only. "
+            "Probe results apply to their listed numeric destination and local vantage; they do not establish external reachability, proxy routing or authentication. "
+            "No match, stale data or an unavailable adapter is inconclusive. Nested layers have independent timestamps and pagination."
+        )
+        return result
+
     def get_service_exposure(
-        self, identifier: str, offset: int = 0, limit: int = 25
-    ) -> dict[str, Any]:
+        self, identifier: str, offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> PageResult:
         """Correlate a Docker hostname/alias/IP with saved Cloudflare lifecycle evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
@@ -1526,7 +1780,7 @@ class InventoryTools:
             rows.append(row)
         return {
             **snapshot_context(data),
-            **page(rows, offset, limit),
+            **page(rows, offset, limit, snapshot_id),
             "cloudflare": cloudflare_context(data),
         }
 
@@ -1564,6 +1818,7 @@ TOOL_NAMES = (
     "get_compose_drift",
     "get_service_dependencies",
     "get_ingress_path",
+    "get_ingress_evidence",
     "get_network_topology",
     "get_traefik_status",
     "list_traefik_routes",
@@ -1641,6 +1896,14 @@ REQUIRED_GROUPS.update(
         "get_yggflare_health": {"inventory", "cloudflare", "operations"},
         "get_service_exposure": {"inventory", "cloudflare"},
         "get_ingress_path": {"inventory", "cloudflare", "traefik"},
+        "get_ingress_evidence": {
+            "inventory",
+            "cloudflare",
+            "traefik",
+            "komodo",
+            "kuma",
+            "probes",
+        },
         "get_monitoring_coverage": {"inventory", "kuma"},
     }
 )
@@ -1663,6 +1926,10 @@ PROMPTS = {
     "review_ingress": (
         ("get_ingress_path", "get_cloudflare_access", "list_traefik_routes"),
         "Review a user-specified ingress hostname across DNS, Access, Tunnel and Traefik observations. Report missing evidence and configuration mismatch separately; do not infer security or reachability from a configured route.",
+    ),
+    "review_ingress_evidence": (
+        ("get_ingress_evidence",),
+        "Review a user-specified hostname across saved ingress, deployment, monitoring and independent local probe evidence. Respect each source timestamp, scope and candidate-only matches. Never infer external reachability or authentication from local results.",
     ),
     "review_operations": (
         ("get_job_status", "get_backup_status", "get_notification_status"),

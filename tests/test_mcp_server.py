@@ -440,6 +440,69 @@ class InventoryToolTests(unittest.TestCase):
             self.assertIsNone(ingress["traefik_runtime_verified"])
 
 
+class CrossSourceTests(unittest.TestCase):
+    def test_exact_matches_and_source_metadata(self):
+        tools = InventoryTools(
+            lambda: {},
+            lambda: {
+                "items": [
+                    {"project": "core", "service": "demo", "aliases": ["demo.invalid"]}
+                ]
+            },
+        )
+
+        def saved(adapter, path):
+            rows = (
+                [
+                    {"kind": "stacks", "name": "core", "secret": "never-export"},
+                    {"kind": "stacks", "name": "core-extra"},
+                    {"kind": "stack_services", "stack": "core", "service": "demo"},
+                    {"kind": "stack_services", "stack": "core", "service": "other"},
+                ]
+                if adapter == "komodo"
+                else [
+                    {"kind": "monitors", "target_host": "demo.invalid", "name": "Demo"},
+                    {
+                        "kind": "monitors",
+                        "target_host": "demo.invalid.example",
+                        "name": "Other",
+                    },
+                ]
+            )
+            return {"available": True, "fresh": True, "items": rows}
+
+        with (
+            patch("mcp_server.saved_integration", side_effect=saved),
+            patch(
+                "mcp_server.saved_probes",
+                return_value={
+                    "available": True,
+                    "fresh": False,
+                    "items": [
+                        {
+                            "hostname": "demo.invalid",
+                            "check": "tcp",
+                            "status": "connected",
+                            "address": "192.0.2.1",
+                        },
+                        {
+                            "hostname": "other.invalid",
+                            "check": "tcp",
+                            "status": "connected",
+                        },
+                    ],
+                },
+            ),
+        ):
+            result = tools.get_ingress_evidence("demo.invalid")
+        self.assertEqual(result["layers"]["komodo"]["total"], 2)
+        self.assertEqual(result["layers"]["kuma"]["total"], 1)
+        self.assertEqual(result["layers"]["probes"]["total"], 1)
+        self.assertFalse(result["integration_snapshots"]["probes"]["fresh"])
+        self.assertIsNone(result["reachability_verified"])
+        self.assertNotIn("never-export", str(result))
+
+
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):
         script = Path(__file__).resolve().parents[1] / "mcp_server.py"
@@ -494,6 +557,50 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(sources), 10)
             self.assertIn("completeness", sources[0])
             self.assertEqual(result.structured_content["schema_version"], 1)
+
+    async def test_paged_contracts_expose_fingerprint_and_preserve_context(self):
+        server = build_server(fixture)
+        async with Client(server, raise_exceptions=True) as client:
+            for tool in (await client.list_tools()).tools:
+                if "offset" not in tool.input_schema.get("properties", {}):
+                    continue
+                self.assertIn("snapshot_id", tool.input_schema["properties"], tool.name)
+                self.assertTrue(
+                    {
+                        "schema_version",
+                        "total",
+                        "offset",
+                        "next_offset",
+                        "snapshot_id",
+                        "items",
+                    }
+                    <= set(tool.output_schema["required"]),
+                    tool.name,
+                )
+            result = await client.call_tool("list_devices", {"limit": 1})
+            first = result.structured_content
+            self.assertEqual(first["schema_version"], 1)
+            self.assertIn("scan_initialized", first)
+            second = await client.call_tool(
+                "list_devices",
+                {"offset": 1, "limit": 1, "snapshot_id": first["snapshot_id"]},
+            )
+            self.assertEqual(
+                second.structured_content["snapshot_id"], first["snapshot_id"]
+            )
+        async with Client(server, raise_exceptions=False) as client:
+            for tool_name, args in (
+                ("list_devices", {}),
+                ("get_cloudflare_access", {}),
+                ("list_komodo_stacks", {}),
+                ("list_probe_results", {}),
+                ("get_service_dependencies", {"identifier": "example"}),
+            ):
+                with self.subTest(tool=tool_name):
+                    result = await client.call_tool(
+                        tool_name, {**args, "offset": 1, "snapshot_id": "incorrect"}
+                    )
+                    self.assertTrue(result.is_error)
 
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
