@@ -369,11 +369,18 @@ def run_scheduler(listener=None):
                     )
             last_cloud_completed = time.monotonic()
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
-        if os.environ.get("YGGFLARE_TRAEFIK_API_URL") and time.monotonic() >= next_traefik:
+        if (
+            os.environ.get("YGGFLARE_TRAEFIK_API_URL")
+            and time.monotonic() >= next_traefik
+        ):
             try:
                 run([sys.executable, "/app/traefik_inventory.py"])
             except Exception:
-                log("warning", "controller", "Traefik presentation refresh failed; previous snapshot retained")
+                log(
+                    "warning",
+                    "controller",
+                    "Traefik presentation refresh failed; previous snapshot retained",
+                )
             next_traefik = time.monotonic() + TRAEFIK_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):

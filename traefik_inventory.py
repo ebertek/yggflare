@@ -45,10 +45,14 @@ def settings(env):
         lan = ipaddress.ip_network(env["YGGFLARE_LAN_CIDR"])
         if (
             url.scheme not in {"http", "https"}
-            or url.username is not None or url.password is not None
-            or url.path not in {"", "/"} or url.query or url.fragment
+            or url.username is not None
+            or url.password is not None
+            or url.path not in {"", "/"}
+            or url.query
+            or url.fragment
             or not (address.is_loopback or address in lan)
-            or address.is_unspecified or address.is_multicast
+            or address.is_unspecified
+            or address.is_multicast
             or "%" in str(address)
         ):
             raise ValueError
@@ -56,7 +60,9 @@ def settings(env):
         if not 1 <= port <= 65535:
             raise ValueError
     except (KeyError, ValueError, TypeError):
-        raise ValueError("Traefik API requires a numeric HTTP(S) origin inside the configured LAN or loopback") from None
+        raise ValueError(
+            "Traefik API requires a numeric HTTP(S) origin inside the configured LAN or loopback"
+        ) from None
     return url.scheme, str(address), port
 
 
@@ -69,10 +75,16 @@ def get_page(config, protocol, kind, page):
     if (protocol, kind) not in SECTIONS or not 1 <= page <= MAX_PAGES:
         raise ValueError("Unsupported Traefik endpoint")
     scheme, address, port = config
-    connection_type = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    connection_type = (
+        http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    )
     connection = connection_type(address, port, timeout=5)
     try:
-        connection.request("GET", f"/api/{protocol}/{kind}?page={page}&per_page={PAGE_SIZE}", headers={"Accept": "application/json"})
+        connection.request(
+            "GET",
+            f"/api/{protocol}/{kind}?page={page}&per_page={PAGE_SIZE}",
+            headers={"Accept": "application/json"},
+        )
         response = connection.getresponse()
         if response.status != 200:
             raise ValueError("Traefik API did not return HTTP 200")
@@ -80,7 +92,11 @@ def get_page(config, protocol, kind, page):
         if len(payload) > 1024 * 1024:
             raise ValueError("Traefik API response exceeds size limit")
         rows = json.loads(payload)
-        if not isinstance(rows, list) or len(rows) > PAGE_SIZE or any(not isinstance(row, dict) for row in rows):
+        if (
+            not isinstance(rows, list)
+            or len(rows) > PAGE_SIZE
+            or any(not isinstance(row, dict) for row in rows)
+        ):
             raise ValueError("Invalid Traefik API list response")
         next_page = response.getheader("X-Next-Page", "").strip()
         if next_page not in {"", str(page + 1)}:
@@ -121,7 +137,11 @@ def endpoint(value):
                 return None
         if ":" in host:
             host = "[" + host + "]"
-        return (url.scheme + "://" if url.scheme else "") + host + (":" + str(url.port) if url.port else "")
+        return (
+            (url.scheme + "://" if url.scheme else "")
+            + host
+            + (":" + str(url.port) if url.port else "")
+        )
     except ValueError:
         return None
 
@@ -138,16 +158,29 @@ def project(protocol, kind, raw):
         "name": identifier,
         "provider": name(raw.get("provider")),
         "status": status if status in ("enabled", "disabled", "warning") else "unknown",
-        "error_count": len(raw["error"]) if isinstance(raw.get("error"), list) else None,
+        "error_count": (
+            len(raw["error"]) if isinstance(raw.get("error"), list) else None
+        ),
     }
     if kind == "routers":
         rule = raw.get("rule", "")
         hosts = []
         if protocol == "http" and isinstance(rule, str) and len(rule) <= 4096:
-            hosts = sorted(set(re.findall(r'Host\(\s*[`"]([A-Za-z0-9][A-Za-z0-9.-]{0,252})[`"]\s*\)', rule)))[:32]
+            hosts = sorted(
+                set(
+                    re.findall(
+                        r'Host\(\s*[`"]([A-Za-z0-9][A-Za-z0-9.-]{0,252})[`"]\s*\)', rule
+                    )
+                )
+            )[:32]
         row.update(
             literal_hosts=hosts,
-            simple_host_rule=bool(isinstance(rule, str) and re.fullmatch(r'\s*Host\(\s*[`"][A-Za-z0-9][A-Za-z0-9.-]{0,252}[`"]\s*\)\s*', rule)),
+            simple_host_rule=bool(
+                isinstance(rule, str)
+                and re.fullmatch(
+                    r'\s*Host\(\s*[`"][A-Za-z0-9][A-Za-z0-9.-]{0,252}[`"]\s*\)\s*', rule
+                )
+            ),
             entrypoints=names(raw.get("entryPoints")),
             middlewares=names(raw.get("middlewares")),
             service=name(raw.get("service")),
@@ -160,7 +193,9 @@ def project(protocol, kind, raw):
             servers = []
         row["backend_count"] = len(servers)
         row["backend_origins"] = [
-            value for server in servers[:32] if isinstance(server, dict)
+            value
+            for server in servers[:32]
+            if isinstance(server, dict)
             if (value := endpoint(server.get("url") or server.get("address")))
         ]
         row["backend_list_truncated"] = len(servers) > 32
@@ -168,7 +203,9 @@ def project(protocol, kind, raw):
         states = raw.get("serverStatus")
         if isinstance(states, dict):
             row["backend_up_count"] = sum(value == "UP" for value in states.values())
-            row["backend_down_count"] = sum(value == "DOWN" for value in states.values())
+            row["backend_down_count"] = sum(
+                value == "DOWN" for value in states.values()
+            )
     else:
         # Middleware type and name only. Auth users, headers and rules are private.
         row["middleware_type"] = name(raw.get("type"))
@@ -192,7 +229,12 @@ def collect(config, fetch=get_page):
         else:
             raise ValueError("Traefik inventory exceeds page limit")
     rows.sort(key=lambda item: (item["kind"], item["protocol"], item["name"]))
-    return {"version": 1, "observed_at": timestamp(), "source_id": source_id(config), "items": rows}
+    return {
+        "version": 1,
+        "observed_at": timestamp(),
+        "source_id": source_id(config),
+        "items": rows,
+    }
 
 
 def write(path, document):
@@ -201,7 +243,9 @@ def write(path, document):
         raise ValueError("Traefik snapshot exceeds size limit")
     name = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as handle:
             name = handle.name
             handle.write(encoded)
         os.replace(name, path)
@@ -226,7 +270,12 @@ def refresh(data, config, fetch=get_page):
         raise ValueError("Traefik collector is not configured")
     with (data / "traefik-refresh.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        status = {"version": 1, "attempted_at": timestamp(), "source_id": source_id(config), "ok": False}
+        status = {
+            "version": 1,
+            "attempted_at": timestamp(),
+            "source_id": source_id(config),
+            "ok": False,
+        }
         write(data / "traefik-view-status.json", status)
         view = collect(config, fetch)
         write(data / "traefik-view.json", view)
@@ -247,19 +296,34 @@ def saved(data, env=None):
     status = read(data / "traefik-view-status.json")
     matches = bool(config and view.get("source_id") == source_id(config))
     rows = view.get("items", [])
-    available = matches and isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+    available = (
+        matches
+        and isinstance(rows, list)
+        and all(isinstance(row, dict) for row in rows)
+    )
     age = None
     if available:
         try:
-            age = (datetime.now(UTC) - datetime.fromisoformat(view["observed_at"])).total_seconds()
+            age = (
+                datetime.now(UTC) - datetime.fromisoformat(view["observed_at"])
+            ).total_seconds()
         except (KeyError, ValueError, TypeError):
             available = False
-    verified = bool(available and status.get("ok") is True and status.get("source_id") == view.get("source_id") and status.get("observed_at") == view.get("observed_at"))
+    verified = bool(
+        available
+        and status.get("ok") is True
+        and status.get("source_id") == view.get("source_id")
+        and status.get("observed_at") == view.get("observed_at")
+    )
     return {
         "configured": configured,
         "available": available,
         "observed_at": view.get("observed_at") if available else None,
-        "last_attempt_at": status.get("attempted_at") if config and status.get("source_id") == source_id(config) else None,
+        "last_attempt_at": (
+            status.get("attempted_at")
+            if config and status.get("source_id") == source_id(config)
+            else None
+        ),
         "last_refresh_verified": verified,
         "fresh": bool(verified and age is not None and 0 <= age <= STALE_SECONDS),
         "items": rows if available else [],
@@ -274,7 +338,10 @@ def main():
         print(f"Traefik presentation refreshed: {len(view['items'])} resources.")
         return 0
     except (OSError, ValueError, TypeError, http.client.HTTPException):
-        print("Traefik refresh unavailable; previous complete snapshot retained.", file=sys.stderr)
+        print(
+            "Traefik refresh unavailable; previous complete snapshot retained.",
+            file=sys.stderr,
+        )
         return 2
     finally:
         signal.alarm(0)

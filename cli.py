@@ -109,9 +109,17 @@ def main(argv=None):
     if args.offset or args.project:
         parser.error("--offset and --project require a read-only operator view")
     if args.component == "traefik" and args.operation == "refresh":
-        if args.argument or args.approval or args.max_operations or args.json or args.details:
+        if (
+            args.argument
+            or args.approval
+            or args.max_operations
+            or args.json
+            or args.details
+        ):
             parser.error("traefik refresh accepts no additional arguments")
-        return subprocess.run([sys.executable, "/app/traefik_inventory.py"], check=False).returncode
+        return subprocess.run(
+            [sys.executable, "/app/traefik_inventory.py"], check=False
+        ).returncode
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
         parser.error("--details and --json require network status")
