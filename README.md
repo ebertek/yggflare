@@ -519,6 +519,10 @@ docker exec yggflare yggflare system evidence --json
 Web pagination links carry the previous result-set fingerprint. CLI users
 may pass `--snapshot-id` with `--offset` to reject changed result sets.
 This fingerprint is not a frozen server-side snapshot or source timestamp.
+Every paged MCP tool also accepts its own optional `snapshot_id` alongside
+`offset` and `limit`. Reuse the same filters and restart on a mismatch.
+Paged structured output includes the versioned, typed pagination envelope
+and source-specific context; row fields remain adapter-specific.
 
 ## Model Context Protocol (MCP)
 
