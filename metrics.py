@@ -459,7 +459,12 @@ def render(config, data, now=None):
                     )
                 )
             if adapter == "komodo":
-                for state in ("matched", "changed", "same_reported_revision", "unknown"):
+                for state in (
+                    "matched",
+                    "changed",
+                    "same_reported_revision",
+                    "unknown",
+                ):
                     values.append(
                         (
                             f"yggflare_komodo_tracked_stack_inputs_{state}",

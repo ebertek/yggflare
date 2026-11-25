@@ -2,6 +2,7 @@
 
 No fetch, shell, worktree inspection, checkout, remote API, or raw object export.
 """
+
 import os
 import posixpath
 import re
@@ -47,18 +48,31 @@ class LocalHistory:
             raise ValueError("Git evidence deadline exceeded")
         result = subprocess.run(
             [
-                "git", "--no-optional-locks", "--no-replace-objects",
-                "-c", f"safe.directory={self.root}", "-C", str(self.root), *args,
+                "git",
+                "--no-optional-locks",
+                "--no-replace-objects",
+                "-c",
+                f"safe.directory={self.root}",
+                "-C",
+                str(self.root),
+                *args,
             ],
             env={
-                "PATH": os.defpath, "HOME": "/nonexistent",
-                "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
-                "GIT_TERMINAL_PROMPT": "0", "GIT_NO_LAZY_FETCH": "1",
-                "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1",
-                "GIT_PROTOCOL_FROM_USER": "0", "GIT_ALLOW_PROTOCOL": "",
+                "PATH": os.defpath,
+                "HOME": "/nonexistent",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_NO_LAZY_FETCH": "1",
+                "GIT_OPTIONAL_LOCKS": "0",
+                "GIT_NO_REPLACE_OBJECTS": "1",
+                "GIT_PROTOCOL_FROM_USER": "0",
+                "GIT_ALLOW_PROTOCOL": "",
             },
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            check=True, timeout=min(2, remaining),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            timeout=min(2, remaining),
         ).stdout
         if len(result) > MAX_MANIFEST:
             raise ValueError("Git evidence exceeds bounds")
@@ -68,7 +82,9 @@ class LocalHistory:
     def revision(self, value):
         if not isinstance(value, str) or not HEX.fullmatch(value):
             raise ValueError("Invalid revision")
-        resolved = self.git("rev-parse", "--verify", value + "^{commit}").decode().strip()
+        resolved = (
+            self.git("rev-parse", "--verify", value + "^{commit}").decode().strip()
+        )
         if not OID.fullmatch(resolved) or not resolved.startswith(value):
             raise ValueError("Unverified commit")
         return resolved
@@ -91,7 +107,8 @@ class LocalHistory:
     def stack_inputs(self, revision, row):
         manifest = self.manifest(revision)
         stacks = [
-            item for item in manifest.get("stack", [])
+            item
+            for item in manifest.get("stack", [])
             if item.get("name") == row.get("name")
             and item.get("config", {}).get("server") == row.get("server")
         ]
@@ -100,7 +117,9 @@ class LocalHistory:
         stack = stacks[0]
         config = stack["config"]
         linked = config.get("linked_repo")
-        repos = [item for item in manifest.get("repo", []) if item.get("name") == linked]
+        repos = [
+            item for item in manifest.get("repo", []) if item.get("name") == linked
+        ]
         directory = config.get("run_directory")
         if not linked or len(repos) != 1 or not safe_path(directory):
             raise ValueError("Unverified linked repository or run directory")
@@ -143,8 +162,13 @@ def enrich_stacks(rows, root=ROOT):
             latest = history.revision(row.get("latest_hash"))
             old = history.stack_inputs(deployed, row)
             new = history.stack_inputs(latest, row)
-            row["tracked_stack_inputs"] = (
-                "matched" if old == new else "changed"
-            )
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
+            row["tracked_stack_inputs"] = "matched" if old == new else "changed"
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            subprocess.SubprocessError,
+        ):
             continue

@@ -1,4 +1,5 @@
 """Local commit comparison uses synthetic repositories, never remote fetches."""
+
 import subprocess
 import tempfile
 import unittest
@@ -9,13 +10,25 @@ from stack_revision import enrich_stacks
 
 class StackRevisionTests(unittest.TestCase):
     def git(self, *args):
-        return subprocess.check_output(
-            ["git", "-C", str(self.root), *args], stderr=subprocess.DEVNULL
-        ).decode().strip()
+        return (
+            subprocess.check_output(
+                ["git", "-C", str(self.root), *args], stderr=subprocess.DEVNULL
+            )
+            .decode()
+            .strip()
+        )
 
     def commit(self):
         self.git("add", ".")
-        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        )
         return self.git("rev-parse", "HEAD")
 
     def test_tracked_inputs_and_unavailable_history(self):
@@ -49,8 +62,11 @@ class StackRevisionTests(unittest.TestCase):
             ):
                 with self.subTest(latest=latest):
                     row = {
-                        "kind": "stacks", "name": "demo", "server": "host",
-                        "deployed_hash": old[:12], "latest_hash": latest,
+                        "kind": "stacks",
+                        "name": "demo",
+                        "server": "host",
+                        "deployed_hash": old[:12],
+                        "latest_hash": latest,
                         "revision_match": False,
                     }
                     enrich_stacks([row], self.root)
