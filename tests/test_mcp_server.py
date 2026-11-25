@@ -765,7 +765,10 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(result.is_error, name)
                     self.assertIsInstance(result.structured_content, dict, name)
                     for private in (
-                        "never-export", "private notes", "private-app-id", "private-dns-id"
+                        "never-export",
+                        "private notes",
+                        "private-app-id",
+                        "private-dns-id",
                     ):
                         self.assertNotIn(private, str(result.structured_content), name)
         self.assertEqual(data, before)
