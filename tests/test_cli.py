@@ -88,6 +88,20 @@ class CommandTests(unittest.TestCase):
                     cli.main(arguments)
                 self.assertEqual(error.exception.code, 2)
 
+    def test_operator_views_use_read_only_queries(self):
+        with (
+            patch("mcp_server.InventoryTools") as tools,
+            patch.object(cli.controller, "snapshot") as snapshot,
+            patch.object(cli.subprocess, "run") as run,
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            tools.return_value.list_docker_services.return_value = {"items": [], "total": 0}
+            self.assertEqual(cli.main(["services", "list", "--json", "--project", "core"]), 0)
+            tools.return_value.list_docker_services.assert_called_once_with(query="", offset=0, limit=50, project_name="core")
+            self.assertIn('"total": 0', output.getvalue())
+            snapshot.assert_not_called()
+            run.assert_not_called()
+
     def test_mcp_serve_does_not_take_a_controller_snapshot(self):
         with (
             patch.object(cli.controller, "snapshot") as snapshot,

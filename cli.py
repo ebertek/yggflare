@@ -2,6 +2,7 @@
 """Operator commands for a running Yggflare container (via docker exec)."""
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -22,7 +23,7 @@ def main(argv=None):
         "--version", action="version", version=controller.version_string()
     )
     parser.add_argument(
-        "component", choices=("cloudflare", "doctor", "backup", "network", "mcp")
+        "component", choices=("cloudflare", "doctor", "backup", "network", "mcp", "services", "system")
     )
     parser.add_argument(
         "operation",
@@ -40,6 +41,18 @@ def main(argv=None):
             "discord-test",
             "status",
             "serve",
+            "list",
+            "show",
+            "drift",
+            "dependencies",
+            "ingress",
+            "topology",
+            "dns",
+            "access",
+            "tunnel",
+            "jobs",
+            "history",
+            "notifications",
         ),
     )
     parser.add_argument("argument", nargs="?")
@@ -52,7 +65,25 @@ def main(argv=None):
         default=0,
         help="Manual Cloudflare plan limit; 0 (default) means all validated actions",
     )
+    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--project", default="")
     args = parser.parse_args(argv)
+    from operator_views import CLI_VIEWS, cli_text, query
+
+    selection = CLI_VIEWS.get((args.component, args.operation))
+    if selection:
+        if args.approval is not None or args.max_operations != 0 or args.details:
+            parser.error("Unsupported arguments for read-only operator view")
+        from mcp_server import InventoryTools
+
+        try:
+            result = query(InventoryTools(), *selection, value=args.argument or "", offset=args.offset, project=args.project)
+        except ValueError as error:
+            parser.error(str(error))
+        print(json.dumps(result, indent=2, sort_keys=True) if args.json else cli_text(result))
+        return 0
+    if args.offset or args.project:
+        parser.error("--offset and --project require a read-only operator view")
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
         parser.error("--details and --json require network status")
@@ -131,6 +162,8 @@ def main(argv=None):
             parser.error(f"{args.operation} requires exactly one hostname")
     elif args.argument is not None or args.approval is not None:
         parser.error("unexpected positional argument")
+    if args.operation not in {"claim", "orphan-plan", "orphan-apply", "audit", "plan", "apply", "preflight"}:
+        parser.error("Unsupported Cloudflare operation")
     if args.operation in ("claim", "orphan-plan", "orphan-apply"):
         if args.max_operations != 0:
             parser.error("--max-operations is not valid for the orphan workflow")

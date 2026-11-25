@@ -302,6 +302,40 @@ or loopback binding. If you expose it through a proxy, secure the proxy **and**
 prevent bypassing it on the LAN. Cloudflare Access on a hostname alone does not
 protect the listener.
 
+### Operator views
+
+The Web UI includes **Docker services**, **Topology**, **Cloudflare audit** and
+**Operations** tabs. These expose the same bounded, sanitized query results as
+MCP, including ingress correlation, job history, backup and notification
+evidence. Filter the current page or follow its pagination links; observed
+service names and other evidence are untrusted text.
+
+Equivalent container CLI commands (append `--json` for structured output):
+
+```sh
+docker exec yggflare yggflare services list
+docker exec yggflare yggflare services show SERVICE --project PROJECT
+docker exec yggflare yggflare services drift
+docker exec yggflare yggflare services dependencies SERVICE
+docker exec yggflare yggflare services ingress HOSTNAME
+docker exec yggflare yggflare network topology
+docker exec yggflare yggflare cloudflare status
+docker exec yggflare yggflare cloudflare dns HOSTNAME
+docker exec yggflare yggflare cloudflare access HOSTNAME
+docker exec yggflare yggflare cloudflare tunnel HOSTNAME
+docker exec yggflare yggflare system status
+docker exec yggflare yggflare system jobs
+docker exec yggflare yggflare system history
+docker exec yggflare yggflare backup status
+docker exec yggflare yggflare network notifications
+```
+
+List views return at most 50 records; use `--offset` with the returned
+`next_offset`. These commands read evidence only; the existing
+`cloudflare audit`, `network run`, and explicit backup verification commands
+retain their separate behavior. Protect direct Web UI access with network
+firewall restrictions as well as reverse-proxy authentication.
+
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
