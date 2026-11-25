@@ -871,3 +871,13 @@ Kuma candidate correlation now matches exact ingress names, service hostnames, a
 Supplemental discovery coverage reports the saved per-collector configuration, execution counts, no-reply outcomes, parse failures, unavailable executables, target limits and unverified Nmap completion for the fixed supported sources. It is available in MCP `get_discovery_status`, Web Operations → Discovery coverage and `yggflare network coverage --json`. Counts are invocations/batches, not complete device or port coverage; a configured source with no eligible targets can remain unattempted. SMB's existing 16-target limit is explicit. No changes to discovery scope or alert policy.
 
 Prometheus coverage metrics include fixed `yggflare_network_tcp_*` aggregate counts and `yggflare_discovery_<source>_*` invocation, failure, no-reply, parser and limitation evidence for configured sources. They describe the last saved scan, not cumulative counters; unavailable legacy observations are omitted. Metric names use a fixed allowlist, with no device identities or secret data in labels.
+
+### Monitoring and discovery follow-up
+
+Kuma parses targets according to monitor type: TCP monitors use explicit hostname/port labels, while Docker, group and push monitors have no inferred network endpoint. Exact Docker monitor friendly names are weak container/service candidates; duplicate names retain all matching project/service identities. Actual Docker host and container target are not exported. After upgrading, refresh the Kuma snapshot to replace legacy placeholder metadata.
+
+The Monitoring UI includes candidate device monitoring coverage; CLI `yggflare kuma devices --json --all` and MCP `get_monitoring_coverage(scope="devices")` use exact saved numeric addresses of non-container inventory rows. No DNS lookups or live probes are performed. DHCP reuse, incomplete inventory and independent timestamps limit confidence.
+
+SMB enumeration is limited to 16 scoped targets with previously observed open TCP/445 or TCP/139, preferring 445. Missing port evidence is not proof of closure. Aggregate selection and outcomes (access denied, refusal, remote timeout, local deadline, execution failure and successful listings with/without shares) are reported without raw diagnostics. No credentials, new scan scope or alert policy changes.
+
+Read-only paginated CLI commands accept `--limit 1..50` or `--all` (stable top-level result set, up to 10,000 rows/16 MiB, rejects changed snapshots; does not aggregate nested ingress layers). Examples: `yggflare kuma coverage --all --json`, `yggflare kuma monitors --limit 10 --json`.

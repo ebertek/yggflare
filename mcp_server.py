@@ -797,6 +797,15 @@ def supplemental_coverage_context(supplemental):
                 "parse_errors",
                 "eligible_targets",
                 "selected_targets",
+                "skipped_no_port_evidence",
+                "skipped_target_limit",
+                "success_with_shares",
+                "success_empty",
+                "access_denied",
+                "connection_refused",
+                "remote_timeout",
+                "execution_timeout",
+                "execution_failed",
             )
             if type(row.get(key)) is int and 0 <= row[key] <= 100000
         }

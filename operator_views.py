@@ -121,7 +121,7 @@ class SnapshotChanged(ValueError):
     """A page no longer corresponds to the preceding result set."""
 
 
-def query(tools, area, view, value="", offset=0, project="", snapshot_id=""):
+def query(tools, area, view, value="", offset=0, project="", snapshot_id="", limit=None, all_pages=False):
     """All callers consume the same allowlisted query and pagination contract."""
     if area not in VIEWS or view not in VIEWS[area]:
         raise ValueError("Unknown operator view")
@@ -144,15 +144,47 @@ def query(tools, area, view, value="", offset=0, project="", snapshot_id=""):
     if (area, view) == ("kuma", "devices"):
         kwargs["scope"] = "devices"
     if method not in UNPAGED:
-        kwargs.update(offset=offset, limit=50)
-    elif offset:
+        if limit is not None and not 1 <= limit <= 50:
+            raise ValueError("--limit must be between 1 and 50")
+        if all_pages and offset:
+            raise ValueError("--all must start at offset zero")
+        kwargs.update(offset=offset, limit=50 if limit is None else limit)
+    elif offset or limit is not None or all_pages or snapshot_id:
         raise ValueError("This view does not support pagination")
     if project:
         kwargs["project_name"] = project
     result = getattr(tools, method)(**kwargs)
     if snapshot_id and snapshot_id != result.get("snapshot_id"):
         raise SnapshotChanged("Result set changed; restart pagination at offset zero")
-    return result
+    if not all_pages:
+        return result
+    if "layers" in result:
+        raise ValueError("--all does not combine independently paginated ingress layers")
+    identity = result.get("snapshot_id")
+    total = result.get("total")
+    if not identity or type(total) is not int or not 0 <= total <= 10000:
+        raise ValueError("Result exceeds --all row limit or lacks snapshot metadata")
+    items = list(result["items"])
+    size = len(json.dumps(items, ensure_ascii=True).encode())
+    next_offset = result.get("next_offset")
+    while next_offset is not None:
+        if next_offset != len(items) or next_offset >= total:
+            raise ValueError("Invalid pagination continuation")
+        kwargs["offset"] = next_offset
+        following = getattr(tools, method)(**kwargs)
+        if following.get("snapshot_id") != identity or following.get("total") != total:
+            raise SnapshotChanged("Result set changed; restart pagination at offset zero")
+        batch = following["items"]
+        if not batch:
+            raise ValueError("Empty continuation page")
+        size += len(json.dumps(batch, ensure_ascii=True).encode())
+        if size > 16 * 1024 * 1024:
+            raise ValueError("Result exceeds --all output limit")
+        items.extend(batch)
+        next_offset = following.get("next_offset")
+    if len(items) != total:
+        raise ValueError("Incomplete result set")
+    return {**result, "items": items, "next_offset": None}
 
 
 def display(value):
