@@ -17,10 +17,10 @@ from backup import create_snapshot, prune_snapshots
 from integration_inventory import ADAPTERS
 from integration_inventory import INTERVAL as INTEGRATION_INTERVAL
 from job_status import track
-from probe_inventory import INTERVAL as PROBE_INTERVAL
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
+from probe_inventory import INTERVAL as PROBE_INTERVAL
 from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
 from watchers import start as start_watchers
 
@@ -164,12 +164,14 @@ def run(args, *, env=None):
     component = (
         "probe"
         if Path(args[1]).name == "probe_inventory.py"
-        else "integration"
-        if Path(args[1]).name == "integration_inventory.py"
         else (
-            "traefik"
-            if Path(args[1]).name == "traefik_inventory.py"
-            else "cloudflare" if "/cloudflare/" in args[1] else "network"
+            "integration"
+            if Path(args[1]).name == "integration_inventory.py"
+            else (
+                "traefik"
+                if Path(args[1]).name == "traefik_inventory.py"
+                else "cloudflare" if "/cloudflare/" in args[1] else "network"
+            )
         )
     )
     label = job_label(args[1])
@@ -413,11 +415,18 @@ def run_scheduler(listener=None):
                         f"{adapter} presentation refresh failed; previous snapshot retained",
                     )
                 next_integration[adapter] = time.monotonic() + INTEGRATION_INTERVAL
-        if os.environ.get("YGGFLARE_PROBES_ENABLED") == "true" and time.monotonic() >= next_probe:
+        if (
+            os.environ.get("YGGFLARE_PROBES_ENABLED") == "true"
+            and time.monotonic() >= next_probe
+        ):
             try:
                 run([sys.executable, "/app/probe_inventory.py"])
             except Exception:
-                log("warning", "controller", "Probe collection failed; previous snapshot retained")
+                log(
+                    "warning",
+                    "controller",
+                    "Probe collection failed; previous snapshot retained",
+                )
             next_probe = time.monotonic() + PROBE_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):

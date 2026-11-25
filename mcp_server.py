@@ -12,7 +12,8 @@ from mcp.types import ToolAnnotations
 from integration_inventory import FIELDS as INTEGRATION_FIELDS
 from integration_inventory import saved as saved_integration
 from job_status import JOBS, artifact_status, backup_checks
-from probe_inventory import FIELDS as PROBE_FIELDS, saved as saved_probes
+from probe_inventory import FIELDS as PROBE_FIELDS
+from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
 
 MAX_PAGE = 50
@@ -1119,15 +1120,28 @@ class InventoryTools:
         """Read scheduled independent probe snapshot freshness and count."""
         data = saved_probes(Path("/data"))
         rows = data.pop("items")
-        return {**data, "check_count": len(rows) if data["available"] else None,
-                "caveat": "Independent observations from the Yggflare host only; no external access or authentication proof."}
+        return {
+            **data,
+            "check_count": len(rows) if data["available"] else None,
+            "caveat": "Independent observations from the Yggflare host only; no external access or authentication proof.",
+        }
 
-    def list_probe_results(self, query: str = "", offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    def list_probe_results(
+        self, query: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
         """Read saved DNS/TCP/TLS/HTTP HEAD observations; never initiate requests."""
         data = saved_probes(Path("/data"))
         rows = data.pop("items")
         needle = query.strip().casefold()
-        filtered = [project(row, PROBE_FIELDS) for row in rows if not needle or any(needle in str(row.get(key) or "").casefold() for key in ("target", "hostname", "address", "check"))]
+        filtered = [
+            project(row, PROBE_FIELDS)
+            for row in rows
+            if not needle
+            or any(
+                needle in str(row.get(key) or "").casefold()
+                for key in ("target", "hostname", "address", "check")
+            )
+        ]
         return {**data, **page(filtered, offset, limit)}
 
     def get_ingress_path(

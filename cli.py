@@ -117,7 +117,10 @@ def main(argv=None):
         return 0
     if args.offset or args.project:
         parser.error("--offset and --project require a read-only operator view")
-    if args.component in {"traefik", "komodo", "kuma", "probes"} and args.operation == "refresh":
+    if (
+        args.component in {"traefik", "komodo", "kuma", "probes"}
+        and args.operation == "refresh"
+    ):
         if (
             args.argument
             or args.approval
