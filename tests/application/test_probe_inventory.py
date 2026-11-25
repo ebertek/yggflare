@@ -166,7 +166,14 @@ class ProbeTests(unittest.TestCase):
             response.return_value.close.assert_called_once()
             connect.assert_called_once()
         planned = probes.saved(self.root, self.root, ENV)
-        self.assertEqual([row["http_method"] for row in planned["configured_checks"] if row["check"] == "http"], ["GET"])
+        self.assertEqual(
+            [
+                row["http_method"]
+                for row in planned["configured_checks"]
+                if row["check"] == "http"
+            ],
+            ["GET"],
+        )
 
     def test_probe_coverage_separates_plan_results_and_expected_status(self):
         from evidence_summary import probe_coverage

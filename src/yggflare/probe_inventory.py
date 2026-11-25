@@ -130,7 +130,9 @@ def settings(config_dir, env):
         if scheme not in {"http", "https"} or ("tls" in checks and scheme != "https"):
             raise ValueError("Invalid probe scheme")
         method = target.get("http_method", "HEAD")
-        if method not in ("HEAD", "GET") or ("http_method" in target and "http" not in checks):
+        if method not in ("HEAD", "GET") or (
+            "http_method" in target and "http" not in checks
+        ):
             raise ValueError("Invalid HTTP probe method")
         statuses = target.get("expected_statuses", [])
         if (
@@ -221,7 +223,8 @@ def probe(target, check):
                         host += ":" + str(target["port"])
                     stream.sendall(
                         (
-                            method + " / HTTP/1.1\r\nHost: "
+                            method
+                            + " / HTTP/1.1\r\nHost: "
                             + host
                             + "\r\nConnection: close\r\nUser-Agent: Yggflare-probe\r\n\r\n"
                         ).encode("ascii")
@@ -306,7 +309,9 @@ def saved(data, config=Path("/config"), env=None):
                     for key in ("target", "hostname", "address", "port", "scheme")
                 },
                 "check": check,
-                "http_method": target.get("http_method", "HEAD") if check == "http" else None,
+                "http_method": (
+                    target.get("http_method", "HEAD") if check == "http" else None
+                ),
                 "expected_http_status_configured": (
                     bool(target["expected_statuses"]) if check == "http" else None
                 ),
