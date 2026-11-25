@@ -858,6 +858,8 @@ def normalized_monitor_host(value):
     if not isinstance(value, str) or not value.strip():
         return ""
     value = value.strip().casefold().rstrip(".")
+    if value in {"null", "undefined"}:
+        return ""
     try:
         return str(ipaddress.ip_address(value))
     except ValueError:
@@ -963,13 +965,24 @@ def monitor_candidates(index, services, ingress=""):
             # A port declaration is supporting evidence, not confirmation of
             # host-port mapping, binding, protocol, or application identity.
             port_declared = None
+            scheme = monitor.get("target_scheme")
+            kind = monitor.get("monitor_type")
+            protocol = (
+                "udp"
+                if scheme == "udp"
+                else "tcp"
+                if scheme in {"tcp", "http", "https", "ws", "wss"}
+                or (kind is None and scheme is None)
+                else None
+            )
             if (
                 type(port) is int
+                and protocol
                 and matches
                 and any(row.get("ports") for row in matches)
             ):
                 port_declared = any(
-                    f"tcp/{port}" in row.get("ports", []) for row in matches
+                    f"{protocol}/{port}" in row.get("ports", []) for row in matches
                 )
             candidates.append(
                 {
