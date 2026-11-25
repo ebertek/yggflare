@@ -100,6 +100,10 @@ docker exec yggflare yggflare network discord-test
 
 Prometheus `/metrics` is opt-in via `YGGFLARE_METRICS_ENABLED=true` and is served on the existing read-only web HTTP listener. It reads bounded, persisted snapshots only; never trigger scanners, Docker inspection, Cloudflare API calls or mutation from a scrape. Keep metric series aggregate and low-cardinality: no hostname, IP, MAC, account, resource ID, token or user-controlled labels. The host-networked listener must be restricted to trusted scrape clients at the network/firewall layer; a Cloudflare Access policy does not protect direct LAN access.
 
+## Operator interface parity
+
+New evidence collectors and assurance features must have a shared sanitized query layer and be available through the read-only Web UI, operator CLI and MCP where applicable. Keep explicit action commands separate from evidence views; rendering, JSON output and MCP requests must not trigger network collectors, reconciliation or mutations. Document commands and views, and test all three interfaces. Do not expose raw adapter payloads, credentials, untrusted HTML or terminal control characters.
+
 ## Working style for future sessions
 
 The owner often works from a phone. **Make repository edits and open GitHub PRs rather than supplying standalone scripts, files or manual copy-paste patches.** Include tests and concise rationale; diagnose failing workflow logs and fix the same PR branch. Avoid unnecessary questions when the repository already contains the answer. Distinguish implemented, merged, deployed and production-verified features precisely.

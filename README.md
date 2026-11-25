@@ -302,12 +302,74 @@ or loopback binding. If you expose it through a proxy, secure the proxy **and**
 prevent bypassing it on the LAN. Cloudflare Access on a hostname alone does not
 protect the listener.
 
+### Operator views
+
+The Web UI includes **Docker services**, **Topology**, **Cloudflare audit** and
+**Operations** tabs. These expose the same bounded, sanitized query results as
+MCP, including ingress correlation, job history, backup and notification
+evidence. Filter the current page or follow its pagination links; observed
+service names and other evidence are untrusted text.
+
+Equivalent container CLI commands (append `--json` for structured output):
+
+```sh
+docker exec yggflare yggflare services list
+docker exec yggflare yggflare services show SERVICE --project PROJECT
+docker exec yggflare yggflare services drift
+docker exec yggflare yggflare services dependencies SERVICE
+docker exec yggflare yggflare services ingress HOSTNAME
+docker exec yggflare yggflare network topology
+docker exec yggflare yggflare cloudflare status
+docker exec yggflare yggflare cloudflare dns HOSTNAME
+docker exec yggflare yggflare cloudflare access HOSTNAME
+docker exec yggflare yggflare cloudflare tunnel HOSTNAME
+docker exec yggflare yggflare system status
+docker exec yggflare yggflare system jobs
+docker exec yggflare yggflare system history
+docker exec yggflare yggflare backup status
+docker exec yggflare yggflare network notifications
+```
+
+List views return at most 50 records; use `--offset` with the returned
+`next_offset`. These commands read evidence only; the existing
+`cloudflare audit`, `network run`, and explicit backup verification commands
+retain their separate behavior. Protect direct Web UI access with network
+firewall restrictions as well as reverse-proxy authentication.
+
+### Traefik runtime evidence
+
+Optional read-only Traefik collection is disabled unless
+`YGGFLARE_TRAEFIK_API_URL` is configured as a numeric HTTP(S) origin in
+the configured LAN CIDR or on loopback. Use an already restricted internal
+API endpoint; do not enable an insecure/public dashboard for this feature.
+HTTPS uses normal certificate verification. No credentials, redirects,
+proxies, arbitrary paths or client-selected endpoints are supported.
+Every five minutes the controller collects the documented HTTP/TCP/UDP
+list endpoints (including pagination); failed collection retains the
+last complete snapshot and marks it unverified. See the
+[Traefik API documentation](https://doc.traefik.io/traefik/reference/install-configuration/api-dashboard/).
+
+```sh
+docker exec yggflare yggflare traefik refresh
+docker exec yggflare yggflare traefik status
+docker exec yggflare yggflare traefik routes
+docker exec yggflare yggflare traefik services
+docker exec yggflare yggflare traefik middlewares
+```
+
+The Traefik Web UI tab, aggregate Prometheus metrics and MCP tools read saved observations only; explicit
+CLI refresh is the only interactive collection action. Router literal host
+mentions do not establish rule evaluation or external reachability. Backend
+URL paths, queries, userinfo, raw middleware settings and error messages are
+excluded. Configuration is optional and should be enabled only after
+validating the API's reachability and access restrictions.
+
 ## Model Context Protocol (MCP)
 
 Yggflare includes a native, read-only MCP server for AI clients. It uses
 the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
-use the same thirty read-only tools. HTTP is disabled by default.
+use the same thirty-four read-only tools. HTTP is disabled by default.
 
 ### Stdio transport
 
@@ -384,6 +446,10 @@ in the repository.
 | `get_service_dependencies` | Declared dependencies and shared-network evidence |
 | `get_ingress_path` | Correlate exact service aliases with saved Cloudflare configuration |
 | `get_network_topology` | Declared and local runtime network memberships and resolved namespace ownership |
+| `get_traefik_status` | Saved Traefik snapshot availability, freshness and counts |
+| `list_traefik_routes` | HTTP/TCP/UDP router identities and literal host mentions |
+| `list_traefik_services` | Sanitized backend origins and reported status |
+| `list_traefik_middlewares` | Middleware identity, type and status only |
 
 Service topology uses a separate 30-second sanitized cache. It includes host
 and bridge-only declarations without inventing LAN addresses. Local Docker

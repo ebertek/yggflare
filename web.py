@@ -11,7 +11,7 @@ import traceback
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from docker_inventory import address_key, local_macvlan_interfaces, snapshot
 from inventory_catalog import records as catalog_records
@@ -19,6 +19,8 @@ from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
 from job_status import health, read_jobs
 from metrics import render as render_metrics
+from operator_views import VIEWS
+from operator_views import render as render_operator
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
 
 
@@ -281,6 +283,11 @@ def page(tab, content):
             ("drift", "Recent drift"),
             ("diff", "Inventory diff"),
             ("cloudflare", "Cloudflare lifecycle"),
+            ("services", "Docker services"),
+            ("topology", "Topology"),
+            ("assurance", "Cloudflare audit"),
+            ("operations", "Operations"),
+            ("traefik", "Traefik"),
         )
     )
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -341,7 +348,13 @@ def table(headers, rows, row_meta=None):
     return f'<div class="scroll"><table><thead><tr>{head}</tr></thead><tbody data-sortable="1">{"".join(body)}</tbody></table></div>'
 
 
-def render(tab, data):
+def render(tab, data, params=None, service_loader=None):
+    if tab in VIEWS:
+        from mcp_server import InventoryTools, load_services
+
+        tools = InventoryTools(lambda: data, service_loader or load_services)
+        return page(tab, render_operator(tab, tools, table, params or {}))
+
     search = '<div class="toolbar"><input id="filter" type="search" placeholder="Search host, IP, MAC, ports, notes…" aria-label="Filter inventory"><a href="/api/inventory.csv">Export CSV</a> · <a href="/api/inventory.json">Export JSON</a></div>'
     if tab == "inventory":
         groups = {}
@@ -450,6 +463,11 @@ class Handler(BaseHTTPRequestHandler):
             "/drift",
             "/diff",
             "/cloudflare",
+            "/services",
+            "/topology",
+            "/assurance",
+            "/operations",
+            "/traefik",
             "/api/inventory.json",
             "/api/inventory.csv",
             "/metrics",
@@ -507,7 +525,8 @@ class Handler(BaseHTTPRequestHandler):
                 content = output.getvalue().encode()
                 mime = "text/csv; charset=utf-8"
             else:
-                content = render(uri.removeprefix("/"), data).encode()
+                params = parse_qs(urlsplit(self.path).query, max_num_fields=8)
+                content = render(uri.removeprefix("/"), data, params).encode()
                 mime = "text/html; charset=utf-8"
         except (OSError, ValueError, TypeError, KeyError) as error:
             # Log code locations only: exception messages and local values may

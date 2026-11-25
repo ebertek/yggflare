@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
 
 from mcp import Client, StdioServerParameters
 
@@ -416,6 +417,27 @@ class InventoryToolTests(unittest.TestCase):
         rows[0]["service"] = "changed"
         with self.assertRaises(ValueError):
             self.tools.list_docker_services(offset=1, snapshot_id=first["snapshot_id"])
+
+    def test_traefik_saved_projection_and_ingress_correlation(self):
+        self.tools.service_loader = lambda: {"items": []}
+        row = {
+            "kind": "routers",
+            "protocol": "http",
+            "name": "demo@docker",
+            "literal_hosts": ["example.invalid"],
+            "raw": "never-export",
+        }
+        with patch(
+            "mcp_server.saved_traefik",
+            side_effect=lambda _: {"available": True, "fresh": True, "items": [row]},
+        ):
+            result = self.tools.list_traefik_routes("example.invalid")
+            self.assertEqual(result["total"], 1)
+            self.assertNotIn("never-export", str(result))
+            ingress = self.tools.get_ingress_path("example.invalid")
+            self.assertEqual(ingress["layers"]["traefik"]["total"], 1)
+            self.assertIsNone(ingress["reachability_verified"])
+            self.assertIsNone(ingress["traefik_runtime_verified"])
 
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):

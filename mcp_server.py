@@ -10,6 +10,7 @@ from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
 from job_status import JOBS, artifact_status, backup_checks
+from traefik_inventory import saved as saved_traefik
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -910,6 +911,76 @@ class InventoryTools:
                 )
         return {**context, **page(rows, offset, limit, snapshot_id)}
 
+    def get_traefik_status(self) -> dict[str, Any]:
+        """Read saved Traefik collection freshness and resource counts."""
+        data = saved_traefik(Path("/data"))
+        rows = data.pop("items")
+        return {
+            **data,
+            "counts": {
+                kind: sum(row.get("kind") == kind for row in rows)
+                for kind in ("routers", "services", "middlewares")
+            },
+        }
+
+    def _traefik_rows(self, kind, query, protocol, offset, limit):
+        if protocol and protocol not in {"http", "tcp", "udp"}:
+            raise ValueError("Unknown Traefik protocol")
+        data = saved_traefik(Path("/data"))
+        rows = data.pop("items")
+        fields = (
+            "protocol",
+            "kind",
+            "name",
+            "provider",
+            "status",
+            "error_count",
+            "literal_hosts",
+            "simple_host_rule",
+            "entrypoints",
+            "middlewares",
+            "service",
+            "tls_configured",
+            "backend_count",
+            "backend_origins",
+            "backend_list_truncated",
+            "backend_up_count",
+            "backend_down_count",
+            "service_type",
+            "middleware_type",
+        )
+        rows = [
+            project(row, fields)
+            for row in rows
+            if row.get("kind") == kind
+            and (not protocol or row.get("protocol") == protocol)
+            and (
+                not query
+                or query.casefold() in str(row.get("name", "")).casefold()
+                or query.casefold()
+                in {str(host).casefold() for host in row.get("literal_hosts", [])}
+            )
+        ]
+        return {**data, **page(rows, offset, limit)}
+
+    def list_traefik_routes(
+        self, query: str = "", protocol: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read saved HTTP/TCP/UDP routers; literal host mentions are not evaluated rules."""
+        return self._traefik_rows("routers", query, protocol, offset, limit)
+
+    def list_traefik_services(
+        self, query: str = "", protocol: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read saved backend origins and reported status, not active probe results."""
+        return self._traefik_rows("services", query, protocol, offset, limit)
+
+    def list_traefik_middlewares(
+        self, query: str = "", protocol: str = "", offset: int = 0, limit: int = 25
+    ) -> dict[str, Any]:
+        """Read middleware identity, type and status, never middleware configuration."""
+        return self._traefik_rows("middlewares", query, protocol, offset, limit)
+
     def get_ingress_path(
         self, hostname: str, offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
@@ -964,11 +1035,30 @@ class InventoryTools:
                 **page(matching, 0, MAX_PAGE),
                 "source_truncated": dataset.get("truncated"),
             }
+        traefik = self.list_traefik_routes(hostname, "http", 0, MAX_PAGE)
+        matching_routes = [
+            row
+            for row in traefik["items"]
+            if needle in {str(host).casefold() for host in row.get("literal_hosts", [])}
+        ]
+        layers["traefik"] = {
+            **page(matching_routes, 0, MAX_PAGE),
+            "source_truncated": traefik.get("next_offset") is not None,
+        }
         return {
             **context,
             "cloudflare": cloudflare_context(data),
             "configuration_available": config.get("version") == 1,
             "layers": layers,
+            "traefik_snapshot": {
+                key: traefik.get(key)
+                for key in (
+                    "available",
+                    "observed_at",
+                    "fresh",
+                    "last_refresh_verified",
+                )
+            },
             "traefik_runtime_verified": None,
             "reachability_verified": None,
             **page(rows, offset, limit),
@@ -1034,6 +1124,10 @@ TOOL_NAMES = (
     "get_service_dependencies",
     "get_ingress_path",
     "get_network_topology",
+    "get_traefik_status",
+    "list_traefik_routes",
+    "list_traefik_services",
+    "list_traefik_middlewares",
 )
 
 
