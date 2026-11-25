@@ -95,6 +95,9 @@ def collect(network, run=None, seeds=()):
             "ip": "candidate_routing" if "route" in args else "neighbor_cache",
         }[args[0]]
         row = evidence[key]
+        # Route selection also runs for duplicate interface observations even
+        # when active address probes are disabled.
+        row["configured"] = True
         row["attempted"] += 1
         try:
             if run:
@@ -330,7 +333,7 @@ def collect(network, run=None, seeds=()):
         for ip, interface in targets
         if ipaddress.ip_address(ip).version == 6 and config.get("ndp_probe")
     ]
-    evidence["ndp"]["eligible_targets"] = len(ndp_targets)
+    evidence["ndp"]["selected_targets"] = len(ndp_targets)
     if ndp_targets:
         note(f"NDP probes: {len(ndp_targets)} addresses")
     for index, (ip, interface) in enumerate(ndp_targets, 1):
@@ -383,10 +386,11 @@ def collect(network, run=None, seeds=()):
         if config.get("os_detection"):
             args += ["-O", "--osscan-limit", "--max-os-tries", "1"]
         source = evidence["ipv6_nmap" if ipv6 else "ipv4_nmap"]
-        source["eligible_targets"] = source.get("eligible_targets", 0) + len(addresses)
+        source["selected_targets"] = source.get("selected_targets", 0) + len(addresses)
         raw = command([*args, *addresses], timeout=90)
         note(f"END {family} Nmap on {interface}: {time.monotonic() - started:.1f}s")
         if not raw:
+            source["completion_unverified"] = True
             continue
         try:
             root = ET.fromstring(raw)

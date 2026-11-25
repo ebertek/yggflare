@@ -771,6 +771,7 @@ def supplemental_coverage_context(supplemental):
                 "no_reply",
                 "parse_errors",
                 "eligible_targets",
+                "selected_targets",
             )
             if type(row.get(key)) is int and 0 <= row[key] <= 100000
         }
