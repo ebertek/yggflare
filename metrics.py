@@ -446,7 +446,9 @@ def render(config, data, now=None):
             ]
         )
         if adapter == "kuma":
-            selection = monitor_port_summary(source["items"], scan, available=source["available"])
+            selection = monitor_port_summary(
+                source["items"], scan, available=source["available"]
+            )
             for key in (
                 "numeric_ipv4_tcp_endpoints",
                 "selected_endpoints",
