@@ -32,6 +32,15 @@ SECRET_FILES = {
     "komodo": ("komodo-api-key.txt", "komodo-api-secret.txt"),
     "kuma": ("kuma-api-key.txt",),
 }
+# Explicit file settings select fixed Docker secret names. No arbitrary paths,
+# credential values in environment variables, or fallback on a missing secret.
+SECRET_MOUNTS = {
+    "komodo-api-key.txt": ("YGGFLARE_KOMODO_API_KEY_FILE", "komodo_api_key"),
+    "komodo-api-secret.txt": ("YGGFLARE_KOMODO_API_SECRET_FILE", "komodo_api_secret"),
+    "kuma-api-key.txt": ("YGGFLARE_KUMA_API_KEY_FILE", "kuma_api_key"),
+}
+DOCKER_SECRETS = Path("/run/secrets")
+
 STATES = {
     "running",
     "paused",
@@ -115,23 +124,41 @@ def settings(adapter, env):
     return url.scheme, str(address), port
 
 
-def credentials(adapter, directory=Path("/config")):
+def credentials(adapter, directory=Path("/config"), *, env=None):
+    """Read only private config files or explicitly selected Docker secret mounts."""
+    env = os.environ if env is None else env
     result = []
     for filename in SECRET_FILES[adapter]:
-        path = directory / filename
-        info = path.lstat()
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or not 0 < info.st_size <= 4096
-            or info.st_mode & 0o077
-        ):
-            raise ValueError("Integration credential must be a private regular file")
-        value = path.read_text(encoding="utf-8").strip()
-        if (
-            not value
-            or not value.isascii()
-            or any(not 33 <= ord(char) <= 126 for char in value)
-        ):
+        variable, mount_name = SECRET_MOUNTS[filename]
+        configured = env.get(variable, "")
+        mounted = bool(configured)
+        if mounted:
+            path = DOCKER_SECRETS / mount_name
+            if configured != "/run/secrets/" + mount_name:
+                raise ValueError("Integration secret file must use its fixed Docker secret path")
+        else:
+            path = directory / filename
+        # Check the opened descriptor, not a separately resolved pathname.
+        # NONBLOCK prevents a misconfigured FIFO from blocking the collector.
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or not 0 < info.st_size <= 4096
+                or (info.st_mode & (0o022 if mounted else 0o077))
+            ):
+                raise ValueError("Integration credential file has unsafe type or permissions")
+            if mounted and not (os.fstatvfs(handle.fileno()).f_flag & os.ST_RDONLY):
+                raise ValueError("Integration Docker secret must be mounted read-only")
+            raw = handle.read(4097)
+        if len(raw) > 4096:
+            raise ValueError("Integration credential exceeds size limit")
+        try:
+            value = raw.decode("ascii").strip()
+        except UnicodeDecodeError:
+            raise ValueError("Invalid integration credential") from None
+        if not value or any(not 33 <= ord(char) <= 126 for char in value):
             raise ValueError("Invalid integration credential")
         result.append(value)
     return result
@@ -355,7 +382,7 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
             "ok": False,
         }
         write(data / (adapter + "-view-status.json"), status)
-        secret = credentials(adapter, secret_dir)
+        secret = credentials(adapter, secret_dir, env=env)
         if adapter == "komodo":
             rows = []
             for kind in KOMODO_READS:
