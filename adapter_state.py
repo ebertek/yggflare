@@ -81,4 +81,3 @@ def saved_snapshot(data, prefix, config, configured, stale_seconds):
         "fresh": bool(verified and age is not None and 0 <= age <= stale_seconds),
         "items": rows if available else [],
     }
-
