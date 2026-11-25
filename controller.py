@@ -392,7 +392,11 @@ def run_scheduler(listener=None):
             try:
                 run([sys.executable, "/app/unifi_inventory.py"])
             except Exception:
-                log("warning", "controller", "UniFi presentation refresh failed; previous snapshot retained")
+                log(
+                    "warning",
+                    "controller",
+                    "UniFi presentation refresh failed; previous snapshot retained",
+                )
             next_unifi = time.monotonic() + UNIFI_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):
