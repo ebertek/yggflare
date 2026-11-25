@@ -69,8 +69,12 @@ def collect(network, run=None, seeds=()):
         "router_advertisement": collector_evidence(config["ra"]),
         "ipv4_nmap": collector_evidence(config["os_detection"]),
         "ipv6_nmap": collector_evidence(config["ipv6_scan"]),
-        "docker_ipv6_candidates": collector_evidence(config["ipv6_scan"] and bool(prefixes)),
-        "candidate_routing": collector_evidence(config["os_detection"] or config["ipv6_scan"] or config["ndp_probe"]),
+        "docker_ipv6_candidates": collector_evidence(
+            config["ipv6_scan"] and bool(prefixes)
+        ),
+        "candidate_routing": collector_evidence(
+            config["os_detection"] or config["ipv6_scan"] or config["ndp_probe"]
+        ),
     }
     result = {
         "observed_at": datetime.now(UTC).isoformat(),
@@ -83,7 +87,9 @@ def collect(network, run=None, seeds=()):
 
     def command(args, timeout=30, *, no_reply_codes=()):
         key = {
-            "arp-scan": "arp", "ndisc6": "ndp", "rdisc6": "router_advertisement",
+            "arp-scan": "arp",
+            "ndisc6": "ndp",
+            "rdisc6": "router_advertisement",
             "docker": "docker_ipv6_candidates",
             "nmap": "ipv6_nmap" if "-6" in args else "ipv4_nmap",
             "ip": "candidate_routing" if "route" in args else "neighbor_cache",
@@ -454,7 +460,11 @@ def collect(network, run=None, seeds=()):
                 evidence["router_advertisement"]["parse_errors"] += 1
                 result["warnings"].append("rdisc6: invalid or oversized response")
     note("START optional service discovery")
-    evidence.update(collect_services(interfaces, allowed, result["records"], add, result["warnings"]))
+    evidence.update(
+        collect_services(
+            interfaces, allowed, result["records"], add, result["warnings"]
+        )
+    )
     result["collector_evidence"] = {"version": 1, "sources": evidence}
     note(
         f"END supplemental discovery: {len(result['records'])} observations; {len(result['warnings'])} warnings"

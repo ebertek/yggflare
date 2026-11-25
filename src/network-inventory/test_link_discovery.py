@@ -330,12 +330,16 @@ class LinkDiscoveryTests(unittest.TestCase):
                 raise subprocess.CalledProcessError(1, args[0])
             raise AssertionError("unexpected command")
 
-        with patch.dict("os.environ", {
-            "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
-            "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
-            "YGGFLARE_DISCOVERY_NDP_PROBE": "true",
-            "YGGFLARE_DISCOVERY_RA": "true",
-        }, clear=True):
+        with patch.dict(
+            "os.environ",
+            {
+                "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                "YGGFLARE_DISCOVERY_IPV6_CIDRS": "fd00::/64",
+                "YGGFLARE_DISCOVERY_NDP_PROBE": "true",
+                "YGGFLARE_DISCOVERY_RA": "true",
+            },
+            clear=True,
+        ):
             result = discovery.collect(ipaddress.ip_network("10.0.0.0/24"), run)
         sources = result["collector_evidence"]["sources"]
         self.assertEqual(sources["ndp"]["completed"], 1)

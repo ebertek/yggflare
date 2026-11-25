@@ -443,13 +443,23 @@ class InventoryToolTests(unittest.TestCase):
 class SupplementalCoverageTests(unittest.TestCase):
     def test_fixed_sources_and_validated_counts(self):
         from mcp_server import SUPPLEMENTAL_SOURCES, supplemental_coverage_context
-        baseline = {"configured": False, "attempted": 0, "completed": 0, "failed": 0, "no_reply": 0, "parse_errors": 0}
+
+        baseline = {
+            "configured": False,
+            "attempted": 0,
+            "completed": 0,
+            "failed": 0,
+            "no_reply": 0,
+            "parse_errors": 0,
+        }
         sources = {name: dict(baseline) for name in SUPPLEMENTAL_SOURCES}
         sources["ndp"].update(configured=True, attempted=1, completed=1, no_reply=1)
         sources["smb"].update(configured=True, attempted=16, completed=16, limited=True)
         sources["ipv6_nmap"].update(configured=True)
         sources["private"] = {"token": "never-export"}
-        coverage = supplemental_coverage_context({"collector_evidence": {"version": 1, "sources": sources}})
+        coverage = supplemental_coverage_context(
+            {"collector_evidence": {"version": 1, "sources": sources}}
+        )
         self.assertTrue(coverage["available"])
         rows = {row["source"]: row for row in coverage["sources"]}
         self.assertEqual(rows["ndp"]["status"], "completed")
@@ -458,7 +468,11 @@ class SupplementalCoverageTests(unittest.TestCase):
         self.assertEqual(rows["arp"]["status"], "not_configured")
         self.assertNotIn("never-export", str(coverage))
         sources["ndp"]["completed"] = 2
-        self.assertFalse(supplemental_coverage_context({"collector_evidence": {"version": 1, "sources": sources}})["available"])
+        self.assertFalse(
+            supplemental_coverage_context(
+                {"collector_evidence": {"version": 1, "sources": sources}}
+            )["available"]
+        )
 
 
 class DiscoveryCoverageTests(unittest.TestCase):

@@ -732,15 +732,30 @@ def scan_coverage_context(state):
 
 
 SUPPLEMENTAL_SOURCES = (
-    "neighbor_cache", "arp", "ndp", "router_advertisement",
-    "ipv4_nmap", "ipv6_nmap", "docker_ipv6_candidates", "candidate_routing",
-    "ssdp", "lldp", "netbios", "smb", "snmp", "p0f",
+    "neighbor_cache",
+    "arp",
+    "ndp",
+    "router_advertisement",
+    "ipv4_nmap",
+    "ipv6_nmap",
+    "docker_ipv6_candidates",
+    "candidate_routing",
+    "ssdp",
+    "lldp",
+    "netbios",
+    "smb",
+    "snmp",
+    "p0f",
 )
 
 
 def supplemental_coverage_context(supplemental):
     saved = supplemental.get("collector_evidence")
-    if not isinstance(saved, dict) or saved.get("version") != 1 or not isinstance(saved.get("sources"), dict):
+    if (
+        not isinstance(saved, dict)
+        or saved.get("version") != 1
+        or not isinstance(saved.get("sources"), dict)
+    ):
         return {"available": False, "sources": []}
     sources = []
     for name in SUPPLEMENTAL_SOURCES:
@@ -748,17 +763,39 @@ def supplemental_coverage_context(supplemental):
         if not isinstance(row, dict) or type(row.get("configured")) is not bool:
             continue
         counts = {
-            key: row[key] for key in ("attempted", "completed", "failed", "no_reply", "parse_errors", "eligible_targets")
+            key: row[key]
+            for key in (
+                "attempted",
+                "completed",
+                "failed",
+                "no_reply",
+                "parse_errors",
+                "eligible_targets",
+            )
             if type(row.get(key)) is int and 0 <= row[key] <= 100000
         }
-        if not {"attempted", "completed", "failed", "no_reply", "parse_errors"} <= counts.keys():
+        if (
+            not {"attempted", "completed", "failed", "no_reply", "parse_errors"}
+            <= counts.keys()
+        ):
             continue
-        if counts["completed"] + counts["failed"] != counts["attempted"] or counts["no_reply"] > counts["completed"]:
+        if (
+            counts["completed"] + counts["failed"] != counts["attempted"]
+            or counts["no_reply"] > counts["completed"]
+        ):
             continue
-        flags = {key: row.get(key) is True for key in ("limited", "unavailable", "completion_unverified")}
+        flags = {
+            key: row.get(key) is True
+            for key in ("limited", "unavailable", "completion_unverified")
+        }
         if not row["configured"]:
             status = "not_configured"
-        elif flags["unavailable"] or counts["failed"] or counts["parse_errors"] or flags["limited"]:
+        elif (
+            flags["unavailable"]
+            or counts["failed"]
+            or counts["parse_errors"]
+            or flags["limited"]
+        ):
             status = "partial_or_failed"
         elif not counts["attempted"]:
             status = "not_attempted"
@@ -766,7 +803,15 @@ def supplemental_coverage_context(supplemental):
             status = "completion_unverified"
         else:
             status = "completed"
-        sources.append({"source": name, "configured": row["configured"], **counts, **flags, "status": status})
+        sources.append(
+            {
+                "source": name,
+                "configured": row["configured"],
+                **counts,
+                **flags,
+                "status": status,
+            }
+        )
     return {
         "available": len(sources) == len(SUPPLEMENTAL_SOURCES),
         "sources": sources,
@@ -1401,9 +1446,23 @@ class InventoryTools:
         )
         supplemental = state.get("supplemental", {})
         supplemental_coverage = supplemental_coverage_context(supplemental)
-        configured_sources = [item for item in supplemental_coverage["sources"] if item["configured"]]
-        supplemental_failed = bool(supplemental.get("warnings")) or any(item["status"] == "partial_or_failed" for item in configured_sources)
-        supplemental_verified = False if supplemental_failed else True if supplemental_coverage["available"] and configured_sources and all(item["status"] == "completed" for item in configured_sources) else None
+        configured_sources = [
+            item for item in supplemental_coverage["sources"] if item["configured"]
+        ]
+        supplemental_failed = bool(supplemental.get("warnings")) or any(
+            item["status"] == "partial_or_failed" for item in configured_sources
+        )
+        supplemental_verified = (
+            False
+            if supplemental_failed
+            else (
+                True
+                if supplemental_coverage["available"]
+                and configured_sources
+                and all(item["status"] == "completed" for item in configured_sources)
+                else None
+            )
+        )
         coverage = scan_coverage_context(state)
         discovery = coverage.get("host_discovery", {})
         tcp = coverage.get("tcp", {})

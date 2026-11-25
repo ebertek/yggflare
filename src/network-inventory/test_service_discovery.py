@@ -19,7 +19,14 @@ class ServiceTests(unittest.TestCase):
     def test_smb_limit_and_netbios_no_reply_are_explicit(self):
         rows = [{"ip": f"10.0.0.{i}"} for i in range(1, 21)]
         with (
-            patch.dict("os.environ", {"YGGFLARE_DISCOVERY_NETBIOS": "true", "YGGFLARE_DISCOVERY_SMB": "true"}, clear=True),
+            patch.dict(
+                "os.environ",
+                {
+                    "YGGFLARE_DISCOVERY_NETBIOS": "true",
+                    "YGGFLARE_DISCOVERY_SMB": "true",
+                },
+                clear=True,
+            ),
             patch("service_discovery.shutil.which", return_value="/usr/bin/nmblookup"),
             patch("service_discovery.execute", return_value=""),
         ):

@@ -79,7 +79,9 @@ def collect(interfaces, allowed, records, add, warnings):
         name: enabled(name)
         for name in ("SSDP", "LLDP", "NETBIOS", "SMB", "SNMP", "P0F")
     }
-    evidence = {name.lower(): collector_evidence(value) for name, value in flags.items()}
+    evidence = {
+        name.lower(): collector_evidence(value) for name, value in flags.items()
+    }
     targets = sorted(
         {
             r["ip"]
