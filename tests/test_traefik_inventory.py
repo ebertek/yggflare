@@ -1,5 +1,7 @@
 """Offline security, pagination and last-good snapshot tests."""
 
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -95,6 +97,76 @@ class TraefikTests(unittest.TestCase):
             connection.return_value.close.assert_called_once()
         with self.assertRaises(ValueError):
             traefik.get_page(config, "http", "rawdata", 1)
+
+    def test_real_traefik_terminal_header(self):
+        config = traefik.settings(ENV)
+        for page, count, header, more in (
+            (1, 0, "1", False),
+            (1, 3, "1", False),
+            (1, 100, "1", False),
+            (2, 100, "1", False),
+            (1, 100, "2", True),
+            (2, 100, "3", True),
+            (2, 3, "", False),
+            (1, 100, "", True),
+        ):
+            with self.subTest(page=page, count=count, header=header):
+                with patch.object(traefik.http.client, "HTTPConnection") as connection:
+                    response = connection.return_value.getresponse.return_value
+                    response.status = 200
+                    response.read.return_value = json.dumps([{"name": f"router-{i}@docker"} for i in range(count)]).encode()
+                    response.getheader.return_value = header
+                    rows, continuation = traefik.get_page(config, "http", "routers", page)
+                    self.assertEqual(len(rows), count)
+                    self.assertEqual(continuation, more)
+                    connection.return_value.close.assert_called_once()
+
+    def test_pagination_rejects_invalid_continuations(self):
+        config = traefik.settings(ENV)
+        for page, count, header in ((1, 0, "2"), (1, 99, "2"), (1, 100, "3"), (3, 100, "2"), (1, 100, "https://example.invalid")):
+            with self.subTest(page=page, count=count, header=header):
+                with patch.object(traefik.http.client, "HTTPConnection") as connection:
+                    response = connection.return_value.getresponse.return_value
+                    response.status = 200
+                    response.read.return_value = json.dumps([{}] * count).encode()
+                    response.getheader.return_value = header
+                    with self.assertRaises(ValueError):
+                        traefik.get_page(config, "http", "routers", page)
+
+    def test_all_endpoints_with_terminal_headers_and_full_last_page(self):
+        config = traefik.settings(ENV)
+        calls = []
+        def request(method, path, **kwargs):
+            self.assertEqual(method, "GET")
+            calls.append(path)
+        def respond():
+            path = calls[-1]
+            first = path.startswith("/api/http/routers?")
+            page_one = "page=1&" in path
+            count = 100 if first else 0
+            base = 0 if page_one else 100
+            response = connection.return_value.getresponse.return_value
+            response.status = 200
+            response.read.return_value = json.dumps([{"name": f"router-{base+i}@docker"} for i in range(count)]).encode()
+            response.getheader.return_value = "2" if first and page_one else "1"
+            return response
+        with patch.object(traefik.http.client, "HTTPConnection") as connection:
+            connection.return_value.request.side_effect = request
+            connection.return_value.getresponse.side_effect = respond
+            # Explicit fetch uses the real parser, not a pre-decoded fixture.
+            result = traefik.collect(config, traefik.get_page)
+        self.assertEqual(len(result["items"]), 200)
+        self.assertEqual(len(calls), len(traefik.SECTIONS) + 1)
+        self.assertEqual(sum("page=2&" in path for path in calls), 1)
+
+    def test_failure_diagnostics_do_not_expose_raw_exception(self):
+        def fail(*args):
+            raise ValueError("PRIVATE RESPONSE")
+        with contextlib.redirect_stderr(io.StringIO()) as output:
+            with self.assertRaises(ValueError):
+                traefik.collect(traefik.settings(ENV), fail)
+        self.assertIn("http/routers page 1: invalid_response", output.getvalue())
+        self.assertNotIn("PRIVATE RESPONSE", output.getvalue())
 
     def test_failed_refresh_preserves_last_good_and_detects_changed_source(self):
         with tempfile.TemporaryDirectory() as directory:
