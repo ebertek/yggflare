@@ -189,6 +189,7 @@ class ConfiguredProbeCheck(TypedDict):
     port: int
     scheme: str
     check: str
+    http_method: str | None
     expected_http_status_configured: bool | None
 
 
@@ -319,6 +320,7 @@ class ProbeRow(TypedDict, total=False):
     check: str
     status: str
     elapsed_ms: float
+    http_method: str
     http_status: int
     expected_status_match: bool | None
     resolved_count: int
@@ -2507,7 +2509,7 @@ class InventoryTools:
     def list_probe_results(
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
     ) -> ProbePage:
-        """Read saved DNS/TCP/TLS/HTTP HEAD observations; never initiate requests."""
+        """Read saved DNS/TCP/TLS/HTTP observations; never initiate requests."""
         data = dict(saved_probes(Path("/data")))
         rows = data.pop("items")
         checks = data.pop("configured_checks", None)

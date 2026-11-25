@@ -33,6 +33,7 @@ FIELDS = (
     "check",
     "status",
     "elapsed_ms",
+    "http_method",
     "http_status",
     "expected_status_match",
     "resolved_count",
@@ -90,6 +91,7 @@ def settings(config_dir, env):
             "scheme",
             "checks",
             "expected_statuses",
+            "http_method",
         }:
             raise ValueError("Invalid probe target fields")
         name = target.get("name")
@@ -127,6 +129,9 @@ def settings(config_dir, env):
         scheme = target.get("scheme", "https")
         if scheme not in {"http", "https"} or ("tls" in checks and scheme != "https"):
             raise ValueError("Invalid probe scheme")
+        method = target.get("http_method", "HEAD")
+        if method not in ("HEAD", "GET") or ("http_method" in target and "http" not in checks):
+            raise ValueError("Invalid HTTP probe method")
         statuses = target.get("expected_statuses", [])
         if (
             not isinstance(statuses, list)
@@ -146,6 +151,7 @@ def settings(config_dir, env):
                 "scheme": scheme,
                 "checks": checks,
                 "expected_statuses": statuses,
+                **({"http_method": method} if method != "HEAD" else {}),
             }
         )
     return rows
@@ -198,6 +204,10 @@ def probe(target, check):
                     certificate_not_after=cert.get("notAfter"),
                 )
         elif check == "http":
+            method = target.get("http_method", "HEAD")
+            if method not in ("HEAD", "GET"):
+                raise ValueError("Invalid HTTP probe method")
+            row["http_method"] = method
             with connect(target) as raw:
                 secure = (
                     tls_socket(raw, target["hostname"])
@@ -211,13 +221,14 @@ def probe(target, check):
                         host += ":" + str(target["port"])
                     stream.sendall(
                         (
-                            "HEAD / HTTP/1.1\r\nHost: "
+                            method + " / HTTP/1.1\r\nHost: "
                             + host
                             + "\r\nConnection: close\r\nUser-Agent: Yggflare-probe\r\n\r\n"
                         ).encode("ascii")
                     )
-                    response = http.client.HTTPResponse(stream, method="HEAD")
+                    response = http.client.HTTPResponse(stream, method=method)
                     try:
+                        # Read response headers only, even for GET. Never read the body or follow redirects.
                         response.begin()
                         expected = target["expected_statuses"]
                         row.update(
@@ -295,6 +306,7 @@ def saved(data, config=Path("/config"), env=None):
                     for key in ("target", "hostname", "address", "port", "scheme")
                 },
                 "check": check,
+                "http_method": target.get("http_method", "HEAD") if check == "http" else None,
                 "expected_http_status_configured": (
                     bool(target["expected_statuses"]) if check == "http" else None
                 ),
