@@ -531,9 +531,7 @@ class MonitorCorrelationTests(unittest.TestCase):
                 "target_scheme": "tcp",
             },
         ]
-        tools = InventoryTools(
-            lambda: {"hosts": devices}, lambda: {"items": services}
-        )
+        tools = InventoryTools(lambda: {"hosts": devices}, lambda: {"items": services})
         with patch(
             "mcp_server.saved_integration",
             return_value={"available": True, "fresh": True, "items": monitors},

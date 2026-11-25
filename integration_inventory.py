@@ -335,7 +335,11 @@ def target(labels):
                 port = {"http": 80, "https": 443, "ws": 80, "wss": 443}.get(scheme)
         except ValueError:
             return None, None, None
-    if not isinstance(host, str) or host.strip().casefold() in {"", "null", "undefined"}:
+    if not isinstance(host, str) or host.strip().casefold() in {
+        "",
+        "null",
+        "undefined",
+    }:
         return None, None, None
     try:
         host = str(ipaddress.ip_address(host))

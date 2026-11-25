@@ -1014,9 +1014,7 @@ def monitor_candidates(index, services, ingress=""):
 
 def network_monitor_rows(data, monitors, query, available, fresh):
     """Correlate explicit numeric targets with saved non-container inventory rows."""
-    devices = [
-        row for row in data.get("hosts", []) if not row.get("container_name")
-    ]
+    devices = [row for row in data.get("hosts", []) if not row.get("container_name")]
     owners = {}
     for device in devices:
         for field in ("ipv4", "ipv6"):
@@ -1039,24 +1037,22 @@ def network_monitor_rows(data, monitors, query, available, fresh):
             continue
         matches = []
         for address in sorted(
-            {
-                normalized_monitor_host(device.get(field))
-                for field in ("ipv4", "ipv6")
-            }
+            {normalized_monitor_host(device.get(field)) for field in ("ipv4", "ipv6")}
         ):
             for monitor in by_address.get(address, []):
                 candidates = owners[address]
                 identities = sorted(
-                    {
-                        bounded(str(row.get("hostname") or address))
-                        for row in candidates
-                    }
+                    {bounded(str(row.get("hostname") or address)) for row in candidates}
                 )
                 port = monitor.get("target_port")
                 ports = device.get("observed_ports") or []
                 scheme = monitor.get("target_scheme")
                 observed = None
-                if type(port) is int and ports and scheme in {"tcp", "udp", "http", "https", "ws", "wss"}:
+                if (
+                    type(port) is int
+                    and ports
+                    and scheme in {"tcp", "udp", "http", "https", "ws", "wss"}
+                ):
                     protocol = "udp" if scheme == "udp" else "tcp"
                     observed = f"{protocol}/{port}" in ports
                 matches.append(
@@ -2298,7 +2294,9 @@ class InventoryTools:
         scope: str = "services",
     ) -> CoveragePage:
         """Correlate candidate monitor identities; scope is services or devices."""
-        if scope not in {"services", "devices"} or (scope == "devices" and project_name):
+        if scope not in {"services", "devices"} or (
+            scope == "devices" and project_name
+        ):
             raise ValueError("Invalid monitoring coverage scope or project filter")
         kuma = saved_integration("kuma", Path("/data"))
         monitors = kuma.pop("items")
