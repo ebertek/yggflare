@@ -55,14 +55,22 @@ class ProbeTests(unittest.TestCase):
     def test_docker_config_mount_is_explicit_and_read_only(self):
         self.config()
         mount = self.root / "mounted.json"
-        mount.write_text(json.dumps({"version": 1, "targets": [{**TARGET, "address": "192.168.1.21"}]}))
+        mount.write_text(
+            json.dumps(
+                {"version": 1, "targets": [{**TARGET, "address": "192.168.1.21"}]}
+            )
+        )
         mount.chmod(0o644)
         env = {**ENV, "YGGFLARE_PROBES_CONFIG_FILE": "/yggflare-probes.json"}
         with (
             patch.object(probes, "CONFIG_MOUNT", mount),
-            patch.object(probes.os, "fstatvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)) as info,
+            patch.object(
+                probes.os, "fstatvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)
+            ) as info,
         ):
-            self.assertEqual(probes.settings(self.root, env)[0]["address"], "192.168.1.21")
+            self.assertEqual(
+                probes.settings(self.root, env)[0]["address"], "192.168.1.21"
+            )
             info.return_value = SimpleNamespace(f_flag=0)
             with self.assertRaises(ValueError):
                 probes.settings(self.root, env)
@@ -77,8 +85,12 @@ class ProbeTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 probes.settings(self.root, env)
             with self.assertRaises(ValueError):
-                probes.settings(self.root, {**env, "YGGFLARE_PROBES_CONFIG_FILE": "/etc/passwd"})
-            self.assertEqual(probes.settings(self.root, ENV)[0]["address"], TARGET["address"])
+                probes.settings(
+                    self.root, {**env, "YGGFLARE_PROBES_CONFIG_FILE": "/etc/passwd"}
+                )
+            self.assertEqual(
+                probes.settings(self.root, ENV)[0]["address"], TARGET["address"]
+            )
 
     def test_dns_and_tcp_are_separate(self):
         self.config()
