@@ -1,7 +1,6 @@
 """Opt-in, bounded Traefik GET collector and sanitized saved evidence."""
 
 import fcntl
-import hashlib
 import http.client
 import ipaddress
 import json
@@ -9,10 +8,10 @@ import os
 import re
 import signal
 import sys
-import tempfile
-from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from adapter_state import saved_snapshot, source_id, timestamp, write
 
 SECTIONS = tuple(
     (protocol, kind)
@@ -20,7 +19,6 @@ SECTIONS = tuple(
     for kind in ("routers", "services", "middlewares")
     if not (protocol == "udp" and kind == "middlewares")
 )
-MAX_BYTES = 4 * 1024 * 1024
 PAGE_SIZE = 100
 MAX_PAGES = 10
 INTERVAL = 300
@@ -28,10 +26,6 @@ STALE_SECONDS = 900
 SAFE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}")
 SAFE_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}")
 KINDS = ("routers", "services", "middlewares")
-
-
-def timestamp():
-    return datetime.now(UTC).isoformat()
 
 
 def settings(env):
@@ -66,10 +60,6 @@ def settings(env):
             "Traefik API requires a numeric HTTP(S) origin inside the configured LAN or loopback"
         ) from None
     return url.scheme, str(address), port
-
-
-def source_id(config):
-    return hashlib.sha256(json.dumps(config).encode()).hexdigest()
 
 
 def get_page(config, protocol, kind, page):
@@ -239,33 +229,6 @@ def collect(config, fetch=get_page):
     }
 
 
-def write(path, document):
-    encoded = json.dumps(document, separators=(",", ":"))
-    if len(encoded.encode()) > MAX_BYTES:
-        raise ValueError("Traefik snapshot exceeds size limit")
-    name = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, delete=False
-        ) as handle:
-            name = handle.name
-            handle.write(encoded)
-        os.replace(name, path)
-    finally:
-        if name is not None:
-            Path(name).unlink(missing_ok=True)
-
-
-def read(path):
-    try:
-        if path.is_symlink() or path.stat().st_size > MAX_BYTES:
-            return {}
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) and value.get("version") == 1 else {}
-    except (OSError, ValueError, TypeError):
-        return {}
-
-
 def refresh(data, config, fetch=get_page):
     """Publish only a complete collection and keep last-good evidence on failure."""
     if config is None:
@@ -294,42 +257,7 @@ def saved(data, env=None):
         configured = config is not None
     except ValueError:
         config, configured = None, False
-    view = read(data / "traefik-view.json")
-    status = read(data / "traefik-view-status.json")
-    matches = bool(config and view.get("source_id") == source_id(config))
-    rows = view.get("items", [])
-    available = (
-        matches
-        and isinstance(rows, list)
-        and all(isinstance(row, dict) for row in rows)
-    )
-    age = None
-    if available:
-        try:
-            age = (
-                datetime.now(UTC) - datetime.fromisoformat(view["observed_at"])
-            ).total_seconds()
-        except (KeyError, ValueError, TypeError):
-            available = False
-    verified = bool(
-        available
-        and status.get("ok") is True
-        and status.get("source_id") == view.get("source_id")
-        and status.get("observed_at") == view.get("observed_at")
-    )
-    return {
-        "configured": configured,
-        "available": available,
-        "observed_at": view.get("observed_at") if available else None,
-        "last_attempt_at": (
-            status.get("attempted_at")
-            if config and status.get("source_id") == source_id(config)
-            else None
-        ),
-        "last_refresh_verified": verified,
-        "fresh": bool(verified and age is not None and 0 <= age <= STALE_SECONDS),
-        "items": rows if available else [],
-    }
+    return saved_snapshot(data, "traefik", config, configured, STALE_SECONDS)
 
 
 def main():
