@@ -3,6 +3,7 @@
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import sys
 import threading
@@ -16,6 +17,7 @@ from typing import Any, Required, TypedDict
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from evidence_summary import monitor_port_summary, probe_coverage, selected_tcp_ports
 from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
 from integration_inventory import FIELDS as INTEGRATION_FIELDS
@@ -69,6 +71,8 @@ def bounded(value):
     """Bound untrusted discovery values and omit nested or unexpected objects."""
     if isinstance(value, str):
         return value[:MAX_TEXT]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     if isinstance(value, (bool, int, float)) or value is None:
         return value
     if isinstance(value, list):
@@ -205,6 +209,8 @@ class PageContext(TypedDict, total=False):
     kuma: dict[str, Any]
     coverage_caveat: str
     coverage_scope: str
+    port_selection_summary: dict[str, Any]
+    probe_coverage: dict[str, Any]
     cloudflare: dict[str, Any]
     layers: dict[str, Any]
     traefik_snapshot: dict[str, Any]
@@ -1067,20 +1073,8 @@ def device_port_evidence(data, device, address, monitor):
         return result
     protocol = "udp" if scheme == "udp" else "tcp"
     state = data.get("network_state", {})
-    saved = state.get("scan_coverage", {})
-    tcp = saved.get("tcp", {})
-    selected = tcp.get("selected_ports")
-    if (
-        protocol == "tcp"
-        and saved.get("version") == 1
-        and saved.get("mode") == "live"
-        and saved.get("observed_at") == state.get("scanned_at")
-        and isinstance(selected, list)
-        and len(selected) == tcp.get("selected_port_count")
-        and len(selected) <= 65535
-        and all(type(item) is int and 1 <= item <= 65535 for item in selected)
-        and len(set(selected)) == len(selected)
-    ):
+    selected = selected_tcp_ports(state)
+    if protocol == "tcp" and selected is not None:
         result["target_port_selected"] = port in selected
     ports = device.get("observed_ports") or []
     if f"{protocol}/{port}" in ports:
@@ -2396,6 +2390,9 @@ class InventoryTools:
                 **snapshot_context(data),
                 "kuma": kuma,
                 "coverage_scope": scope,
+                "port_selection_summary": monitor_port_summary(
+                    monitors, data.get("network_state", {}), available=kuma["available"]
+                ),
                 "coverage_caveat": "Exact saved numeric device address candidates only; DHCP reuse, shared addresses and independent timestamps prevent proof of monitoring or device identity.",
                 **page(rows, offset, limit, snapshot_id),
             }
@@ -2452,10 +2449,13 @@ class InventoryTools:
 
     def get_probe_status(self) -> dict[str, Any]:
         """Read scheduled independent probe snapshot freshness and count."""
-        data = saved_probes(Path("/data"))
+        data = dict(saved_probes(Path("/data")))
         rows = data.pop("items")
+        checks = data.pop("configured_checks", None)
         return {
             **data,
+            "configured_checks": checks,
+            "probe_coverage": probe_coverage(checks, rows, data["available"], data["fresh"]),
             "check_count": len(rows) if data["available"] else None,
             "caveat": "Independent observations from the Yggflare host only; no external access or authentication proof.",
         }
@@ -2464,8 +2464,10 @@ class InventoryTools:
         self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
     ) -> ProbePage:
         """Read saved DNS/TCP/TLS/HTTP HEAD observations; never initiate requests."""
-        data = saved_probes(Path("/data"))
+        data = dict(saved_probes(Path("/data")))
         rows = data.pop("items")
+        checks = data.pop("configured_checks", None)
+        data["probe_coverage"] = probe_coverage(checks, rows, data["available"], data["fresh"])
         needle = query.strip().casefold()
         filtered = [
             project(row, PROBE_FIELDS)
@@ -2608,6 +2610,18 @@ class InventoryTools:
         komodo = saved_integration("komodo", Path("/data"))
         kuma = saved_integration("kuma", Path("/data"))
         probes = saved_probes(Path("/data"))
+        configured_checks = probes.get("configured_checks")
+        matching_checks = (
+            [
+                row for row in configured_checks
+                if normalized_monitor_host(row.get("hostname")) == needle
+            ]
+            if configured_checks is not None else None
+        )
+        result["probe_coverage"] = probe_coverage(
+            matching_checks, probes.get("items", []),
+            probes.get("available", False), probes.get("fresh", False),
+        )
         matches = {
             "komodo": [
                 project(row, INTEGRATION_FIELDS)
@@ -2884,8 +2898,10 @@ def guarded(method, name, slots, audit):
         started = time.monotonic()
         outcome = "failed"
         try:
+            if any(isinstance(value, str) and len(value) > MAX_TEXT for value in (*args, *kwargs.values())):
+                raise ValueError("MCP filter exceeds length limit")
             result = method(*args, **kwargs)
-            if len(json.dumps(result, ensure_ascii=True).encode()) > 1024 * 1024:
+            if len(json.dumps(result, ensure_ascii=True, allow_nan=False).encode()) > 1024 * 1024:
                 raise ValueError("MCP result exceeds response budget; narrow the query")
             outcome = "succeeded"
             return result
