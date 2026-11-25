@@ -278,6 +278,7 @@ class ProbeRow(TypedDict, total=False):
     expected_address_match: bool
     tls_verified: bool | None
     certificate_not_after: str | None
+    observed_at: str
 
 
 class JobRow(TypedDict, total=False):

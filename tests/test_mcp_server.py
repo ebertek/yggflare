@@ -633,6 +633,42 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(result.is_error, name)
                 self.assertEqual(result.structured_content["schema_version"], 1)
 
+    async def test_populated_adapter_rows_preserve_observed_fields(self):
+        from integration_inventory import FIELDS as integration_fields
+        from probe_inventory import FIELDS as probe_fields
+        from mcp_server import IntegrationRow, ProbeRow
+
+        self.assertEqual(set(IntegrationRow.__annotations__), set(integration_fields))
+        self.assertEqual(set(ProbeRow.__annotations__), set(probe_fields))
+        observed = {
+            "target": "ingress",
+            "hostname": "demo.invalid",
+            "address": "192.0.2.10",
+            "port": 443,
+            "scheme": "https",
+            "check": "http",
+            "status": "response_received",
+            "elapsed_ms": 2.5,
+            "http_status": 302,
+            "expected_status_match": None,
+            "tls_verified": True,
+            "observed_at": "2026-01-01T00:00:00+00:00",
+        }
+
+        def snapshot():
+            return {
+                "configured": True,
+                "available": True,
+                "fresh": True,
+                "items": [{**observed, "secret": "never-export"}],
+            }
+
+        with patch("mcp_server.saved_probes", side_effect=lambda *_: snapshot()):
+            async with Client(build_server(fixture), raise_exceptions=True) as client:
+                result = await client.call_tool("list_probe_results", {})
+                self.assertFalse(result.is_error)
+                self.assertEqual(result.structured_content["items"], [observed])
+
     async def test_only_read_only_tools_registered(self):
         server = build_server(fixture)
         async with Client(server, raise_exceptions=True) as client:
