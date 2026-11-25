@@ -24,4 +24,4 @@ jobs:
       - name: Ruff format compliance
         run: black --check .
       - name: Python compilation
-        run: python -m compileall -q controller.py backup.py src tests
+        run: python -m compileall -q src tests

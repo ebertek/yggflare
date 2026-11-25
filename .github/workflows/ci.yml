@@ -9,7 +9,7 @@ env:
   YGGFLARE_DOCKER_CIDR: 10.4.21.0/24
   YGGFLARE_INTERNAL_DOMAIN: ygg.nu
   YGGFLARE_EXTERNAL_DOMAIN: ebi.nu
-  PYTHONPATH: src/cloudflare
+  PYTHONPATH: src/yggflare:src/cloudflare:src/network_inventory
 
 permissions:
   contents: read
@@ -22,13 +22,13 @@ jobs:
         with:
           python-version: "3.15"
       - name: Install dependencies
-        run: python -m pip install -r src/cloudflare/requirements.txt
+        run: python -m pip install -r requirements.txt
       - name: Controller unit tests
-        run: python -m unittest discover -s tests -p 'test_*.py'
+        run: python -m unittest discover -s tests/application -p 'test_*.py'
       - name: Cloudflare unit tests
-        run: python -m unittest discover -s src/cloudflare -p 'test_*.py'
+        run: python -m unittest discover -s tests/cloudflare -p 'test_*.py'
       - name: Network unit tests
-        run: python -m unittest discover -s src/network-inventory -p 'test_*.py'
+        run: python -m unittest discover -s tests/network_inventory -p 'test_*.py'
   image:
     runs-on: ubuntu-latest
     steps:

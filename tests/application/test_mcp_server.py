@@ -778,7 +778,7 @@ class CrossSourceTests(unittest.TestCase):
 
 class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_protocol_handshake(self):
-        script = Path(__file__).resolve().parents[1] / "mcp_server.py"
+        script = Path(__file__).resolve().parents[2] / "src" / "yggflare" / "mcp_server.py"
         parameters = StdioServerParameters(command=sys.executable, args=[str(script)])
         for mode in ("legacy", "auto"):
             with self.subTest(mode=mode):
