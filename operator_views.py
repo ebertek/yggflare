@@ -32,6 +32,18 @@ VIEWS = {
         "services": ("Traefik backend services", "list_traefik_services", "query"),
         "middlewares": ("Traefik middlewares", "list_traefik_middlewares", "query"),
     },
+    "komodo": {
+        "status": ("Komodo collection status", "get_komodo_status", ""),
+        "servers": ("Komodo servers", "list_komodo_servers", "query"),
+        "stacks": ("Komodo stacks and revisions", "list_komodo_stacks", "query"),
+        "services": ("Komodo stack services", "list_komodo_services", "query"),
+        "deployments": ("Komodo standalone deployments", "list_komodo_deployments", "query"),
+    },
+    "kuma": {
+        "status": ("Kuma collection status", "get_kuma_status", ""),
+        "monitors": ("Kuma exported monitors", "list_kuma_monitors", "query"),
+        "coverage": ("Candidate monitoring coverage", "get_monitoring_coverage", "query"),
+    },
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
@@ -46,6 +58,8 @@ UNPAGED = {
     "get_backup_status",
     "get_notification_status",
     "get_traefik_status",
+    "get_komodo_status",
+    "get_kuma_status",
 }
 REQUIRED = {"identifier", "hostname"}
 CLI_VIEWS = {
@@ -60,7 +74,7 @@ CLI_VIEWS = {
     ("system", "history"): ("operations", "history"),
     ("backup", "status"): ("operations", "backup"),
     ("network", "notifications"): ("operations", "notifications"),
-    **{("traefik", name): ("traefik", name) for name in VIEWS["traefik"]},
+    **{(area, name): (area, name) for area in ("traefik", "komodo", "kuma") for name in VIEWS[area]},
 }
 
 
@@ -75,7 +89,7 @@ def query(tools, area, view, value="", offset=0, project=""):
         raise ValueError("An exact service or hostname is required")
     if value and not field:
         raise ValueError("This view accepts no identifier")
-    if project and area not in {"services", "topology"}:
+    if project and area not in {"services", "topology"} and (area, view) != ("kuma", "coverage"):
         raise ValueError("Project filter is not supported for this view")
     if project and view == "ingress":
         raise ValueError("Project filter is not supported for ingress")
