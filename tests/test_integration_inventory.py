@@ -85,7 +85,7 @@ class IntegrationTests(unittest.TestCase):
 
     def test_kuma_live_style_metric_labels_are_projected(self):
         payload = (
-            '# TYPE monitor_status gauge\n'
+            "# TYPE monitor_status gauge\n"
             'monitor_status{monitor_name="device",monitor_type="port",'
             'monitor_hostname="192.0.2.10",monitor_port="1080",'
             'monitor_url="https://"} 1\n'

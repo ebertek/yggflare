@@ -970,10 +970,12 @@ def monitor_candidates(index, services, ingress=""):
             protocol = (
                 "udp"
                 if scheme == "udp"
-                else "tcp"
-                if scheme in {"tcp", "http", "https", "ws", "wss"}
-                or (kind is None and scheme is None)
-                else None
+                else (
+                    "tcp"
+                    if scheme in {"tcp", "http", "https", "ws", "wss"}
+                    or (kind is None and scheme is None)
+                    else None
+                )
             )
             if (
                 type(port) is int
