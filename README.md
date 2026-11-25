@@ -863,3 +863,5 @@ Use `yggflare services assurance HOSTNAME` or the Services → Cross-source ingr
 Adapter-specific row schemas are exposed for Traefik, Komodo, Kuma, probe results, scheduler history, candidate monitoring coverage and finding history. Fields not present in a saved observation remain optional; no synthetic defaults imply success.
 
 Network discovery now retains aggregate scan coverage evidence: Nmap completion metadata, TCP requested/represented/omitted targets, explicit timeouts, port-evidence target count, selected port count, Docker exclusions and DNS-SD browse outcome. `get_discovery_status` exposes this metadata; legacy/offline snapshots are marked unavailable. Omissions from Nmap `--open` are not evidence of closed ports, timeouts or offline devices. Existing discovery/alert decisions are unchanged. All paginated MCP tools expose concrete typed row fields, with mixed legacy values retained where necessary.
+
+The same discovery coverage is available in the Web UI under Operations → Discovery coverage, and through `yggflare network coverage --json`. It becomes available after a new live scan; no historical coverage is fabricated.

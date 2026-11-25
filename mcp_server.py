@@ -409,8 +409,8 @@ class CloudflareRow(TypedDict, total=False):
     before: Any
     content: Any
     app_count: int
-    expected_decisions: list[str]
-    observed_decisions: list[str]
+    expected_decisions: list[str] | None
+    observed_decisions: list[str] | None
     policy_list_truncated: bool | None
     zone: str
     address: str | None
