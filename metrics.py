@@ -8,6 +8,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from evidence_summary import monitor_port_summary, probe_coverage
 from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
 from integration_inventory import ADAPTERS
@@ -444,6 +445,29 @@ def render(config, data, now=None):
                 ),
             ]
         )
+        if adapter == "kuma":
+            selection = monitor_port_summary(
+                source["items"], scan, available=source["available"]
+            )
+            for key in (
+                "numeric_ipv4_tcp_endpoints",
+                "selected_endpoints",
+                "not_selected_endpoints",
+            ):
+                values.append(
+                    (
+                        "yggflare_kuma_primary_scan_" + key,
+                        "Distinct numeric IPv4 TCP monitor endpoints by global primary port selection, not reachability",
+                        selection.get(key),
+                    )
+                )
+            values.append(
+                (
+                    "yggflare_kuma_primary_scan_selection_available",
+                    "Saved primary IPv4 port selection is available for monitor comparison",
+                    selection["available"],
+                )
+            )
         if source["available"]:
             kinds = (
                 ("servers", "stacks", "stack_services", "deployments")
@@ -458,6 +482,24 @@ def render(config, data, now=None):
                         sum(row.get("kind") == kind for row in source["items"]),
                     )
                 )
+            if adapter == "komodo":
+                for state in (
+                    "matched",
+                    "changed",
+                    "same_reported_revision",
+                    "unknown",
+                ):
+                    values.append(
+                        (
+                            f"yggflare_komodo_tracked_stack_inputs_{state}",
+                            "Saved stack candidates with this tracked input comparison; not a deploy decision",
+                            sum(
+                                row.get("kind") == "stacks"
+                                and row.get("tracked_stack_inputs", "unknown") == state
+                                for row in source["items"]
+                            ),
+                        )
+                    )
             if adapter == "kuma":
                 for state in ("up", "down", "pending", "maintenance", "unknown"):
                     values.append(
@@ -487,6 +529,33 @@ def render(config, data, now=None):
             ),
         ]
     )
+    coverage = probe_coverage(
+        probes.get("configured_checks"),
+        probes["items"],
+        probes["available"],
+        probes["fresh"],
+    )
+    values.append(
+        (
+            "yggflare_probe_configuration_available",
+            "Validated local probe configuration is available or explicitly disabled",
+            coverage["configuration_available"],
+        )
+    )
+    for key in (
+        "configured_checks",
+        "observed_checks",
+        "passed_checks",
+        "failed_checks",
+        "inconclusive_checks",
+    ):
+        values.append(
+            (
+                "yggflare_probe_coverage_" + key,
+                "Configured or saved check outcome count; consult freshness separately",
+                coverage.get(key),
+            )
+        )
     if probes["available"]:
         values.append(
             (

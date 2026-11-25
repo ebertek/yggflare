@@ -16,6 +16,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from evidence_summary import check_identity
 from traefik_inventory import read, timestamp, write
 
 INTERVAL = 300
@@ -286,6 +287,24 @@ def saved(data, config=Path("/config"), env=None):
     view = read(data / "probe-view.json")
     status = read(data / "probe-view-status.json")
     source = fingerprint(targets) if targets else None
+    configured_checks = (
+        [
+            {
+                **{
+                    key: target[key]
+                    for key in ("target", "hostname", "address", "port", "scheme")
+                },
+                "check": check,
+                "expected_http_status_configured": (
+                    bool(target["expected_statuses"]) if check == "http" else None
+                ),
+            }
+            for target in targets
+            for check in target["checks"]
+        ]
+        if targets is not None
+        else [] if env.get("YGGFLARE_PROBES_ENABLED", "false") == "false" else None
+    )
     rows = view.get("items")
     available = bool(
         source
@@ -294,6 +313,18 @@ def saved(data, config=Path("/config"), env=None):
         and len(rows) <= MAX_TARGETS * len(CHECKS)
         and all(isinstance(row, dict) for row in rows)
     )
+    # Partial, duplicate and foreign check identities are not a complete snapshot.
+    if available:
+        try:
+            identities = [check_identity(row) for row in rows]
+            available = (
+                len(identities) == len(configured_checks)
+                and len(set(identities)) == len(identities)
+                and set(identities)
+                == {check_identity(row) for row in configured_checks}
+            )
+        except TypeError:
+            available = False
     age = None
     if available:
         try:
@@ -310,6 +341,7 @@ def saved(data, config=Path("/config"), env=None):
     )
     return {
         "configured": configured,
+        "configured_checks": configured_checks,
         "available": available,
         "last_attempt_at": (
             status.get("attempted_at")

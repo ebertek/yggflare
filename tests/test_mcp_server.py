@@ -83,6 +83,32 @@ class InventoryToolTests(unittest.TestCase):
         self.data = fixture()
         self.tools = InventoryTools(lambda: self.data)
 
+    def test_nonfinite_projection_and_cross_group_scopes(self):
+        from mcp_server import GROUPS, REQUIRED_GROUPS, enabled_tools, project
+
+        self.assertEqual(
+            project({"number": float("nan")}, ("number",)), {"number": None}
+        )
+        self.assertEqual(
+            project({"number": float("inf")}, ("number",)), {"number": None}
+        )
+        for group in GROUPS:
+            enabled = set(enabled_tools({"YGGFLARE_MCP_TOOL_GROUPS": group}))
+            self.assertEqual(
+                enabled,
+                {
+                    name
+                    for name, required in REQUIRED_GROUPS.items()
+                    if required <= {group}
+                },
+            )
+            self.assertNotIn("get_ingress_evidence", enabled)
+            self.assertNotIn("get_monitoring_coverage", enabled)
+        self.assertIn(
+            "get_monitoring_coverage",
+            enabled_tools({"YGGFLARE_MCP_TOOL_GROUPS": "inventory,kuma"}),
+        )
+
     def test_filter_and_pagination(self):
         first = self.tools.list_devices(limit=1)
         self.assertEqual(first["total"], 2)
@@ -856,6 +882,7 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
             for tool_name, field in (
                 ("list_traefik_routes", "literal_hosts"),
                 ("list_komodo_stacks", "revision_match"),
+                ("list_komodo_stacks", "tracked_stack_inputs"),
                 ("list_kuma_monitors", "target_port"),
                 ("list_probe_results", "tls_verified"),
                 ("get_job_history", "duration_seconds"),
@@ -879,6 +906,29 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 result = await client.call_tool(name, {})
                 self.assertFalse(result.is_error, name)
                 self.assertEqual(result.structured_content["schema_version"], 1)
+
+    async def test_new_evidence_summary_schemas_and_probe_group_boundary(self):
+        async with Client(build_server(fixture), raise_exceptions=True) as client:
+            tools = {item.name: item for item in (await client.list_tools()).tools}
+            for name, field, required in (
+                ("get_monitoring_coverage", "port_selection_summary", "available"),
+                ("get_ingress_evidence", "probe_coverage", "configuration_available"),
+                ("get_probe_status", "probe_coverage", "configuration_available"),
+            ):
+                schema = tools[name].output_schema
+                summary = schema["properties"][field]
+                if "$ref" in summary:
+                    summary = schema["$defs"][summary["$ref"].rsplit("/", 1)[-1]]
+                self.assertIn(required, summary["properties"])
+                self.assertIn(required, summary["required"])
+        async with Client(
+            build_server(fixture, env={"YGGFLARE_MCP_TOOL_GROUPS": "probes"}),
+            raise_exceptions=True,
+        ) as client:
+            names = {item.name for item in (await client.list_tools()).tools}
+            self.assertIn("get_probe_status", names)
+            self.assertNotIn("get_ingress_evidence", names)
+            self.assertNotIn("get_monitoring_coverage", names)
 
     async def test_populated_adapter_rows_preserve_observed_fields(self):
         from integration_inventory import FIELDS as integration_fields

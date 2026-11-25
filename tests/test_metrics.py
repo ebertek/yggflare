@@ -93,10 +93,46 @@ class MetricsTests(unittest.TestCase):
         self.assertNotIn("yggflare_discovery_arp_attempted", output)
         self.assertNotIn("never-export", output)
 
+    def test_probe_coverage_metrics_do_not_count_http_response_as_pass(self):
+        identity = {
+            "target": "private-name",
+            "hostname": "private.invalid",
+            "address": "192.0.2.10",
+            "port": 443,
+            "scheme": "https",
+            "check": "http",
+        }
+        snapshot = {
+            "configured": True,
+            "available": True,
+            "fresh": True,
+            "observed_at": "2026-11-25T09:00:00Z",
+            "configured_checks": [identity],
+            "items": [
+                {
+                    **identity,
+                    "status": "response_received",
+                    "expected_status_match": False,
+                }
+            ],
+        }
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch("metrics.saved_probes", return_value=snapshot),
+        ):
+            output = metrics.render(Path(folder), Path(folder)).decode()
+        self.assertIn("yggflare_probe_coverage_configured_checks 1", output)
+        self.assertIn("yggflare_probe_coverage_passed_checks 0", output)
+        self.assertIn("yggflare_probe_coverage_failed_checks 1", output)
+        self.assertNotIn("private-name", output)
+        self.assertNotIn("192.0.2.10", output)
+
     def test_empty_state_has_presence_gauges_not_fake_scan_timestamps(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             output = metrics.render(root, root, now=1000).decode()
+        self.assertIn("yggflare_kuma_primary_scan_selection_available 0", output)
+        self.assertNotIn("yggflare_kuma_primary_scan_not_selected_endpoints ", output)
         self.assertIn("yggflare_inventory_state_present 0", output)
         self.assertIn("yggflare_network_state_present 0", output)
         self.assertIn("yggflare_cloudflare_snapshot_stale 1", output)

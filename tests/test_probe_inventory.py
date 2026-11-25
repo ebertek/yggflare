@@ -138,6 +138,49 @@ class ProbeTests(unittest.TestCase):
             response.return_value.close.assert_called_once()
             connect.assert_called_once()
 
+    def test_probe_coverage_separates_plan_results_and_expected_status(self):
+        from evidence_summary import probe_coverage
+
+        self.config()
+        planned = probes.saved(self.root, self.root, ENV)
+        self.assertFalse(planned["available"])
+        self.assertEqual(len(planned["configured_checks"]), 4)
+        self.assertIsNone(
+            probe_coverage(planned["configured_checks"], [], False, False)[
+                "passed_checks"
+            ]
+        )
+        outcomes = {
+            "dns": {"status": "matched", "expected_address_match": True},
+            "tcp": {"status": "connected"},
+            "tls": {"status": "verified", "tls_verified": True},
+            "http": {"status": "response_received", "expected_status_match": False},
+        }
+        probes.refresh(
+            self.root,
+            self.root,
+            ENV,
+            lambda target, check: {
+                **{
+                    key: target[key]
+                    for key in ("target", "hostname", "address", "port", "scheme")
+                },
+                "check": check,
+                **outcomes[check],
+            },
+        )
+        snapshot = probes.saved(self.root, self.root, ENV)
+        summary = probe_coverage(
+            snapshot["configured_checks"], snapshot["items"], True, True
+        )
+        self.assertEqual(summary["passed_checks"], 3)
+        self.assertEqual(summary["failed_checks"], 1)
+        self.assertEqual(summary["configured_checks"], 4)
+        document = json.loads((self.root / "probe-view.json").read_text())
+        document["items"].pop()
+        (self.root / "probe-view.json").write_text(json.dumps(document))
+        self.assertFalse(probes.saved(self.root, self.root, ENV)["available"])
+
     def test_failed_collection_retains_last_good_and_invalidates_changed_config(self):
         self.config()
         probes.refresh(
@@ -145,7 +188,10 @@ class ProbeTests(unittest.TestCase):
             self.root,
             ENV,
             lambda target, check: {
-                "target": target["target"],
+                **{
+                    key: target[key]
+                    for key in ("target", "hostname", "address", "port", "scheme")
+                },
                 "check": check,
                 "status": "check_failed",
             },

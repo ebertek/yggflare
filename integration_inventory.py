@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from prometheus_client.parser import text_string_to_metric_families
 
 from docker_inventory import image_reference
+from stack_revision import enrich_stacks
 from traefik_inventory import read, source_id, timestamp, write
 
 ADAPTERS = ("komodo", "kuma")
@@ -71,6 +72,7 @@ FIELDS = (
     "deployed_hash",
     "latest_hash",
     "revision_match",
+    "tracked_stack_inputs",
     "project_missing",
     "service",
     "stack",
@@ -416,6 +418,7 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
             rows = []
             for kind in KOMODO_READS:
                 rows.extend(komodo_rows(kind, request(adapter, origin, secret, kind)))
+            enrich_stacks(rows)
         else:
             rows = kuma_rows(request(adapter, origin, secret, "monitors"))
         if len(rows) > MAX_ROWS:
