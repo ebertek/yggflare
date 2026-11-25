@@ -4,12 +4,21 @@ import json
 import socket
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from starlette.testclient import TestClient
 
-from mcp_http import HTTPListener, PrincipalApp, build_http_app, configured_app, enabled, read_principals, read_token, settings
-from dataclasses import replace
+from mcp_http import (
+    HTTPListener,
+    PrincipalApp,
+    build_http_app,
+    configured_app,
+    enabled,
+    read_principals,
+    read_token,
+    settings,
+)
 
 TOKEN = b"a" * 64
 HEADERS = {
@@ -117,7 +126,14 @@ class PrincipalTests(unittest.TestCase):
             path.chmod(0o600)
 
     def write_manifest(self, entries=None):
-        self.manifest.write_text(json.dumps({"version": 1, "principals": self.entries if entries is None else entries}))
+        self.manifest.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "principals": self.entries if entries is None else entries,
+                }
+            )
+        )
         self.manifest.chmod(0o600)
 
     def test_private_config_validation_and_ceiling(self):
@@ -151,11 +167,16 @@ class PrincipalTests(unittest.TestCase):
             read_principals(self.manifest, {})
 
     def test_explicit_mode_and_fail_closed(self):
-        config = settings({"YGGFLARE_MCP_PRINCIPALS_FILE": "/config/mcp-principals.json"})
+        config = settings(
+            {"YGGFLARE_MCP_PRINCIPALS_FILE": "/config/mcp-principals.json"}
+        )
         self.assertIsNotNone(config.principals_file)
         for env in (
             {"YGGFLARE_MCP_PRINCIPALS_FILE": "/etc/passwd"},
-            {"YGGFLARE_MCP_PRINCIPALS_FILE": "/config/mcp-principals.json", "YGGFLARE_MCP_BIND": "192.168.1.2"},
+            {
+                "YGGFLARE_MCP_PRINCIPALS_FILE": "/config/mcp-principals.json",
+                "YGGFLARE_MCP_BIND": "192.168.1.2",
+            },
         ):
             with self.assertRaises(ValueError):
                 settings(env)
@@ -164,21 +185,44 @@ class PrincipalTests(unittest.TestCase):
         legacy.write_bytes(TOKEN)
         self.manifest.unlink()
         with self.assertRaises(ValueError):
-            configured_app(replace(config, token_file=legacy), loader=lambda: {}, env={})
+            configured_app(
+                replace(config, token_file=legacy), loader=lambda: {}, env={}
+            )
 
     def test_scoped_tools_resources_and_direct_calls(self):
-        app = PrincipalApp(settings({}), read_principals(self.manifest, {}), loader=lambda: {}, env={})
+        app = PrincipalApp(
+            settings({}), read_principals(self.manifest, {}), loader=lambda: {}, env={}
+        )
         with TestClient(app, base_url="http://127.0.0.1:8788") as client:
+
             def rpc(token, method, params=None):
-                headers = {**HEADERS, "Authorization": "Bearer " + token.decode(), "MCP-Protocol-Version": "2025-11-25"}
+                headers = {
+                    **HEADERS,
+                    "Authorization": "Bearer " + token.decode(),
+                    "MCP-Protocol-Version": "2025-11-25",
+                }
                 payload = {"jsonrpc": "2.0", "id": 1, "method": method}
                 if params is not None:
                     payload["params"] = params
                 return client.post("/mcp", headers=headers, json=payload)
 
             for token, allowed, forbidden, resource, denied_resource, prompt in (
-                (b"b" * 64, "get_job_status", "get_traefik_status", "yggflare://jobs", "yggflare://traefik", "review_operations"),
-                (b"c" * 64, "get_traefik_status", "get_job_status", "yggflare://traefik", "yggflare://jobs", None),
+                (
+                    b"b" * 64,
+                    "get_job_status",
+                    "get_traefik_status",
+                    "yggflare://jobs",
+                    "yggflare://traefik",
+                    "review_operations",
+                ),
+                (
+                    b"c" * 64,
+                    "get_traefik_status",
+                    "get_job_status",
+                    "yggflare://traefik",
+                    "yggflare://jobs",
+                    None,
+                ),
             ):
                 with self.subTest(allowed=allowed):
                     listed = rpc(token, "tools/list").json()["result"]["tools"]
@@ -186,21 +230,61 @@ class PrincipalTests(unittest.TestCase):
                     self.assertIn(allowed, names)
                     self.assertNotIn(forbidden, names)
                     self.assertNotIn("get_ingress_evidence", names)
-                    resources = {row["uri"] for row in rpc(token, "resources/list").json()["result"]["resources"]}
+                    resources = {
+                        row["uri"]
+                        for row in rpc(token, "resources/list").json()["result"][
+                            "resources"
+                        ]
+                    }
                     self.assertIn(resource, resources)
                     self.assertNotIn(denied_resource, resources)
-                    good = rpc(token, "tools/call", {"name": allowed, "arguments": {}}).json()
+                    good = rpc(
+                        token, "tools/call", {"name": allowed, "arguments": {}}
+                    ).json()
                     self.assertFalse(good["result"].get("isError", False))
-                    denied = rpc(token, "tools/call", {"name": forbidden, "arguments": {}}).json()
-                    self.assertTrue("error" in denied or denied.get("result", {}).get("isError"))
-                    denied = rpc(token, "resources/read", {"uri": denied_resource}).json()
+                    denied = rpc(
+                        token, "tools/call", {"name": forbidden, "arguments": {}}
+                    ).json()
+                    self.assertTrue(
+                        "error" in denied or denied.get("result", {}).get("isError")
+                    )
+                    denied = rpc(
+                        token, "resources/read", {"uri": denied_resource}
+                    ).json()
                     self.assertIn("error", denied)
-                    prompts = {row["name"] for row in rpc(token, "prompts/list").json()["result"]["prompts"]}
+                    prompts = {
+                        row["name"]
+                        for row in rpc(token, "prompts/list").json()["result"][
+                            "prompts"
+                        ]
+                    }
                     self.assertEqual(prompts, {prompt} if prompt else set())
             self.assertEqual(rpc(TOKEN, "tools/list").status_code, 401)
             self.assertEqual(rpc(b"unknown", "tools/list").status_code, 401)
-            self.assertEqual(client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "Authorization": "Bearer " + "b" * 64, "Origin": "null"}).status_code, 403)
-            self.assertEqual(client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "Authorization": "Bearer " + "b" * 64, "Host": "evil.invalid"}).status_code, 421)
+            self.assertEqual(
+                client.post(
+                    "/mcp",
+                    json=INITIALIZE,
+                    headers={
+                        **HEADERS,
+                        "Authorization": "Bearer " + "b" * 64,
+                        "Origin": "null",
+                    },
+                ).status_code,
+                403,
+            )
+            self.assertEqual(
+                client.post(
+                    "/mcp",
+                    json=INITIALIZE,
+                    headers={
+                        **HEADERS,
+                        "Authorization": "Bearer " + "b" * 64,
+                        "Host": "evil.invalid",
+                    },
+                ).status_code,
+                421,
+            )
 
 
 class HTTPTests(unittest.TestCase):

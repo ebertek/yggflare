@@ -161,7 +161,11 @@ def read_principals(path, env=None):
             raise ValueError("Invalid MCP principal identity or group scope")
         # Fixed sibling filenames; the manifest cannot select arbitrary paths.
         try:
-            token = private_read(path.parent / ("mcp-token-" + name + ".txt"), 260).decode("ascii").strip()
+            token = (
+                private_read(path.parent / ("mcp-token-" + name + ".txt"), 260)
+                .decode("ascii")
+                .strip()
+            )
         except UnicodeError:
             raise ValueError("Invalid MCP principal token") from None
         if not TOKEN_PATTERN.fullmatch(token):
@@ -189,7 +193,12 @@ class PrincipalApp:
                 if loader is None
                 else build_server(loader, env=scoped, slots=slots)
             )
-            self.routes.append((b"Bearer " + principal.token, server.streamable_http_app(**http_options(config))))
+            self.routes.append(
+                (
+                    b"Bearer " + principal.token,
+                    server.streamable_http_app(**http_options(config)),
+                )
+            )
 
         @asynccontextmanager
         async def lifespan(_app):
@@ -224,7 +233,8 @@ class PrincipalApp:
                 await selected(scope, receive, send)
                 return
             response = PlainTextResponse(
-                "Unauthorized", status_code=401,
+                "Unauthorized",
+                status_code=401,
                 headers={"WWW-Authenticate": "Bearer"},
             )
         await response(scope, receive, send)
@@ -279,15 +289,18 @@ def http_options(config):
     }
 
 
-
 def build_http_app(config, token, loader=None):
     server = build_server() if loader is None else build_server(loader)
-    return ProtectedApp(server.streamable_http_app(**http_options(config)), config, token)
+    return ProtectedApp(
+        server.streamable_http_app(**http_options(config)), config, token
+    )
 
 
 def configured_app(config, loader=None, env=None):
     if config.principals_file is not None:
-        return PrincipalApp(config, read_principals(config.principals_file, env), loader, env)
+        return PrincipalApp(
+            config, read_principals(config.principals_file, env), loader, env
+        )
     return build_http_app(config, read_token(config.token_file), loader)
 
 
