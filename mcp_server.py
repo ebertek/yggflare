@@ -701,11 +701,19 @@ def scan_coverage_context(state):
         return {"available": False, "mode": "unknown"}
     mode = saved.get("mode")
     if mode != "live":
-        return {"available": False, "mode": "offline" if mode == "offline" else "unknown"}
+        return {
+            "available": False,
+            "mode": "offline" if mode == "offline" else "unknown",
+        }
     fields = (
-        "run_completed", "reported_target_count", "requested_target_count",
-        "represented_target_count", "omitted_target_count", "explicit_timeout_count",
-        "port_evidence_target_count", "selected_port_count",
+        "run_completed",
+        "reported_target_count",
+        "requested_target_count",
+        "represented_target_count",
+        "omitted_target_count",
+        "explicit_timeout_count",
+        "port_evidence_target_count",
+        "selected_port_count",
     )
     result = {
         "available": True,
@@ -717,7 +725,9 @@ def scan_coverage_context(state):
     for key in ("host_discovery", "tcp", "dns_sd"):
         value = saved.get(key)
         if isinstance(value, dict):
-            result[key] = project(value, fields if key != "dns_sd" else ("status", "observation_count"))
+            result[key] = project(
+                value, fields if key != "dns_sd" else ("status", "observation_count")
+            )
     return result
 
 
@@ -1349,7 +1359,11 @@ class InventoryTools:
         coverage = scan_coverage_context(state)
         discovery = coverage.get("host_discovery", {})
         tcp = coverage.get("tcp", {})
-        if coverage.get("available") and discovery.get("run_completed") is True and tcp.get("run_completed") is not False:
+        if (
+            coverage.get("available")
+            and discovery.get("run_completed") is True
+            and tcp.get("run_completed") is not False
+        ):
             # A saved live scan is itself positive collection evidence even if
             # an explicit CLI invocation has no scheduler record.
             if not network.get("status"):
@@ -1370,7 +1384,13 @@ class InventoryTools:
                 attempted_at=network.get("started_at"),
                 verified=verified,
                 max_age=36 * 3600,
-                complete=False if tcp.get("omitted_target_count", 0) or tcp.get("explicit_timeout_count", 0) or tcp.get("run_completed") is False else None,
+                complete=(
+                    False
+                    if tcp.get("omitted_target_count", 0)
+                    or tcp.get("explicit_timeout_count", 0)
+                    or tcp.get("run_completed") is False
+                    else None
+                ),
                 caveat="Saved host observations; missing TCP or host responses do not prove absence. See discovery status for requested and represented targets.",
             ),
             row(

@@ -283,7 +283,11 @@ def nmap_coverage(xml, targets=None):
     if stats is not None and str(stats.get("total", "")).isdecimal():
         total = int(stats.get("total"))
     result = {
-        "run_completed": True if exit_status == "success" else False if exit_status == "error" else None,
+        "run_completed": (
+            True
+            if exit_status == "success"
+            else False if exit_status == "error" else None
+        ),
         "reported_target_count": total,
     }
     if targets is None:
@@ -329,7 +333,11 @@ def scan(inventory, timeout, do_dns_sd=True, *, coverage=None):
     targets = sorted(set(hosts) - ignored, key=ipaddress.ip_address)
     progress(f"Found {len(hosts)} IPv4 hosts; {len(targets)} targets for TCP probes")
     if coverage is not None:
-        coverage["tcp"] = {"requested_target_count": len(targets), "selected_port_count": 0, "run_completed": None}
+        coverage["tcp"] = {
+            "requested_target_count": len(targets),
+            "selected_port_count": 0,
+            "run_completed": None,
+        }
         coverage["docker_excluded_count"] = len(set(hosts) & ignored)
     if targets:
         recorded_tcp = {
@@ -365,7 +373,10 @@ def scan(inventory, timeout, do_dns_sd=True, *, coverage=None):
                 scanned_xml = run_command(args, timeout)
                 checked = parse_nmap_xml(scanned_xml)
                 if coverage is not None:
-                    coverage["tcp"] = {**nmap_coverage(scanned_xml, targets), "selected_port_count": len(ports)}
+                    coverage["tcp"] = {
+                        **nmap_coverage(scanned_xml, targets),
+                        "selected_port_count": len(ports),
+                    }
         for ip in targets:
             hosts[ip]["ports"] = checked.get(ip, {}).get("ports", [])
             hosts[ip]["services"] = checked.get(ip, {}).get("services", {})
@@ -383,7 +394,10 @@ def scan(inventory, timeout, do_dns_sd=True, *, coverage=None):
             advertised = []
             dns_status = "failed"
     if coverage is not None:
-        coverage["dns_sd"] = {"status": dns_status, "observation_count": len(advertised)}
+        coverage["dns_sd"] = {
+            "status": dns_status,
+            "observation_count": len(advertised),
+        }
     return hosts, advertised, do_dns_sd and bool(advertised)
 
 

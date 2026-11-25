@@ -448,16 +448,26 @@ class DiscoveryCoverageTests(unittest.TestCase):
         state["scan_coverage"] = {"version": 1, "mode": "offline"}
         self.assertFalse(tools.get_discovery_status()["scan_coverage"]["available"])
         state["scan_coverage"] = {
-            "version": 1, "mode": "live", "observed_at": "2026-01-01T00:00:00+00:00",
+            "version": 1,
+            "mode": "live",
+            "observed_at": "2026-01-01T00:00:00+00:00",
             "host_discovery": {"run_completed": True, "secret": "never-export"},
-            "tcp": {"requested_target_count": 3, "omitted_target_count": 1, "run_completed": True},
+            "tcp": {
+                "requested_target_count": 3,
+                "omitted_target_count": 1,
+                "run_completed": True,
+            },
             "dns_sd": {"status": "empty_browse", "observation_count": 0},
         }
         result = tools.get_discovery_status()["scan_coverage"]
         self.assertTrue(result["available"])
         self.assertEqual(result["tcp"]["omitted_target_count"], 1)
         self.assertNotIn("never-export", str(result))
-        row = next(item for item in tools.get_evidence_overview()["items"] if item["source"] == "network_ipv4")
+        row = next(
+            item
+            for item in tools.get_evidence_overview()["items"]
+            if item["source"] == "network_ipv4"
+        )
         self.assertEqual(row["completeness"], "incomplete")
 
 
