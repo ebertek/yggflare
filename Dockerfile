@@ -17,7 +17,7 @@ RUN docker --version
 WORKDIR /app
 COPY src/cloudflare/ /app/cloudflare/
 COPY src/network-inventory/ /app/network-inventory/
-COPY controller.py job_status.py backup.py backup_verify.py doctor.py discord_webhook.py watchers.py web.py web_views.py operator_views.py traefik_inventory.py metrics.py inventory_view.py inventory_catalog.py docker_inventory.py mcp_server.py mcp_http.py /app/
+COPY controller.py job_status.py backup.py backup_verify.py doctor.py discord_webhook.py watchers.py web.py web_views.py operator_views.py traefik_inventory.py integration_inventory.py metrics.py inventory_view.py inventory_catalog.py docker_inventory.py mcp_server.py mcp_http.py /app/
 COPY --chmod=755 cli.py /usr/local/bin/yggflare
 RUN pip install --no-cache-dir -r /app/cloudflare/requirements.txt
 RUN python -c 'import metrics, web, mcp_server, mcp_http; mcp_server.build_server(); mcp_http.build_http_app(mcp_http.settings({}), b"a" * 64)'

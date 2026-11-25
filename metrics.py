@@ -8,6 +8,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from integration_inventory import ADAPTERS, saved as saved_integration
 from job_status import JOBS, read_jobs
 from traefik_inventory import saved as saved_traefik
 
@@ -300,6 +301,20 @@ def render(config, data, now=None):
                     sum(row.get("kind") == kind for row in traefik["items"]),
                 )
             )
+    for adapter in ADAPTERS:
+        source = saved_integration(adapter, Path(data))
+        values.extend([
+            (f"yggflare_{adapter}_snapshot_available", "Saved integration snapshot available", source["available"]),
+            (f"yggflare_{adapter}_snapshot_fresh", "Saved integration snapshot fresh and verified", source["fresh"]),
+            (f"yggflare_{adapter}_last_success_timestamp_seconds", "Latest complete saved integration observation", epoch(source["observed_at"])),
+        ])
+        if source["available"]:
+            kinds = ("servers", "stacks", "stack_services", "deployments") if adapter == "komodo" else ("monitors",)
+            for kind in kinds:
+                values.append((f"yggflare_{adapter}_{kind}", "Resources visible in the last complete integration snapshot", sum(row.get("kind") == kind for row in source["items"])))
+            if adapter == "kuma":
+                for state in ("up", "down", "pending", "maintenance", "unknown"):
+                    values.append((f"yggflare_kuma_monitors_{state}", "Exported monitors reporting this status", sum(row.get("status") == state for row in source["items"])))
     output = "".join(
         metric(name, description, value) for name, description, value in values
     )
