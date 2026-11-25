@@ -26,6 +26,12 @@ VIEWS = {
         "access": ("Cloudflare Access", "get_cloudflare_access", "hostname"),
         "tunnel": ("Cloudflare Tunnel", "get_cloudflare_tunnel", "hostname"),
     },
+    "traefik": {
+        "status": ("Traefik collection status", "get_traefik_status", ""),
+        "routes": ("Traefik routers", "list_traefik_routes", "query"),
+        "services": ("Traefik backend services", "list_traefik_services", "query"),
+        "middlewares": ("Traefik middlewares", "list_traefik_middlewares", "query"),
+    },
     "operations": {
         "health": ("Controller health", "get_yggflare_health", ""),
         "jobs": ("Scheduled jobs", "get_job_status", ""),
@@ -39,6 +45,7 @@ UNPAGED = {
     "get_job_status",
     "get_backup_status",
     "get_notification_status",
+    "get_traefik_status",
 }
 REQUIRED = {"identifier", "hostname"}
 CLI_VIEWS = {
@@ -53,6 +60,7 @@ CLI_VIEWS = {
     ("system", "history"): ("operations", "history"),
     ("backup", "status"): ("operations", "backup"),
     ("network", "notifications"): ("operations", "notifications"),
+    **{("traefik", name): ("traefik", name) for name in VIEWS["traefik"]},
 }
 
 

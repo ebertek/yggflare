@@ -287,6 +287,7 @@ def page(tab, content):
             ("topology", "Topology"),
             ("assurance", "Cloudflare audit"),
             ("operations", "Operations"),
+            ("traefik", "Traefik"),
         )
     )
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -466,6 +467,7 @@ class Handler(BaseHTTPRequestHandler):
             "/topology",
             "/assurance",
             "/operations",
+            "/traefik",
             "/api/inventory.json",
             "/api/inventory.csv",
             "/metrics",

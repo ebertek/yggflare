@@ -18,6 +18,7 @@ from job_status import track
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
+from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
 from watchers import start as start_watchers
 
 CONFIG = Path("/config")
@@ -150,6 +151,7 @@ def job_label(script):
         "cloudflare-auto-cleanup.py": "Managed orphan cleanup",
         "cloudflare-live.py": "Cloudflare presentation refresh",
         "audit.py": "Network inventory scan",
+        "traefik_inventory.py": "Traefik presentation refresh",
     }.get(Path(script).name, "Scheduled job")
 
 
@@ -321,6 +323,7 @@ def run_scheduler(listener=None):
     changes, debounce, cooldown = start_watchers(SOURCE, CONFIG, log)
     next_cloud = dt.datetime.now(dt.timezone.utc)
     last_cloud_completed = 0.0
+    next_traefik = 0.0
     backup_marker = DATA / "backup-last-run.txt"
     last_backup_day = (
         backup_marker.read_text(encoding="utf-8").strip()
@@ -366,6 +369,12 @@ def run_scheduler(listener=None):
                     )
             last_cloud_completed = time.monotonic()
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
+        if os.environ.get("YGGFLARE_TRAEFIK_API_URL") and time.monotonic() >= next_traefik:
+            try:
+                run([sys.executable, "/app/traefik_inventory.py"])
+            except Exception:
+                log("warning", "controller", "Traefik presentation refresh failed; previous snapshot retained")
+            next_traefik = time.monotonic() + TRAEFIK_INTERVAL
         current_utc = dt.datetime.now(dt.timezone.utc)
         if (current_utc.hour, current_utc.minute) >= (4, 0):
             if last_backup_day != current_utc.date().isoformat():
