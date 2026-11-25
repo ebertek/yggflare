@@ -62,7 +62,7 @@ def check_identity(row):
     return tuple(
         row.get(key)
         for key in ("target", "hostname", "address", "port", "scheme", "check")
-    )
+    ) + (row.get("http_method", "HEAD") if row.get("check") == "http" else None,)
 
 
 def probe_outcome(row):

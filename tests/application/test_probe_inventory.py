@@ -47,6 +47,9 @@ class ProbeTests(unittest.TestCase):
             {"port": 0},
             {"checks": ["shell"]},
             {"scheme": "http"},
+            {"http_method": "POST"},
+            {"http_method": "GET\r\nHost: x"},
+            {"http_method": "GET", "checks": ["tcp"]},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.config({**TARGET, **changes})
@@ -137,6 +140,40 @@ class ProbeTests(unittest.TestCase):
             self.assertNotIn(b"Authorization", sent)
             response.return_value.close.assert_called_once()
             connect.assert_called_once()
+
+    def test_opt_in_get_reads_headers_only_and_invalidates_head_snapshot(self):
+        self.config()
+        head = probes.settings(self.root, ENV)
+        self.config({**TARGET, "http_method": "GET"})
+        targets = probes.settings(self.root, ENV)
+        self.assertNotEqual(probes.fingerprint(head), probes.fingerprint(targets))
+        target = targets[0]
+        with (
+            patch.object(probes, "connect") as connect,
+            patch.object(probes, "tls_socket") as tls,
+            patch.object(probes.http.client, "HTTPResponse") as response,
+        ):
+            response.return_value.status = 200
+            result = probes.probe(target, "http")
+            self.assertTrue(result["expected_status_match"])
+            self.assertEqual(result["http_method"], "GET")
+            tls.assert_called_once()
+            sent = tls.return_value.sendall.call_args.args[0]
+            self.assertTrue(sent.startswith(b"GET / HTTP/1.1\r\n"))
+            self.assertNotIn(b"Authorization", sent)
+            response.assert_called_once_with(tls.return_value, method="GET")
+            response.return_value.read.assert_not_called()
+            response.return_value.close.assert_called_once()
+            connect.assert_called_once()
+        planned = probes.saved(self.root, self.root, ENV)
+        self.assertEqual(
+            [
+                row["http_method"]
+                for row in planned["configured_checks"]
+                if row["check"] == "http"
+            ],
+            ["GET"],
+        )
 
     def test_probe_coverage_separates_plan_results_and_expected_status(self):
         from evidence_summary import probe_coverage

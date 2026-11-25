@@ -148,7 +148,7 @@ At most 16 explicit targets and four checks per target are supported.
 Numeric addresses must belong to the configured LAN/IPv6 CIDRs or loopback.
 DNS uses the host resolver; TCP/TLS/HTTP connect directly to the numeric
 address and do not follow DNS answers. TLS uses the normal trust store and
-hostname validation. HTTP sends HEAD / only, no credentials, redirects,
+hostname validation. HTTP defaults to HEAD /; an explicitly configured `http_method: "GET"` is supported for servers that reject HEAD. Only HEAD and GET are allowed. Both read response headers only, with no credentials, redirects,
 body reads or arbitrary path. The five-minute collector has a 120-second
 overall deadline and bounded socket timeouts. Failure preserves the last
 complete snapshot. An HTTP response (including 302/401) is not proof of
@@ -181,3 +181,5 @@ Komodo refresh annotates stack rows with `tracked_stack_inputs`: `same_reported_
 ## Monitoring and probe coverage summaries
 
 `yggflare kuma devices --all --json` includes `port_selection_summary`, a global comparison of distinct numeric IPv4 TCP monitor endpoints with the selected primary scan port set. It does not imply that those hosts were within the scan target set or probed. Missing port numbers are review candidates, never automatic scan targets. Legacy scans have unavailable selection evidence. `yggflare probes status --json` shows validated configured checks separately from saved observations and expected outcomes. `services assurance HOSTNAME` reports hostname-specific `probe_coverage`. Disabled configuration is an empty plan; invalid configuration is unknown. A completed HTTP request is not a passed check unless its explicitly configured expected status matched. Partial or duplicate saved check identities invalidate the result snapshot. Stale outcomes remain historical, not current health.
+
+For applications that reject HEAD, configure `"http_method": "GET"` on the individual HTTP target and retain a meaningful expected status list. The method is included in the configured and observed HTTP evidence; a GET configuration invalidates a previous HEAD snapshot. GET is limited to `/` and does not consume or retain response bodies. A matching status is not proof of authenticated application functionality.
