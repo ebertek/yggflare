@@ -1,6 +1,7 @@
 """Read-only MCP tools over Yggflare's existing presentation model."""
 
 import hashlib
+import ipaddress
 import json
 import os
 import sys
@@ -285,6 +286,19 @@ class JobRow(TypedDict, total=False):
     status: str
 
 
+class MonitorMatch(TypedDict, total=False):
+    name: str
+    monitor_type: str | None
+    target_host: str
+    target_port: int | None
+    target_scheme: str | None
+    status: str
+    match_basis: list[str]
+    service_candidates: list[str]
+    shared_or_ambiguous_address: bool
+    target_port_declared: bool | None
+
+
 class CoverageRow(TypedDict, total=False):
     project: str | None
     service: str | None
@@ -293,6 +307,8 @@ class CoverageRow(TypedDict, total=False):
     shared_network: str | None
     matching_monitor_count: int | None
     monitor_names: list[str | None]
+    monitor_matches: list[MonitorMatch]
+    monitor_matches_truncated: bool
     match_status: str
 
 
@@ -818,6 +834,119 @@ def supplemental_coverage_context(supplemental):
         "sources": sources,
         "caveat": "Attempt counts are collector invocations or batches, not proof of host coverage. No reply is not a failure or offline proof; configured collectors may have no eligible targets.",
     }
+
+
+def normalized_monitor_host(value):
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    value = value.strip().casefold().rstrip(".")
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return value
+
+
+def service_monitor_hosts(service):
+    """Only explicit saved service identities; never resolve names or guess host IPs."""
+    result = {}
+    for field, basis in (
+        ("hostname", "service_hostname"),
+        ("aliases", "service_alias"),
+        ("lan_endpoints", "lan_endpoint"),
+        ("declared_addresses", "declared_address"),
+        ("runtime_addresses", "runtime_address"),
+    ):
+        values = [service.get(field)] if field == "hostname" else service.get(field, [])
+        for value in values or []:
+            key = normalized_monitor_host(value)
+            if not key:
+                continue
+            if field in {"lan_endpoints", "declared_addresses", "runtime_addresses"}:
+                try:
+                    ipaddress.ip_address(key)
+                except ValueError:
+                    continue
+            result.setdefault(key, set()).add(basis)
+    return result
+
+
+def monitor_index(monitors, all_services):
+    owners = {}
+    by_host = {}
+    for service in all_services:
+        identity = (
+            service.get("project"),
+            service.get("service"),
+            service.get("container_name"),
+        )
+        for host in service_monitor_hosts(service):
+            owners.setdefault(host, set()).add(identity)
+    for monitor in monitors:
+        host = normalized_monitor_host(monitor.get("target_host"))
+        if host:
+            by_host.setdefault(host, []).append(monitor)
+    return owners, by_host
+
+
+def monitor_candidates(index, services, ingress=""):
+    """Exact candidate matching with explicit provenance and shared-IP caveats."""
+    owners, by_host = index
+    identities = {}
+    for service in services:
+        for host, basis in service_monitor_hosts(service).items():
+            identities.setdefault(host, []).append((service, basis))
+    if ingress:
+        identities.setdefault(ingress, [])
+    candidates = []
+    for host in sorted(identities):
+        matches = [service for service, _ in identities[host]]
+        basis = {reason for _, reasons in identities[host] for reason in reasons}
+        if host == ingress:
+            basis.add("ingress_hostname")
+        for monitor in by_host.get(host, []):
+            try:
+                ipaddress.ip_address(host)
+                numeric = True
+            except ValueError:
+                numeric = False
+            shared = numeric and (
+                len(owners.get(host, ())) > 1
+                or any(
+                    row.get("shared_network") or row.get("network_mode_kind") == "host"
+                    for row in matches
+                )
+            )
+            port = monitor.get("target_port")
+            # A port declaration is supporting evidence, not confirmation of
+            # host-port mapping, binding, protocol, or application identity.
+            port_declared = None
+            if (
+                type(port) is int
+                and matches
+                and any(row.get("ports") for row in matches)
+            ):
+                port_declared = any(
+                    f"tcp/{port}" in row.get("ports", []) for row in matches
+                )
+            candidates.append(
+                {
+                    **project(monitor, INTEGRATION_FIELDS),
+                    "match_basis": sorted(basis),
+                    "service_candidates": sorted(
+                        {
+                            bounded(
+                                str(row.get("project") or "")
+                                + "/"
+                                + str(row.get("service") or "")
+                            )
+                            for row in matches
+                        }
+                    )[:MAX_VALUES],
+                    "shared_or_ambiguous_address": shared,
+                    "target_port_declared": port_declared,
+                }
+            )
+    return candidates
 
 
 class InventoryTools:
@@ -2029,26 +2158,13 @@ class InventoryTools:
     ) -> CoveragePage:
         """Correlate exact monitor target hosts with service identities; not proof of coverage."""
         context, services = self._service_rows(query, project_name)
+        _, all_services = self._service_rows("", "")
         kuma = saved_integration("kuma", Path("/data"))
         monitors = kuma.pop("items")
-        by_host = {}
-        for row in monitors:
-            if row.get("target_host"):
-                by_host.setdefault(
-                    str(row["target_host"]).casefold().rstrip("."), []
-                ).append(row)
+        index = monitor_index(monitors, all_services)
         rows = []
         for service in services:
-            hosts = {
-                str(value).casefold().rstrip(".")
-                for value in (
-                    service.get("hostname"),
-                    *service.get("aliases", []),
-                    *service.get("lan_endpoints", []),
-                )
-                if value
-            }
-            matches = [item for host in sorted(hosts) for item in by_host.get(host, [])]
+            matches = monitor_candidates(index, [service])
             rows.append(
                 {
                     **project(
@@ -2067,6 +2183,11 @@ class InventoryTools:
                     "monitor_names": [
                         bounded(item.get("name")) for item in matches[:MAX_VALUES]
                     ],
+                    "monitor_matches": [
+                        {key: value for key, value in item.items() if key != "kind"}
+                        for item in matches[:MAX_VALUES]
+                    ],
+                    "monitor_matches_truncated": len(matches) > MAX_VALUES,
                     "match_status": (
                         "candidate_host_match"
                         if matches
@@ -2077,7 +2198,7 @@ class InventoryTools:
         return {
             **context,
             "kuma": kuma,
-            "coverage_caveat": "Shared IPs, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative per-service coverage conclusions.",
+            "coverage_caveat": "Exact hostname, alias and numeric address matches are candidates only. Shared addresses, host-port mapping, alternate DNS names, paths, push monitors and disabled monitors prevent authoritative coverage conclusions.",
             **page(rows, offset, limit, snapshot_id),
         }
 
@@ -2200,7 +2321,7 @@ class InventoryTools:
         needle = hostname.strip().casefold().rstrip(".")
         # Do not use the paginated service subset as the basis of cross-source
         # matching. Candidate ownership is exact project/stack name only.
-        _, services = self._service_rows(hostname, "")
+        _, services = self._service_rows("", "")
         matching_services = [
             row
             for row in services
@@ -2237,11 +2358,11 @@ class InventoryTools:
                     in identities
                 )
             ],
-            "kuma": [
-                project(row, INTEGRATION_FIELDS)
-                for row in kuma.get("items", [])
-                if str(row.get("target_host") or "").casefold().rstrip(".") == needle
-            ],
+            "kuma": monitor_candidates(
+                monitor_index(kuma.get("items", []), services),
+                matching_services,
+                ingress=needle,
+            ),
             "probes": [
                 project(row, PROBE_FIELDS)
                 for row in probes.get("items", [])
@@ -2269,7 +2390,7 @@ class InventoryTools:
             for name, value in (("komodo", komodo), ("kuma", kuma), ("probes", probes))
         }
         result["correlation_caveat"] = (
-            "Exact aliases, project/stack names and monitor/probe hostnames are candidate matches only. "
+            "Exact aliases, project/stack names, monitor hostnames and explicit numeric service addresses are candidate matches only. Shared addresses and port declarations do not prove application identity. "
             "Probe results apply to their listed numeric destination and local vantage; they do not establish external reachability, proxy routing or authentication. "
             "No match, stale data or an unavailable adapter is inconclusive. Nested layers have independent timestamps and pagination."
         )

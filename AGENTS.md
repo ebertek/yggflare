@@ -152,4 +152,6 @@ Cross-source ingress evidence must preserve the original ingress tool's access g
 
 Discovery coverage is presentation-only: Nmap run completion, represented targets, explicit timeouts and omitted targets are distinct evidence. Never infer host failure or port closure from omitted `--open` results. Do not alter scan scope, alert suppression or reconciliation when adding coverage metadata.
 
+Monitoring correlation may use only exact saved service aliases/hostnames and explicitly declared or observed service addresses. Report match provenance and shared-address ambiguity; never infer service identity from a common proxy IP, arbitrary DNS lookups, or unspecified host-mode addresses. HTTP expected status is an operator expectation, not proof of authentication or application health.
+
 Supplemental collector coverage uses fixed source names and aggregate invocation counts. Explicit no-reply outcomes are not failures; parsing errors, limits and missing execution evidence must remain distinct. Do not add raw subprocess output, credential data or addresses to coverage metadata.

@@ -506,6 +506,66 @@ class DiscoveryCoverageTests(unittest.TestCase):
         self.assertEqual(row["completeness"], "incomplete")
 
 
+class MonitorCorrelationTests(unittest.TestCase):
+    def test_exact_internal_alias_address_and_shared_port_evidence(self):
+        services = [
+            {
+                "project": "core",
+                "service": "demo",
+                "hostname": "demo.internal",
+                "aliases": ["demo.invalid", "alt.internal"],
+                "declared_addresses": ["192.0.2.10"],
+                "runtime_addresses": ["192.0.2.11"],
+                "lan_endpoints": ["192.0.2.11"],
+                "ports": ["tcp/8080"],
+            },
+            {
+                "project": "other",
+                "service": "shared",
+                "lan_endpoints": ["192.0.2.11"],
+                "shared_network": "vpn",
+            },
+        ]
+        monitors = [
+            {"name": "public", "target_host": "demo.invalid", "target_port": 443},
+            {"name": "internal", "target_host": "DEMO.INTERNAL."},
+            {"name": "alias", "target_host": "alt.internal"},
+            {"name": "declared", "target_host": "192.0.2.10"},
+            {
+                "name": "shared",
+                "target_host": "192.0.2.11",
+                "target_port": 8080,
+                "secret": "never-export",
+            },
+            {"name": "unrelated", "target_host": "demo.invalid.example"},
+            {"name": "proxy", "target_host": "192.0.2.44"},
+        ]
+        tools = InventoryTools(lambda: {}, lambda: {"items": services})
+
+        def saved(adapter, _path):
+            return {
+                "available": True,
+                "fresh": True,
+                "items": monitors if adapter == "kuma" else [],
+            }
+
+        with patch("mcp_server.saved_integration", side_effect=saved):
+            ingress = tools.get_ingress_evidence("demo.invalid")
+            coverage = tools.get_monitoring_coverage(project_name="core")
+        matched = {item["name"]: item for item in ingress["layers"]["kuma"]["items"]}
+        self.assertEqual(
+            set(matched), {"public", "internal", "alias", "declared", "shared"}
+        )
+        self.assertIn("ingress_hostname", matched["public"]["match_basis"])
+        self.assertIn("service_hostname", matched["internal"]["match_basis"])
+        self.assertIn("declared_address", matched["declared"]["match_basis"])
+        self.assertTrue(matched["shared"]["shared_or_ambiguous_address"])
+        self.assertTrue(matched["shared"]["target_port_declared"])
+        self.assertEqual(coverage["items"][0]["matching_monitor_count"], 5)
+        self.assertEqual(len(coverage["items"][0]["monitor_matches"]), 5)
+        self.assertNotIn("never-export", str(ingress))
+
+
 class CrossSourceTests(unittest.TestCase):
     def test_exact_matches_and_source_metadata(self):
         tools = InventoryTools(
