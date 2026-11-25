@@ -10,7 +10,11 @@ VIEWS = {
         "list": ("Docker services", "list_docker_services", "query"),
         "show": ("Exact service", "get_docker_service", "identifier"),
         "drift": ("Compose review findings", "get_compose_drift", ""),
-        "dependencies": ("Declared dependencies", "get_service_dependencies", "identifier"),
+        "dependencies": (
+            "Declared dependencies",
+            "get_service_dependencies",
+            "identifier",
+        ),
         "ingress": ("Ingress evidence", "get_ingress_path", "hostname"),
     },
     "topology": {
@@ -30,7 +34,12 @@ VIEWS = {
         "notifications": ("Notification evidence", "get_notification_status", ""),
     },
 }
-UNPAGED = {"get_yggflare_health", "get_job_status", "get_backup_status", "get_notification_status"}
+UNPAGED = {
+    "get_yggflare_health",
+    "get_job_status",
+    "get_backup_status",
+    "get_notification_status",
+}
 REQUIRED = {"identifier", "hostname"}
 CLI_VIEWS = {
     **{("services", name): ("services", name) for name in VIEWS["services"]},
@@ -83,12 +92,18 @@ def display(value):
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=True, sort_keys=True)
     # Escape terminal control characters as well as embedded newlines.
-    return "".join(char if char.isprintable() else repr(char)[1:-1] for char in str(value))
+    return "".join(
+        char if char.isprintable() else repr(char)[1:-1] for char in str(value)
+    )
 
 
 def sections(result):
     """Separate context from rows, including nested ingress layer evidence."""
-    context = {key: val for key, val in result.items() if key not in {"items", "jobs", "layers"}}
+    context = {
+        key: val
+        for key, val in result.items()
+        if key not in {"items", "jobs", "layers"}
+    }
     groups = []
     for key in ("items", "jobs"):
         if isinstance(result.get(key), list):
@@ -108,7 +123,10 @@ def cli_text(result):
         if not rows:
             lines.append("  No observations in this page")
         for row in rows:
-            lines.append("  " + " | ".join(f"{key}={display(value)}" for key, value in row.items()))
+            lines.append(
+                "  "
+                + " | ".join(f"{key}={display(value)}" for key, value in row.items())
+            )
     return "\n".join(lines)
 
 
@@ -124,39 +142,70 @@ def render(area, tools, table, params):
         args = {"view": target, **extra}
         return f'<a href="/{area}?{escape(urlencode(args), quote=True)}">{escape(label)}</a>'
 
-    nav = '<div class="toolbar">' + " · ".join(
-        link(key, item[0]) for key, item in views.items()
-    ) + "</div>"
+    nav = (
+        '<div class="toolbar">'
+        + " · ".join(link(key, item[0]) for key, item in views.items())
+        + "</div>"
+    )
     if view in {"show", "dependencies", "ingress"} and not value:
-        return nav + '<p>Choose an exact service or alias from the service list.</p>'
+        return nav + "<p>Choose an exact service or alias from the service list.</p>"
     result = query(tools, area, view, value, offset, project)
     context, groups = sections(result)
     content = nav + f"<h2>{escape(views[view][0])}</h2>"
     content += '<div class="toolbar"><input id="filter" type="search" aria-label="Filter this page" placeholder="Filter this page…"></div>'
-    content += '<div class="card">' + table(["Evidence", "Value"], [[key, display(val)] for key, val in context.items()]) + "</div>"
+    content += (
+        '<div class="card">'
+        + table(
+            ["Evidence", "Value"], [[key, display(val)] for key, val in context.items()]
+        )
+        + "</div>"
+    )
     for title, rows in groups:
         content += f"<h2>{escape(title)}</h2>"
         if not rows:
             content += '<p class="muted">No observations in this page.</p>'
             continue
         columns = list(dict.fromkeys(key for row in rows for key in row))
-        content += table(columns, [[display(row.get(key)) for key in columns] for row in rows])
+        content += table(
+            columns, [[display(row.get(key)) for key in columns] for row in rows]
+        )
     if area == "services" and view == "list":
         links = []
         for row in result.get("items", []):
             identifier = row.get("container_name")
             if identifier:
                 options = {"q": identifier, "project": row.get("project") or ""}
-                links.append(link("show", identifier, **options) + " · " + link("dependencies", "Dependencies", **options))
+                links.append(
+                    link("show", identifier, **options)
+                    + " · "
+                    + link("dependencies", "Dependencies", **options)
+                )
             for alias in row.get("aliases", []):
                 links.append(link("ingress", "Ingress: " + alias, q=alias))
         if links:
-            content += '<h2>Investigate a service</h2><div class="card">' + "<p>" + "</p><p>".join(links) + "</p></div>"
+            content += (
+                '<h2>Investigate a service</h2><div class="card">'
+                + "<p>"
+                + "</p><p>".join(links)
+                + "</p></div>"
+            )
     pages = []
     if offset:
-        pages.append(link(view, "Previous (restart if results changed)", q=value, project=project))
+        pages.append(
+            link(
+                view, "Previous (restart if results changed)", q=value, project=project
+            )
+        )
     if result.get("next_offset") is not None:
-        pages.append(link(view, "Next page", q=value, project=project, offset=result["next_offset"]))
+        pages.append(
+            link(
+                view,
+                "Next page",
+                q=value,
+                project=project,
+                offset=result["next_offset"],
+            )
+        )
     if pages:
         content += '<div class="toolbar">' + " · ".join(pages) + "</div>"
     return content

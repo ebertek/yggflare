@@ -19,7 +19,8 @@ from inventory_catalog import view as catalog_view
 from inventory_view import decorate, diff_view
 from job_status import health, read_jobs
 from metrics import render as render_metrics
-from operator_views import VIEWS, render as render_operator
+from operator_views import VIEWS
+from operator_views import render as render_operator
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
 
 

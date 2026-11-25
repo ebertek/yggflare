@@ -23,7 +23,16 @@ def main(argv=None):
         "--version", action="version", version=controller.version_string()
     )
     parser.add_argument(
-        "component", choices=("cloudflare", "doctor", "backup", "network", "mcp", "services", "system")
+        "component",
+        choices=(
+            "cloudflare",
+            "doctor",
+            "backup",
+            "network",
+            "mcp",
+            "services",
+            "system",
+        ),
     )
     parser.add_argument(
         "operation",
@@ -77,10 +86,20 @@ def main(argv=None):
         from mcp_server import InventoryTools
 
         try:
-            result = query(InventoryTools(), *selection, value=args.argument or "", offset=args.offset, project=args.project)
+            result = query(
+                InventoryTools(),
+                *selection,
+                value=args.argument or "",
+                offset=args.offset,
+                project=args.project,
+            )
         except ValueError as error:
             parser.error(str(error))
-        print(json.dumps(result, indent=2, sort_keys=True) if args.json else cli_text(result))
+        print(
+            json.dumps(result, indent=2, sort_keys=True)
+            if args.json
+            else cli_text(result)
+        )
         return 0
     if args.offset or args.project:
         parser.error("--offset and --project require a read-only operator view")
@@ -162,7 +181,15 @@ def main(argv=None):
             parser.error(f"{args.operation} requires exactly one hostname")
     elif args.argument is not None or args.approval is not None:
         parser.error("unexpected positional argument")
-    if args.operation not in {"claim", "orphan-plan", "orphan-apply", "audit", "plan", "apply", "preflight"}:
+    if args.operation not in {
+        "claim",
+        "orphan-plan",
+        "orphan-apply",
+        "audit",
+        "plan",
+        "apply",
+        "preflight",
+    }:
         parser.error("Unsupported Cloudflare operation")
     if args.operation in ("claim", "orphan-plan", "orphan-apply"):
         if args.max_operations != 0:
