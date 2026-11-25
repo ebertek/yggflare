@@ -373,15 +373,55 @@ origins only. HTTPS verifies certificates; LAN HTTP requires an explicit
 opt-in (credentials would traverse the LAN in plaintext). Prefer a restricted
 TLS endpoint and do not use an administrator credential.
 
-| Adapter | Origin setting | Private credential files (mode 0600) |
+| Adapter | Origin setting | Docker secret file setting and fixed path |
 |---|---|---|
-| Komodo | `YGGFLARE_KOMODO_API_URL` | `/config/komodo-api-key.txt`, `/config/komodo-api-secret.txt` |
-| Kuma | `YGGFLARE_KUMA_API_URL` | `/config/kuma-api-key.txt` |
+| Komodo | `YGGFLARE_KOMODO_API_URL` | `YGGFLARE_KOMODO_API_KEY_FILE=/run/secrets/komodo_api_key` |
+| Komodo | | `YGGFLARE_KOMODO_API_SECRET_FILE=/run/secrets/komodo_api_secret` |
+| Kuma | `YGGFLARE_KUMA_API_URL` | `YGGFLARE_KUMA_API_KEY_FILE=/run/secrets/kuma_api_key` |
 
 Create a Komodo service user with read permission only on intended servers,
 stacks and deployments. Use a dedicated Kuma Prometheus API key. Never
-commit either credential or pass it on the command line. Credential files
-must be regular, non-symlink files inaccessible to group/other users.
+commit credentials to this repository or pass values on the command line.
+Prefer Docker Compose secrets mounted at the fixed paths above. The
+explicit file settings accept only their corresponding paths. Docker
+file-backed secrets are read-only bind mounts; Git/Compose may expose
+source mode 0644 rather than 0600. Yggflare accepts these modes only for
+explicit Docker secrets on read-only mounts, and rejects nonregular files,
+symlinks, group/world writable files, and invalid or oversized contents.
+
+For the standalone Compose example, add a local override granting the
+desired secrets, for example:
+
+```yaml
+services:
+  yggflare:
+    environment:
+      YGGFLARE_KOMODO_API_KEY_FILE: /run/secrets/komodo_api_key
+      YGGFLARE_KOMODO_API_SECRET_FILE: /run/secrets/komodo_api_secret
+      YGGFLARE_KUMA_API_KEY_FILE: /run/secrets/kuma_api_key
+    secrets:
+      - komodo_api_key
+      - komodo_api_secret
+      - kuma_api_key
+secrets:
+  komodo_api_key:
+    file: ./private/komodo_api_key
+  komodo_api_secret:
+    file: ./private/komodo_api_secret
+  kuma_api_key:
+    file: ./private/kuma_api_key
+```
+
+Keep the source files private on the host. Compose file-backed secrets
+are not encrypted at rest and do not enforce uid/gid/mode overrides.
+Recreate the container after updating a file-backed secret, especially
+when the host file was replaced atomically.
+
+If a file setting is unset, the previous private `/config/komodo-api-key.txt`,
+`/config/komodo-api-secret.txt` or `/config/kuma-api-key.txt` file remains
+supported and must be inaccessible to group/other users (e.g. mode 0600).
+An explicitly configured missing or invalid Docker secret never falls
+back to a config file.
 The only Komodo calls are documented read RPCs ListServers, ListStacks and
 ListDeployments; Kuma uses GET /metrics. No redirects, proxy environment,
 raw configuration, URLs with credentials, logs or mutation API calls.

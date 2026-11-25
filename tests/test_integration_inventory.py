@@ -1,9 +1,11 @@
 """Offline integration contracts and confidentiality tests."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import integration_inventory as adapter
@@ -128,6 +130,91 @@ class IntegrationTests(unittest.TestCase):
                     {**ENV, "YGGFLARE_KUMA_API_URL": "http://192.168.1.22:3001"},
                 )["available"]
             )
+
+    def test_compose_secrets_read_only_mounts_and_no_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root / "secrets"
+            docker.mkdir()
+            config = root / "config"
+            config.mkdir()
+            fallback = config / "kuma-api-key.txt"
+            fallback.write_text("legacy-key")
+            fallback.chmod(0o600)
+            mounted = docker / "kuma_api_key"
+            mounted.write_text("mounted-key\n")
+            mounted.chmod(0o644)
+            env = {**ENV, "YGGFLARE_KUMA_API_KEY_FILE": "/run/secrets/kuma_api_key"}
+            with (
+                patch.object(adapter, "DOCKER_SECRETS", docker),
+                patch.object(
+                    adapter.os,
+                    "fstatvfs",
+                    return_value=SimpleNamespace(f_flag=os.ST_RDONLY),
+                ) as mount,
+            ):
+                self.assertEqual(
+                    adapter.credentials("kuma", config, env=env), ["mounted-key"]
+                )
+                mount.return_value = SimpleNamespace(f_flag=0)
+                with self.assertRaises(ValueError):
+                    adapter.credentials("kuma", config, env=env)
+                mount.return_value = SimpleNamespace(f_flag=os.ST_RDONLY)
+                mounted.chmod(0o666)
+                with self.assertRaises(ValueError):
+                    adapter.credentials("kuma", config, env=env)
+                mounted.unlink()
+                with self.assertRaises(OSError):
+                    adapter.credentials("kuma", config, env=env)
+                mounted.symlink_to(fallback)
+                with self.assertRaises(OSError):
+                    adapter.credentials("kuma", config, env=env)
+                with self.assertRaises(ValueError):
+                    adapter.credentials(
+                        "kuma",
+                        config,
+                        env={**env, "YGGFLARE_KUMA_API_KEY_FILE": "/etc/passwd"},
+                    )
+                self.assertEqual(
+                    adapter.credentials("kuma", config, env={}), ["legacy-key"]
+                )
+
+    def test_compose_komodo_credentials_passed_only_to_collector(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root / "secrets"
+            docker.mkdir()
+            for filename in ("komodo_api_key", "komodo_api_secret"):
+                path = docker / filename
+                path.write_text("test-" + filename)
+                path.chmod(0o444)
+            env = {
+                **ENV,
+                "YGGFLARE_KOMODO_API_KEY_FILE": "/run/secrets/komodo_api_key",
+                "YGGFLARE_KOMODO_API_SECRET_FILE": "/run/secrets/komodo_api_secret",
+            }
+            with (
+                patch.object(adapter, "DOCKER_SECRETS", docker),
+                patch.object(
+                    adapter.os,
+                    "fstatvfs",
+                    return_value=SimpleNamespace(f_flag=os.ST_RDONLY),
+                ),
+                patch.object(adapter, "fetch") as unused,
+            ):
+                seen = []
+
+                def request(adapter_name, origin, credentials, kind):
+                    seen.append((adapter_name, kind, credentials))
+                    return []
+
+                result = adapter.refresh("komodo", root, env, root, request)
+                self.assertEqual(len(seen), 3)
+                self.assertEqual(
+                    seen[0][2], ["test-komodo_api_key", "test-komodo_api_secret"]
+                )
+                self.assertNotIn("test-komodo_api", json.dumps(result))
+                unused.assert_not_called()
 
     def test_coverage_caveat_and_unknown(self):
         tools = InventoryTools(
