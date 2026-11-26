@@ -45,5 +45,6 @@ Images: `ghcr.io/ebertek/yggflare` with `main`, `sha-FULL_COMMIT_SHA` or
 | [MCP](docs/mcp.md) | Tools, transports and permissions |
 | [Operations](docs/operations.md) | Scheduling, backups and diagnostics |
 | [Development](docs/development.md) | Layout, tests and releases |
+| [v1.4.0 release candidate](docs/release-v1.4.0.md) | Consolidated changes and release acceptance |
 
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).

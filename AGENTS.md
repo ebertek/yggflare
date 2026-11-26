@@ -93,11 +93,10 @@ docker exec yggflare yggflare network discord-test
 
 ## Current roadmap (verify on GitHub)
 
-- **v1.0.0** was published November 2026 following live verification of Cloudflare lifecycle, 14/14 doctor checks, inventory scan, Discord delivery and isolated archive restore-test.
-- Orphan cleanup (PR **#24**), read-only inventory UI (PR **#25**) and standardized environment naming without legacy aliases (PR **#27**) were merged. Companion `ebertek-compose` PRs **#229** and **#232** were also merged. Source merge is not proof that the latest runtime deployment or a specific endpoint has been verified.
-- Environment configuration has **two namespaces only**: `YGGFLARE_*` for Yggflare app features and Cloudflare behavior, and `CLOUDFLARE_*` for connection/account/zone/tunnel settings. Old `YGG_*` and `CF_*` names are unsupported. The companion Compose migration pins a matching image digest to prevent mixed-version deployments.
-- Deployment source enables `YGGFLARE_WEB_ENABLED=true`, `YGGFLARE_WEB_BIND=0.0.0.0`, and `YGGFLARE_WEB_PORT=8787`. Docker `network_mode: host` uses Traefik's explicit backend `http://10.4.21.1:8787`; `Scripts/startup/30-macvlan-host.sh` in `ebertek-compose` creates the Pleiades host-side macvlan shim `macvlan1-host` at `10.4.21.1/32`, enabling Traefik on `10.4.21.44` to reach the host. Cloudflare Access protects `yggflare.ebi.nu` but **does not protect direct LAN TCP/8787**: validate host firewall restrictions separately.
-- Follow-up enhancements should prioritize correctness and security (state validation, preservation of the LAN /27 organization, graceful handling of malformed or absent observations, and authenticated exposure), not additional web-server complexity.
+- Track implementation in [issue #65](https://github.com/ebertek/yggflare/issues/65) and the [v1.4.0 release candidate](docs/release-v1.4.0.md). PRs #76–89 are merged as of November 26, 2026. Latest published release at this review is v1.3.0; v1.4.0 is proposed, not yet published.
+- The assurance, discovery, integration, interface, security and resilience cycle has landed in source. Keep production verification and final tag/image publication separate from source checks. Technitium and UniFi are deferred by the owner.
+- Deployment-specific settings may change independently. Check the actual deployment source and current runtime rather than relying on historical host addresses, binds or image pins. Cloudflare Access on a public hostname does not protect direct LAN access to the underlying listener.
+- Prioritize correctness, evidence quality, bounded inputs and security. Do not introduce new collectors or mutation paths merely to fill a roadmap item.
 
 ## Metrics and monitoring
 
