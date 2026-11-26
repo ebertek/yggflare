@@ -26,6 +26,10 @@ MAX_ROWS = 2000
 MAX_RESPONSE = 1024 * 1024
 CA_FILE = Path("/config/unifi-ca.pem")
 LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+RFC1918 = tuple(
+    ipaddress.IPv4Network(cidr)
+    for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
 
 
 def settings(env):
@@ -169,17 +173,27 @@ def ipv4(value):
         return None
 
 
+def is_rfc1918(address):
+    """RFC 1918 only, not the broader ipaddress.is_private classification."""
+    return isinstance(address, ipaddress.IPv4Address) and any(
+        address in block for block in RFC1918
+    )
+
+
 def plan(records, policies, zone, lan):
     """Report candidates and conflicts; never claim ownership or authorize writes."""
     if len(records) > MAX_ROWS or len(policies) > MAX_ROWS:
         raise ValueError("DNS inventory exceeds preflight limit")
     groups, aliases, local = defaultdict(list), defaultdict(set), defaultdict(list)
     local_ips, forwarders = defaultdict(set), set()
+    excluded_a_records = 0
     for record in records:
         if not isinstance(record, dict):
             raise ValueError("Invalid Cloudflare record")
         name = hostname(record.get("name"))
         if not name or not (name == zone or name.endswith("." + zone)):
+            if record.get("type") == "A":
+                excluded_a_records += 1
             continue
         if record.get("type") == "A":
             groups[name].append(record)
@@ -218,22 +232,30 @@ def plan(records, policies, zone, lan):
         a_records = [r for r in entries if r.get("type") == "A"]
         if not a_records:
             continue
-        address = ipv4(a_records[0].get("content"))
+        addresses = sorted(
+            {
+                parsed
+                for r in a_records
+                if (parsed := ipv4(r.get("content"))) is not None
+            }
+        )
+        address = addresses[0] if len(a_records) == 1 and addresses else None
         row = {
             "hostname": name,
             "address": str(address) if address is not None else None,
+            "addresses": [str(value) for value in addresses],
+            "rfc1918": is_rfc1918(address) if address is not None else None,
+            "in_configured_lan": address in lan if address is not None else None,
             "status": "candidate",
         }
         if len(a_records) != 1:
             row["status"] = "ambiguous_forward"
         elif a_records[0].get("proxied") is not False:
             row["status"] = "proxied_or_unknown"
-        elif (
-            address is None
-            or address not in lan
-            or address in (lan.network_address, lan.broadcast_address)
-        ):
+        elif not is_rfc1918(address):
             row["status"] = "out_of_scope"
+        elif address in (lan.network_address, lan.broadcast_address):
+            row["status"] = "configured_lan_boundary"
         elif len(name) > 127:
             row["status"] = "unsupported_name"
         elif len(entries) != 1:
@@ -256,11 +278,16 @@ def plan(records, policies, zone, lan):
         rows.append(row)
     return {
         "mode": "read_only_preflight",
+        "source_zone": zone,
+        "configured_lan": str(lan),
+        "address_scope": "rfc1918",
+        "excluded_a_records": excluded_a_records,
         "counts": dict(sorted(Counter(row["status"] for row in rows).items())),
         "rows": rows,
         "caveat": (
             "Configuration comparison only; PTR answers, ownership and "
-            "complete upstream visibility are not verified."
+            "complete upstream visibility are not verified. Private addresses "
+            "outside the configured LAN require explicit scope review before writes."
         ),
     }
 
@@ -297,7 +324,14 @@ def main():
             print("UniFi DNS — READ ONLY")
             print(json.dumps(result["counts"], sort_keys=True))
             for row in result["rows"]:
-                print(f"{row['status']}: {row['hostname']} {row['address'] or '-'}")
+                addresses = ", ".join(row["addresses"]) or "-"
+                outside = (
+                    " [outside configured LAN]"
+                    if row["rfc1918"] and not row["in_configured_lan"]
+                    else ""
+                )
+                print(f"{row['status']}: {row['hostname']} {addresses}{outside}")
+            print(f"Excluded A records: {result['excluded_a_records']}")
             print(result["caveat"])
         return 0
     except (
