@@ -220,9 +220,7 @@ def run_audit(
     aliases = (
         load_inventory_aliases(root / INVENTORY) if static_hosts is not None else set()
     )
-    retained = (
-        load_retained_dns(root / RETAINED) if static_hosts is not None else []
-    )
+    retained = load_retained_dns(root / RETAINED) if static_hosts is not None else []
     declared = declared_dns_names(aliases, compose_services, docker_addresses or {})
     report["unaccounted_ygg_dns"] = audit_unaccounted_dns(
         None if skip_docker else internal_dns,
