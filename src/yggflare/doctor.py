@@ -16,6 +16,7 @@ from pathlib import Path
 import controller
 from backup import verify_archive
 from discord_webhook import read_webhook
+from integration_inventory import credentials, saved, settings
 
 DAY = dt.timedelta(days=1)
 
@@ -129,6 +130,23 @@ def checks():
         age_ok(data / "heartbeat", 5 / 60),
         "scheduler heartbeat older than five minutes",
     )
+    if os.environ.get("YGGFLARE_UNIFI_COLLECT_ENABLED") == "true":
+        try:
+            unifi_configured = settings("unifi", os.environ) is not None
+            if unifi_configured:
+                credentials("unifi", config)
+        except (ValueError, OSError):
+            unifi_configured = False
+        add(
+            "UniFi configuration",
+            unifi_configured,
+            "check HTTPS LAN origin, site and mounted key",
+        )
+        add(
+            "UniFi observations",
+            saved("unifi", data)["fresh"],
+            "no fresh verified UniFi snapshot",
+        )
     return results
 
 

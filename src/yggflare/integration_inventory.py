@@ -1,4 +1,4 @@
-"""Optional read-only Komodo and Kuma collectors. No generic request interface."""
+"""Optional read-only Komodo, Kuma and UniFi collectors. No generic request interface."""
 
 import base64
 import fcntl
@@ -14,12 +14,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import unifi_api
+import unifi_inventory
 from docker_inventory import image_reference
 from prometheus_client.parser import text_string_to_metric_families
 from stack_revision import enrich_stacks
 from traefik_inventory import read, snapshot_rows, source_id, timestamp, write
 
-ADAPTERS = ("komodo", "kuma")
+ADAPTER_KINDS = {
+    "komodo": ("servers", "stacks", "stack_services", "deployments"),
+    "kuma": ("monitors",),
+    "unifi": unifi_inventory.KINDS,
+}
+ADAPTERS = tuple(ADAPTER_KINDS)
 INTERVAL = 300
 MAX_BYTES = 4 * 1024 * 1024
 MAX_ROWS = 4000
@@ -89,7 +96,15 @@ FIELDS = (
 )
 
 
+def scheduled(adapter, env):
+    return bool(env.get("YGGFLARE_" + adapter.upper() + "_API_URL")) and (
+        adapter != "unifi" or env.get("YGGFLARE_UNIFI_COLLECT_ENABLED") == "true"
+    )
+
+
 def settings(adapter, env):
+    if adapter == "unifi":
+        return unifi_api.settings(env) if env.get("YGGFLARE_UNIFI_API_URL") else None
     if adapter not in ADAPTERS:
         raise ValueError("Unknown integration")
     prefix = "YGGFLARE_" + adapter.upper()
@@ -420,7 +435,7 @@ def reject_credential_echo(adapter, rows, secrets):
                 raise ValueError("Integration projection contains a credential echo")
 
 
-def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
+def refresh(adapter, data, env, secret_dir=Path("/config"), request=None):
     origin = settings(adapter, env)
     if origin is None:
         raise ValueError("Integration is not configured")
@@ -434,26 +449,34 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
         }
         write(data / (adapter + "-view-status.json"), status)
         secret = credentials(adapter, secret_dir, env=env)
-        if adapter == "komodo":
+        if adapter == "unifi":
+            rows = unifi_inventory.collect(
+                origin, secret[0], request or unifi_api.get_page
+            )
+        elif adapter == "komodo":
+            request = request or fetch
             rows = []
             for kind in KOMODO_READS:
                 rows.extend(komodo_rows(kind, request(adapter, origin, secret, kind)))
             enrich_stacks(rows)
         else:
-            rows = kuma_rows(request(adapter, origin, secret, "monitors"))
-        if len(rows) > MAX_ROWS:
+            rows = kuma_rows((request or fetch)(adapter, origin, secret, "monitors"))
+        if len(rows) > (unifi_inventory.MAX_ITEMS if adapter == "unifi" else MAX_ROWS):
             raise ValueError("Integration projection exceeds limit")
         reject_credential_echo(adapter, rows, secret)
-        rows.sort(
-            key=lambda row: (
-                row["kind"],
-                row.get("server") or "",
-                row.get("stack") or "",
-                row["name"],
-                row.get("target_host") or "",
-                row.get("target_port") or 0,
+        if adapter == "unifi":
+            rows.sort(key=lambda row: (row["kind"], row["name"], json.dumps(row)))
+        else:
+            rows.sort(
+                key=lambda row: (
+                    row["kind"],
+                    row.get("server") or "",
+                    row.get("stack") or "",
+                    row["name"],
+                    row.get("target_host") or "",
+                    row.get("target_port") or 0,
+                )
             )
-        )
         view = {
             "version": 1,
             "source_id": source_id(origin),
@@ -469,6 +492,8 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
 def valid_rows(adapter, rows):
     if rows is None:
         return False
+    if adapter == "unifi":
+        return all(unifi_inventory.valid_row(row) for row in rows)
     for row in rows:
         kind = row.get("kind")
         if not safe_name(row.get("name")):
@@ -509,8 +534,14 @@ def saved(adapter, data, env=None):
     view = read(data / (adapter + "-view.json"))
     status = read(data / (adapter + "-view-status.json"))
     match = bool(origin and view.get("source_id") == source_id(origin))
-    rows = snapshot_rows(view, MAX_ROWS)
-    available = match and valid_rows(adapter, rows)
+    rows = snapshot_rows(
+        view, unifi_inventory.MAX_ITEMS if adapter == "unifi" else MAX_ROWS
+    )
+    available = (
+        match
+        and (adapter != "unifi" or "item_count" in view)
+        and valid_rows(adapter, rows)
+    )
     age = None
     if available:
         try:
@@ -544,11 +575,11 @@ def main():
     signal.alarm(90)
     try:
         if len(sys.argv) != 2 or sys.argv[1] not in ADAPTERS:
-            raise ValueError("Choose komodo or kuma")
+            raise ValueError("Unknown integration")
         view = refresh(sys.argv[1], Path("/data"), os.environ)
         print(f"Integration snapshot refreshed: {len(view['items'])} observations.")
         return 0
-    except (OSError, ValueError, TypeError, http.client.HTTPException):
+    except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
         print(
             "Integration refresh unavailable; previous complete snapshot retained.",
             file=sys.stderr,

@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from backup import create_snapshot, prune_snapshots
-from integration_inventory import ADAPTERS
+from integration_inventory import ADAPTERS, scheduled
 from integration_inventory import INTERVAL as INTEGRATION_INTERVAL
 from job_status import track
 from mcp_http import HTTPListener
@@ -404,7 +404,7 @@ def run_scheduler(listener=None):
             next_traefik = time.monotonic() + TRAEFIK_INTERVAL
         for adapter in ADAPTERS:
             if (
-                os.environ.get("YGGFLARE_" + adapter.upper() + "_API_URL")
+                scheduled(adapter, os.environ)
                 and time.monotonic() >= next_integration[adapter]
             ):
                 try:

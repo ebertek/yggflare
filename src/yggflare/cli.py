@@ -79,6 +79,8 @@ def main(argv=None):
             "deployments",
             "monitors",
             "devices",
+            "clients",
+            "networks",
             "coverage",
             "results",
             "refresh",
@@ -138,7 +140,7 @@ def main(argv=None):
     ):
         parser.error("Pagination and project options require a read-only operator view")
     if (
-        args.component in {"traefik", "komodo", "kuma", "probes"}
+        args.component in {"traefik", "komodo", "kuma", "probes", "unifi"}
         and args.operation == "refresh"
     ):
         if (

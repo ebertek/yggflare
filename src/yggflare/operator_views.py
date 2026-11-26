@@ -39,6 +39,13 @@ VIEWS = {
         "services": ("Traefik backend services", "list_traefik_services", "query"),
         "middlewares": ("Traefik middlewares", "list_traefik_middlewares", "query"),
     },
+    "unifi": {
+        "status": ("UniFi collection status", "get_unifi_status", ""),
+        "devices": ("Adopted devices", "list_unifi_devices", "query"),
+        "clients": ("Connected clients", "list_unifi_clients", "query"),
+        "networks": ("Networks and VLANs", "list_unifi_networks", "query"),
+        "dns": ("DNS policies", "list_unifi_dns_policies", "query"),
+    },
     "komodo": {
         "status": ("Komodo collection status", "get_komodo_status", ""),
         "servers": ("Komodo servers", "list_komodo_servers", "query"),
@@ -90,6 +97,7 @@ UNPAGED = {
     "get_backup_status",
     "get_notification_status",
     "get_traefik_status",
+    "get_unifi_status",
     "get_komodo_status",
     "get_kuma_status",
     "get_probe_status",
@@ -113,7 +121,7 @@ CLI_VIEWS = {
     ("network", "transitions"): ("findings", "transitions"),
     **{
         (area, name): (area, name)
-        for area in ("traefik", "komodo", "kuma", "probes")
+        for area in ("traefik", "komodo", "kuma", "probes", "unifi")
         for name in VIEWS[area]
     },
 }

@@ -87,6 +87,11 @@ in the repository.
 | `list_traefik_routes` | HTTP/TCP/UDP router identities and literal host mentions |
 | `list_traefik_services` | Sanitized backend origins and reported status |
 | `list_traefik_middlewares` | Middleware identity, type and status only |
+| `get_unifi_status` | Saved UniFi collection state and visible resource counts |
+| `list_unifi_devices` | Adopted device observations |
+| `list_unifi_clients` | Clients reported connected |
+| `list_unifi_networks` | Network and VLAN declarations |
+| `list_unifi_dns_policies` | Saved DNS policy configuration |
 | `get_komodo_status` | Saved Komodo collection state |
 | `list_komodo_servers` | Reported server identities and states |
 | `list_komodo_stacks` | Stack ownership, state and deployed/latest commit hashes |
@@ -160,12 +165,12 @@ configuration drift or security assessment.
 ### Resources, prompts and tool groups
 
 Both transports expose fixed JSON resources (`yggflare://schema`, inventory,
-operations, jobs, discovery, traefik, komodo, monitoring, probes) and six
+operations, jobs, discovery, traefik, komodo, monitoring, probes, unifi) and six
 review prompts where their required tools are enabled. No arbitrary paths,
 live collectors or actions are exposed. Clients may still use tools directly.
 
 `YGGFLARE_MCP_TOOL_GROUPS` defaults to `all`. Set a comma-separated subset
-of `inventory,cloudflare,operations,traefik,komodo,kuma,probes` to restrict
+of `inventory,cloudflare,operations,traefik,komodo,kuma,probes,unifi` to restrict
 registered tools, resources and prompts for that server process. Cross-source
 queries require all relevant groups. Unknown groups fail startup. This is
 a server-wide exposure control, not per-user authorization or isolation
