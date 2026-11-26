@@ -60,3 +60,7 @@ docker build -t yggflare:dev .
 The environment values above reproduce the CI fixtures; they are not production configuration. Tests are offline and use temporary files and mocked APIs. Never point development tests at live credentials or inventory state. Use the separate suites as CI does to preserve their isolation.
 
 See [AGENTS.md](../AGENTS.md) for mandatory safety rules. The historical `scripts/import-legacy-code.sh` stages a separate ignored directory for manual review and does not overwrite maintained source.
+
+## Release process
+
+See the [v1.4.0 release candidate](release-v1.4.0.md) for the consolidated roadmap and acceptance checklist. The publish workflow repeats lint and all unit-test suites before building and pushing the image. A stable tag at current main HEAD also updates `:main`; a historical stable tag does not. Check the actual workflow and image revision after publication, and never move an existing release tag. Source merge, image publication and deployment acceptance are distinct events.
