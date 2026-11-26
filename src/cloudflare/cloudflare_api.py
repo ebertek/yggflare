@@ -133,6 +133,10 @@ class CloudflareClient:
         """List every record in a Cloudflare DNS zone."""
         return self.pages(f"/zones/{checked_id(zone)}/dns_records")
 
+    def dns_usage(self, zone):
+        """Read the actual per-zone DNS quota and usage (all record types)."""
+        return self.get(f"/zones/{checked_id(zone)}/dns_records/usage").get("result")
+
     def zone_id(self, name, account):
         """Resolve an exact zone name under the configured Cloudflare account."""
         zones = self.pages("/zones", {"name": name})

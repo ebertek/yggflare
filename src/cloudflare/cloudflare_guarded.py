@@ -12,6 +12,8 @@ import json
 
 from cloudflare_api import checked_id
 from cloudflare_desired import HOST
+from cloudflare_dns_quota import INTERNAL_CREATES, capacity_sufficient, quota_status
+from cloudflare_docker_dns import check_docker_target
 from cloudflare_live_diff import (
     DOCKER_NETWORK,
     ordered_policy_ids,
@@ -23,6 +25,7 @@ from cloudflare_static_dns import (
     validate_additional_ipv4,
 )
 from cloudflare_write_api import policy_links, validate_tunnel_config
+from yggflare_config import domain
 
 SUPPORTED = {
     "create_access_app",
@@ -30,6 +33,7 @@ SUPPORTED = {
     "add_tunnel_ingress",
     "create_dns_cname",
     "update_docker_dns_a",
+    "create_docker_dns_a",
     "create_static_dns_a",
     "update_static_dns_a",
 }
@@ -39,6 +43,7 @@ ORDER = {
     "add_tunnel_ingress": 1,
     "create_dns_cname": 2,
     "update_docker_dns_a": 3,
+    "create_docker_dns_a": 3,
     "create_static_dns_a": 4,
     "update_static_dns_a": 4,
 }
@@ -79,8 +84,25 @@ def check_plan(report, maximum=10):
     entries = [(a["kind"], a["hostname"]) for a in actions]
     if len(entries) != len(set(entries)):
         raise UnsafePlan("The plan contains duplicate operations")
+    count = sum(action["kind"] in INTERNAL_CREATES for action in actions)
+    quota = report.get("internal_dns_quota")
+    needs_quota = quota is not None or any(
+        action["kind"] == "create_docker_dns_a" for action in actions
+    )
+    if needs_quota and not capacity_sufficient(quota, count):
+        raise UnsafePlan("Insufficient or unknown internal DNS quota after reserve")
     for entry in actions:
-        if entry["kind"] in {"create_static_dns_a", "update_static_dns_a"}:
+        if entry["kind"] == "create_docker_dns_a":
+            try:
+                check_docker_target(
+                    entry["hostname"],
+                    entry["content"],
+                    domain("YGGFLARE_INTERNAL_DOMAIN"),
+                    DOCKER_NETWORK,
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise UnsafePlan("Invalid proposed Docker DNS creation") from error
+        elif entry["kind"] in {"create_static_dns_a", "update_static_dns_a"}:
             try:
                 check_static_target(entry["hostname"], entry["content"])
                 validate_additional_ipv4(
@@ -109,6 +131,7 @@ AUTO_SUPPORTED = {
     "add_tunnel_ingress",
     "create_dns_cname",
     "update_docker_dns_a",
+    "create_docker_dns_a",
     "update_access_policies",
     "create_static_dns_a",
     "update_static_dns_a",
@@ -385,7 +408,13 @@ def apply_static_a(client, zone, action):
 # pylint: disable=too-many-locals,too-many-branches,too-many-statements
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def apply_actions(
-    client, report, context, docker_addresses=None, maximum=10, unattended=False
+    client,
+    report,
+    context,
+    docker_addresses=None,
+    maximum=10,
+    unattended=False,
+    docker_creates=None,
 ):
     """Apply only approved, narrowly scoped changes after live rechecks.
 
@@ -399,6 +428,23 @@ def apply_actions(
             maximum=maximum,
             reusable=client.list_policies(context["account"]),
         )
+    quota = report.get("internal_dns_quota")
+    internal_creates = sum(action["kind"] in INTERNAL_CREATES for action in actions)
+    if quota is not None and internal_creates:
+        if not capacity_sufficient(
+            quota_status(client, context["ygg"], quota["reserve"]), internal_creates
+        ):
+            raise UnsafePlan("Internal DNS quota changed or is unavailable")
+    if any(action["kind"] == "create_docker_dns_a" for action in actions):
+        if docker_creates is None:
+            raise UnsafePlan("Docker creation requires fresh declaration evidence")
+        fresh = docker_creates()
+        if any(
+            action not in fresh
+            for action in actions
+            if action["kind"] == "create_docker_dns_a"
+        ):
+            raise UnsafePlan("Docker DNS creation evidence changed")
     # Preflight all Tunnel shapes before any write. This avoids creating
     # orphan Access apps if a Tunnel replacement would be unsafe.
     if any(action["kind"] == "add_tunnel_ingress" for action in actions):
@@ -494,11 +540,33 @@ def apply_actions(
             ):
                 raise UnsafePlan(f"{hostname}: DNS CNAME verification failed")
 
+        elif kind == "create_docker_dns_a":
+            if action not in docker_creates():
+                raise UnsafePlan(f"{hostname}: Docker DNS creation evidence changed")
+            if not capacity_sufficient(
+                quota_status(client, context["ygg"], quota["reserve"]), 1
+            ):
+                raise UnsafePlan("Internal DNS quota changed or is unavailable")
+            client.create_docker_a(context["ygg"], hostname, action["content"])
+            records = read_static_a_records(client, context["ygg"], hostname)
+            if (
+                len(records) != 1
+                or records[0].get("type") != "A"
+                or records[0].get("proxied") is not False
+                or records[0].get("content") != action["content"]
+            ):
+                raise UnsafePlan(f"{hostname}: Docker DNS creation verification failed")
+
         elif kind in {"create_static_dns_a", "update_static_dns_a"}:
+            if kind == "create_static_dns_a" and quota is not None:
+                if not capacity_sufficient(
+                    quota_status(client, context["ygg"], quota["reserve"]), 1
+                ):
+                    raise UnsafePlan("Internal DNS quota changed or is unavailable")
             apply_static_a(client, context["ygg"], action)
 
         elif kind == "update_docker_dns_a":
-            name = hostname.removesuffix(".ygg.nu")
+            name = hostname.removesuffix("." + domain("YGGFLARE_INTERNAL_DOMAIN"))
             if (
                 docker_addresses is None
                 or docker_addresses().get(name) != action["content"]

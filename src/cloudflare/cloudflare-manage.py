@@ -17,6 +17,7 @@ from pathlib import Path
 
 from cloudflare_api import CloudflareError, checked_id, checked_tunnel_id
 from cloudflare_credentials import api_token
+from cloudflare_dns_quota import print_quota_summary
 from cloudflare_docker_dns import print_docker_dns_summary
 from cloudflare_guarded import (
     UnsafePlan,
@@ -167,6 +168,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
             for finding in report["static_dns"]["findings"]:
                 print(f"  ! STATIC {finding['status']}: {finding['hostname']}")
         print_docker_dns_summary(report)
+        print_quota_summary(report)
         print_unaccounted_summary(report)
         print_summary(report)
         for action in actions:
@@ -190,6 +192,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
         if args.auto:
             print_static_summary(report)
             print_docker_dns_summary(report)
+            print_quota_summary(report)
             print_unaccounted_summary(report)
             print_summary(report)
         if not actions:
@@ -225,6 +228,9 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
             active_report,
             context,
             docker_addresses=LIVE.docker_ipv4,
+            docker_creates=lambda: LIVE.docker_create_candidates(
+                client, root, settings, context["ygg"]
+            ),
             maximum=active_maximum,
             unattended=args.auto,
         )
