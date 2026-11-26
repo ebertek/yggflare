@@ -94,7 +94,7 @@ docker exec yggflare yggflare network discord-test
 ## Current roadmap (verify on GitHub)
 
 - Track implementation in [issue #65](https://github.com/ebertek/yggflare/issues/65) and the [v1.4.0 release candidate](docs/release-v1.4.0.md). PRs #76–89 are merged as of November 26, 2026. Latest published release at this review is v1.3.0; v1.4.0 is proposed, not yet published.
-- The assurance, discovery, integration, interface, security and resilience cycle has landed in source. Keep production verification and final tag/image publication separate from source checks. Technitium and UniFi are deferred by the owner.
+- The assurance, discovery, integration, interface, security and resilience cycle has landed in source. Keep production verification and final tag/image publication separate from source checks. Technitium integration remains deferred. UniFi work is resumed as a separate DNS migration and evidence initiative; keep the preflight GET-only, and require live API/PTR validation before designing guarded writes.
 - Deployment-specific settings may change independently. Check the actual deployment source and current runtime rather than relying on historical host addresses, binds or image pins. Cloudflare Access on a public hostname does not protect direct LAN access to the underlying listener.
 - Prioritize correctness, evidence quality, bounded inputs and security. Do not introduce new collectors or mutation paths merely to fill a roadmap item.
 

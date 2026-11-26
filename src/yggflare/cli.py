@@ -36,6 +36,7 @@ def main(argv=None):
             "komodo",
             "kuma",
             "probes",
+            "unifi",
         ),
     )
     parser.add_argument(
@@ -154,6 +155,13 @@ def main(argv=None):
             command = [sys.executable, "/app/traefik_inventory.py"]
         else:
             command = [sys.executable, "/app/integration_inventory.py", args.component]
+        return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation == "plan":
+        if args.argument or args.approval or args.max_operations or args.details:
+            parser.error("unifi plan accepts only --json")
+        command = [sys.executable, "/app/unifi_dns.py"]
+        if args.json:
+            command.append("--json")
         return subprocess.run(command, check=False).returncode
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
