@@ -1,0 +1,333 @@
+"""Guarded, create-only UniFi DNS policy reconciliation."""
+
+import argparse
+import fcntl
+import hmac
+import http.client
+import ipaddress
+import json
+import os
+import re
+import signal
+import sys
+from dataclasses import replace
+from pathlib import Path
+
+from cloudflare_api import CloudflareError
+from integration_inventory import credentials
+from traefik_inventory import read, write
+from unifi_api import (
+    MAX_ROWS,
+    PREFIX,
+    all_rows,
+    connection,
+    hostname,
+    response_json,
+    row_id,
+    select_site,
+)
+from unifi_dns import ipv4, is_rfc1918, plan
+from unifi_dns_verify import query
+from unifi_reconcile_plan import (
+    TTL_SECONDS,
+    load_live,
+    policy_fingerprint,
+    review,
+)
+
+DIGEST = re.compile(r"[0-9a-f]{64}")
+WRITE_KEY_FILE = "/run/secrets/unifi_write_api_key"
+MAX_AUTO_HOSTS = 32
+
+
+class ApplyError(ValueError):
+    """Fixed operator diagnostic without response or credential data."""
+
+
+def valid_operation(operation):
+    if not isinstance(operation, dict):
+        return False
+    name = operation.get("domain")
+    return (
+        operation.keys()
+        == {"operation", "type", "domain", "ipv4Address", "enabled", "ttlSeconds"}
+        and operation["operation"] == "create"
+        and operation["type"] == "A_RECORD"
+        and hostname(name) is not None
+        and name == hostname(name)
+        and len(name) <= 127
+        and is_rfc1918(ipv4(operation["ipv4Address"]))
+        and operation["enabled"] is True
+        and type(operation["ttlSeconds"]) is int
+        and operation["ttlSeconds"] == TTL_SECONDS
+    )
+
+
+def load_ledger(path, target):
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return {
+            "version": 1,
+            "target": target,
+            "pilot_verified": False,
+            "owned": [],
+            "pending": None,
+        }
+    ledger = read(path)
+    owned = ledger.get("owned")
+    pending = ledger.get("pending")
+    if (
+        ledger.keys() != {"version", "target", "pilot_verified", "owned", "pending"}
+        or ledger["target"] != target
+        or type(ledger["pilot_verified"]) is not bool
+        or not isinstance(owned, list)
+        or len(owned) > MAX_ROWS
+    ):
+        raise ApplyError("Ownership ledger is invalid or belongs to another target")
+    seen_ids, seen_names, seen_ips = set(), set(), set()
+    entries = owned if pending is None else [*owned, pending]
+    for entry in entries:
+        if (
+            not isinstance(entry, dict)
+            or entry.keys() != {"operation", "policy_id", "manual"}
+            or not valid_operation(entry["operation"])
+            or type(entry["manual"]) is not bool
+        ):
+            raise ApplyError("Ownership ledger contains an invalid operation")
+        identifier = entry["policy_id"]
+        operation = entry["operation"]
+        name, address = operation["domain"], operation["ipv4Address"]
+        if identifier is None:
+            if entry is not pending:
+                raise ApplyError("Ownership ledger lacks an acknowledged policy ID")
+        elif row_id(identifier) != identifier or identifier in seen_ids:
+            raise ApplyError("Ownership ledger contains an invalid policy ID")
+        if name in seen_names or address in seen_ips:
+            raise ApplyError("Ownership ledger contains overlapping operations")
+        seen_ids.add(identifier)
+        seen_names.add(name)
+        seen_ips.add(address)
+    if ledger["pilot_verified"] != any(entry["manual"] for entry in owned):
+        raise ApplyError("Ownership ledger has inconsistent pilot evidence")
+    return ledger
+
+
+def policy_matches(policy, operation):
+    return isinstance(policy, dict) and all(
+        type(policy.get(field)) is type(value) and policy[field] == value
+        for field, value in operation.items()
+        if field != "operation"
+    )
+
+
+def create_policy(live, key, operation):
+    if not valid_operation(operation):
+        raise ApplyError("Create operation failed validation")
+    path = f"{PREFIX}/sites/{row_id(live.site)}/dns/policies"
+    payload = {key: value for key, value in operation.items() if key != "operation"}
+    conn = connection(live.config)
+    try:
+        conn.request(
+            "POST",
+            path,
+            body=json.dumps(payload).encode(),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-API-Key": key,
+            },
+        )
+        created = response_json(conn.getresponse(), 201)
+    finally:
+        conn.close()
+    if not policy_matches(created, operation):
+        raise ApplyError("Create acknowledgement does not match the requested policy")
+    identifier = row_id(created.get("id"))
+    if hmac.compare_digest(identifier, key):
+        raise ApplyError("Unexpected policy acknowledgement")
+    return identifier
+
+
+def confirm_pending(path, ledger, live):
+    entry = ledger["pending"]
+    policy_id = entry["policy_id"]
+    if policy_id is None:
+        raise ApplyError(
+            "Create outcome is uncertain; inspect UniFi and the private journal before any further writes"
+        )
+    operation = entry["operation"]
+    policies = all_rows(live.config, live.key, "dns", live.site)
+    matches = [
+        policy
+        for policy in policies
+        if hostname(policy.get("domain")) == operation["domain"]
+    ]
+    if (
+        len(matches) != 1
+        or row_id(matches[0].get("id")) != policy_id
+        or not policy_matches(matches[0], operation)
+    ):
+        raise ApplyError(
+            "Acknowledged policy could not be uniquely verified; writes remain blocked"
+        )
+    address, name = operation["ipv4Address"], operation["domain"]
+    comparison = plan(
+        [{"name": name, "type": "A", "content": address, "proxied": False}],
+        policies,
+        live.comparison["source_zone"],
+        ipaddress.IPv4Network(live.comparison["configured_lan"]),
+    )
+    if comparison["counts"] != {"matched": 1}:
+        raise ApplyError("New or conflicting policies prevent ownership verification")
+    reverse_name = ipaddress.ip_address(address).reverse_pointer + "."
+    gateway = live.config[0]
+    if query(gateway, name + ".", "A") != ("answered", [address]) or query(
+        gateway, reverse_name, "PTR"
+    ) != ("answered", [name + "."]):
+        raise ApplyError("Acknowledged policy is awaiting matching A and PTR replies")
+    ledger["owned"].append(entry)
+    ledger["pilot_verified"] |= entry["manual"]
+    ledger["pending"] = None
+    write(path, ledger, durable=True)
+
+
+def automatic_hosts():
+    if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
+        raise ApplyError("Scheduled UniFi creates are disabled")
+    names = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS", "").split(",")
+    if (
+        not 1 <= len(names) <= MAX_AUTO_HOSTS
+        or any(hostname(name) is None or hostname(name) != name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        raise ApplyError("Set a bounded, exact UniFi automatic hostname allowlist")
+    return set(names)
+
+
+def run(data, selected="", approval="", *, automatic=False):
+    if automatic:
+        allowed = automatic_hosts()
+    elif hostname(selected) != selected or not DIGEST.fullmatch(approval):
+        raise ApplyError(
+            "Apply requires one exact hostname and a SHA-256 preview fingerprint"
+        )
+
+    with (data / "unifi-apply.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        live = load_live()
+        ledger_path = data / "unifi-ownership.json"
+        ledger = load_ledger(ledger_path, live.target)
+        if ledger["pending"] is not None:
+            confirm_pending(ledger_path, ledger, live)
+            return "Recovered and verified the pending UniFi create"
+        owned = {entry["operation"]["domain"] for entry in ledger["owned"]}
+        owned_ips = {entry["operation"]["ipv4Address"] for entry in ledger["owned"]}
+        if automatic:
+            if not ledger["pilot_verified"]:
+                raise ApplyError(
+                    "A verified manual pilot is required before automatic creates"
+                )
+            eligible = [
+                row
+                for row in live.comparison["rows"]
+                if row["hostname"] in allowed - owned
+                and row["address"] not in owned_ips
+            ]
+            report = review(
+                replace(live, comparison={**live.comparison, "rows": eligible})
+            )
+            if not report["operations"]:
+                return "No eligible allowlisted UniFi creates"
+        else:
+            report = review(live, selected)
+            if not hmac.compare_digest(report["fingerprint"], approval):
+                raise ApplyError(
+                    "Live preview changed; review a fresh hostname-specific fingerprint"
+                )
+            if len(report["operations"]) != 1:
+                raise ApplyError("Approved hostname has no eligible create operation")
+
+        operation = report["operations"][0]
+        if operation["domain"] in owned or operation["ipv4Address"] in owned_ips:
+            raise ApplyError("An owned hostname or address requires manual review")
+        if len(ledger["owned"]) >= MAX_ROWS:
+            raise ApplyError("Ownership ledger is at capacity")
+        if os.environ.get("YGGFLARE_UNIFI_WRITE_API_KEY_FILE") != WRITE_KEY_FILE:
+            raise ApplyError("Mount the dedicated UniFi write key at its fixed path")
+        key = credentials("unifi_write")[0]
+        if hmac.compare_digest(key, live.key):
+            raise ApplyError("The UniFi write key must differ from the collection key")
+        refreshed = load_live()
+        if refreshed.inputs != live.inputs:
+            raise ApplyError(
+                "Cloudflare or UniFi policy inputs changed; regenerate the preview"
+            )
+        checked = review(refreshed, operation["domain"])
+        if checked["operations"] != [operation] or (
+            not automatic and not hmac.compare_digest(checked["fingerprint"], approval)
+        ):
+            raise ApplyError("Fresh gateway replies changed the preview")
+        if (
+            select_site(refreshed.config, key) != refreshed.site
+            or policy_fingerprint(
+                all_rows(refreshed.config, key, "dns", refreshed.site)
+            )
+            != refreshed.policies_id
+        ):
+            raise ApplyError(
+                "UniFi write credential sees different site or policy inputs"
+            )
+        live = refreshed
+        # Journal before issuing a single POST. No retry after a lost acknowledgement.
+        ledger["pending"] = {
+            "operation": operation,
+            "policy_id": None,
+            "manual": not automatic,
+        }
+        write(ledger_path, ledger, durable=True)
+        ledger["pending"]["policy_id"] = create_policy(live, key, operation)
+        write(ledger_path, ledger, durable=True)
+        confirm_pending(ledger_path, ledger, live)
+        return "Created and verified one UniFi DNS policy"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("hostname", nargs="?", default="")
+    parser.add_argument("fingerprint", nargs="?", default="")
+    parser.add_argument("--automatic", action="store_true")
+    args = parser.parse_args()
+    signal.alarm(180)
+    try:
+        if args.automatic and (args.hostname or args.fingerprint):
+            raise ApplyError("Automatic invocation accepts no positional arguments")
+        print(
+            run(
+                Path("/data"), args.hostname, args.fingerprint, automatic=args.automatic
+            )
+        )
+        return 0
+    except ApplyError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RecursionError,
+        http.client.HTTPException,
+        CloudflareError,
+    ):
+        print(
+            "UniFi apply stopped; inspect the private ownership journal before retrying.",
+            file=sys.stderr,
+        )
+        return 2
+    finally:
+        signal.alarm(0)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

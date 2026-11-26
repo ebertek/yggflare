@@ -156,6 +156,7 @@ def job_label(script):
         "audit.py": "Network inventory scan",
         "traefik_inventory.py": "Traefik presentation refresh",
         "integration_inventory.py": "Integration presentation refresh",
+        "unifi_apply.py": "UniFi guarded DNS create",
         "probe_inventory.py": "Independent connectivity probes",
     }.get(Path(script).name, "Scheduled job")
 
@@ -166,7 +167,7 @@ def run(args, *, env=None):
         if Path(args[1]).name == "probe_inventory.py"
         else (
             "integration"
-            if Path(args[1]).name == "integration_inventory.py"
+            if Path(args[1]).name in {"integration_inventory.py", "unifi_apply.py"}
             else (
                 "traefik"
                 if Path(args[1]).name == "traefik_inventory.py"
@@ -343,6 +344,7 @@ def run_scheduler(listener=None):
     next_traefik = 0.0
     next_probe = 0.0
     next_integration = dict.fromkeys(ADAPTERS, 0.0)
+    next_unifi_apply = 0.0
     backup_marker = DATA / "backup-last-run.txt"
     last_backup_day = (
         backup_marker.read_text(encoding="utf-8").strip()
@@ -417,6 +419,16 @@ def run_scheduler(listener=None):
                         f"{adapter} presentation refresh failed; previous snapshot retained",
                     )
                 next_integration[adapter] = time.monotonic() + INTEGRATION_INTERVAL
+        if (
+            os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") == "true"
+            and time.monotonic() >= next_unifi_apply
+        ):
+            try:
+                with tracked("unifi_apply"):
+                    run([sys.executable, "/app/unifi_apply.py", "--automatic"])
+            except Exception:
+                log("warning", "controller", "UniFi guarded DNS create stopped")
+            next_unifi_apply = time.monotonic() + INTEGRATION_INTERVAL
         if (
             os.environ.get("YGGFLARE_PROBES_ENABLED") == "true"
             and time.monotonic() >= next_probe

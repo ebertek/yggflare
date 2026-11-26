@@ -124,6 +124,59 @@ live inputs, target and DNS replies, and can change when any of those
 change. The command performs a dry run and leaves ownership and live DNS
 unchanged. Review the counts and operations before any future rollout.
 
+## Guarded UniFi DNS pilot
+
+Keep automatic creates disabled for the pilot. Use a dedicated UniFi key
+that can read and create DNS policies on the target site, in addition to
+the existing collection key. Mount it as a read-only Compose secret at
+`/run/secrets/unifi_write_api_key` and set
+`YGGFLARE_UNIFI_WRITE_API_KEY_FILE=/run/secrets/unifi_write_api_key`.
+Provision the secret through the deployment's private source. The apply
+process checks that the two keys differ and see the same site and DNS
+policies. Only the writer sends a POST, and it uses the documented UniFi
+DNS policy create endpoint with a 300-second TTL.
+
+On the approved rollout, choose one in-scope hostname and review the exact
+operation and fingerprint. Pause concurrent manual or automated DNS policy
+edits on that site during the pilot. The API does not provide a conditional
+create in the documented request schema.
+
+```sh
+docker exec yggflare yggflare unifi reconcile-plan HOSTNAME --json
+docker exec yggflare yggflare unifi apply HOSTNAME FINGERPRINT
+docker exec yggflare yggflare unifi verify HOSTNAME --json
+```
+
+`apply` recomputes the hostname-specific fingerprint from live state and
+rechecks the Cloudflare, UniFi and DNS inputs immediately before the
+single create. An old or bulk fingerprint cannot authorize a pilot.
+If inputs or replies change, review a fresh preview. Existing policies
+are left in place. Ownership requires a persisted create acknowledgement,
+a matching current policy ID and values, and matching A and PTR replies.
+
+The private `/data/unifi-ownership.json` journal records intent before
+sending the request. Keep it with persistent state and include it in
+recovery procedures. If the policy was acknowledged but DNS is still
+settling, rerun the same apply invocation after the cache clears. That
+invocation only verifies and records the pending policy. If the response
+was lost before Yggflare could persist its policy ID, future creates stay
+blocked. Compare the journal and actual UniFi policies before deciding
+how to recover. A matching policy without a persisted acknowledgement
+does not establish ownership. Preserve the journal and involve the
+operator for any state repair.
+
+## Opt-in scheduled UniFi creates
+
+After a verified manual pilot, set `YGGFLARE_UNIFI_AUTO_APPLY=true` and
+`YGGFLARE_UNIFI_AUTO_HOSTS` to a comma-separated list of up to 32 exact,
+reviewed internal hostnames. The controller proposes and revalidates at
+most one eligible create per five-minute cycle using the same safety
+checks and journal. Its outcome appears as the `unifi_apply` scheduled
+job. Existing ownership blocks recreation if a previously created policy
+disappears or drifts. MCP, the Web UI, and Prometheus remain read-only.
+Automatic creates default to off. Disable the opt-in to stop the
+scheduled writer.
+
 ## Technitium migration procedure
 
 1. Save a private export of the existing Technitium zones, reverse records,

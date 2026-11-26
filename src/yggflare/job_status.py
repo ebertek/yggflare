@@ -19,6 +19,7 @@ JOBS = (
     "komodo",
     "kuma",
     "unifi",
+    "unifi_apply",
     "probes",
 )
 MAX_HISTORY = 20

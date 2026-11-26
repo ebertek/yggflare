@@ -159,6 +159,19 @@ def main(argv=None):
         else:
             command = [sys.executable, "/app/integration_inventory.py", args.component]
         return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation == "apply":
+        if (
+            not args.argument
+            or not args.approval
+            or args.max_operations
+            or args.details
+            or args.json
+        ):
+            parser.error("unifi apply requires HOSTNAME FINGERPRINT")
+        return subprocess.run(
+            [sys.executable, "/app/unifi_apply.py", "--", args.argument, args.approval],
+            check=False,
+        ).returncode
     if args.component == "unifi" and args.operation == "verify":
         if args.approval is not None or args.max_operations or args.details:
             parser.error("unifi verify accepts an optional hostname and --json")
@@ -169,14 +182,23 @@ def main(argv=None):
             command.extend(("--", args.argument))
         return subprocess.run(command, check=False).returncode
     if args.component == "unifi" and args.operation in {"plan", "reconcile-plan"}:
-        if args.argument or args.approval or args.max_operations or args.details:
-            parser.error(f"unifi {args.operation} accepts only --json")
+        if (
+            args.approval
+            or args.max_operations
+            or args.details
+            or (args.operation == "plan" and args.argument)
+        ):
+            parser.error(
+                "unifi plan accepts --json; reconcile-plan also accepts an exact hostname"
+            )
         script = (
             "unifi_dns.py" if args.operation == "plan" else "unifi_reconcile_plan.py"
         )
         command = [sys.executable, f"/app/{script}"]
         if args.json:
             command.append("--json")
+        if args.argument:
+            command.extend(("--", args.argument))
         return subprocess.run(command, check=False).returncode
     network_status = args.component == "network" and args.operation == "status"
     if (args.details or args.json) and not network_status:
