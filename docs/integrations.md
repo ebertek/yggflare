@@ -104,6 +104,26 @@ result requires review, and 2 means verification could not run. The report
 covers IPv4 A and PTR answers. AAAA records, IPv6 PTRs, and dual-stack
 policy reconciliation require separate validation.
 
+## Preview UniFi DNS creates
+
+```sh
+docker exec yggflare yggflare unifi reconcile-plan --json
+```
+
+The create preview reads the live Cloudflare zone and selected UniFi site's
+policy list. It checks direct gateway replies for unique IPv4 candidates
+inside the configured LAN. Only an absent UniFi policy, a matching or
+absent gateway A answer, and an absent PTR answer yield a proposed create.
+Existing policies, shared addresses (including tagged canonical aliases),
+forwarding or wildcard conflicts, conflicting replies, timeouts, and
+out-of-LAN addresses remain outside the proposed operations. An already
+matching A and PTR pair requires no create.
+
+Use the fingerprint to identify the exact preview reviewed. It binds the
+live inputs, target and DNS replies, and can change when any of those
+change. The command performs a dry run and leaves ownership and live DNS
+unchanged. Review the counts and operations before any future rollout.
+
 ## Technitium migration procedure
 
 1. Save a private export of the existing Technitium zones, reverse records,

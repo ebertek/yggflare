@@ -33,8 +33,11 @@ def query(gateway, name, kind):
         return "timeout", []
     except (dns.exception.DNSException, OSError):
         return "query_error", []
-    if reply.rcode() != dns.rcode.NOERROR:
-        return dns.rcode.to_text(reply.rcode()).lower(), []
+    code = reply.rcode()
+    if code == dns.rcode.NXDOMAIN and reply.answer:
+        return "unexpected_answer", []
+    if code != dns.rcode.NOERROR:
+        return dns.rcode.to_text(code).lower(), []
     question = request.question[0]
     records = set()
     for rrset in reply.answer:
@@ -47,7 +50,9 @@ def query(gateway, name, kind):
             )
         else:
             return "unexpected_answer", []
-    return ("answered", sorted(records)) if records else ("nodata", [])
+    if records:
+        return "answered", sorted(records)
+    return ("unexpected_answer", []) if reply.answer else ("nodata", [])
 
 
 def verify(plan_result, gateway, selected="", request=query):

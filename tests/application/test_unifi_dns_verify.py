@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import dns.exception
 import dns.message
+import dns.rcode
 import dns.rrset
 from unifi_dns import CANONICAL_TAG, plan
 from unifi_dns_verify import query, verify
@@ -94,3 +95,17 @@ class UniFiDNSVerificationTests(unittest.TestCase):
 
         with patch("dns.query.udp_with_fallback", side_effect=dns.exception.Timeout):
             self.assertEqual(query(GATEWAY, name, "A"), ("timeout", []))
+
+    def test_nxdomain_with_cname_is_not_absence(self):
+        name = f"b.{ZONE}."
+
+        def reply_with_alias(req, gateway, **kwargs):
+            reply = dns.message.make_response(req)
+            reply.set_rcode(dns.rcode.NXDOMAIN)
+            reply.answer.append(
+                dns.rrset.from_text(name, 60, "IN", "CNAME", "else.invalid.")
+            )
+            return reply, False
+
+        with patch("dns.query.udp_with_fallback", side_effect=reply_with_alias):
+            self.assertEqual(query(GATEWAY, name, "A"), ("unexpected_answer", []))

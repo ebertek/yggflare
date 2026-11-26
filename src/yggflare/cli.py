@@ -43,6 +43,7 @@ def main(argv=None):
         "operation",
         choices=(
             "plan",
+            "reconcile-plan",
             "apply",
             "preflight",
             "audit",
@@ -167,10 +168,13 @@ def main(argv=None):
         if args.argument:
             command.extend(("--", args.argument))
         return subprocess.run(command, check=False).returncode
-    if args.component == "unifi" and args.operation == "plan":
+    if args.component == "unifi" and args.operation in {"plan", "reconcile-plan"}:
         if args.argument or args.approval or args.max_operations or args.details:
-            parser.error("unifi plan accepts only --json")
-        command = [sys.executable, "/app/unifi_dns.py"]
+            parser.error(f"unifi {args.operation} accepts only --json")
+        script = (
+            "unifi_dns.py" if args.operation == "plan" else "unifi_reconcile_plan.py"
+        )
+        command = [sys.executable, f"/app/{script}"]
         if args.json:
             command.append("--json")
         return subprocess.run(command, check=False).returncode
