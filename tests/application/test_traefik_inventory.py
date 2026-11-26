@@ -82,6 +82,20 @@ class TraefikTests(unittest.TestCase):
         self.assertEqual(service["backend_origins"], ["http://backend.invalid:8080"])
         self.assertEqual(service["backend_up_count"], 1)
 
+    def test_backend_origin_rejects_ambiguous_or_control_bearing_urls(self):
+        for value in (
+            "https://demo.\ninvalid/",
+            "https://[fe80::1%private-marker]:443/",
+            "https://user:private-marker@demo.invalid/",
+            "https://demo.invalid:65536/",
+        ):
+            with self.subTest(value=value):
+                self.assertIsNone(traefik.endpoint(value))
+        self.assertEqual(
+            traefik.endpoint("https://[2001:db8::1]:8443/private?key=private-marker"),
+            "https://[2001:db8::1]:8443",
+        )
+
     def test_fixed_http_get_and_redirect_rejected(self):
         config = traefik.settings(ENV)
         with patch.object(traefik.http.client, "HTTPConnection") as connection:

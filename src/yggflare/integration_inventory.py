@@ -323,6 +323,8 @@ def target(labels):
     else:
         return None, None, None
     if value:
+        if not isinstance(value, str) or not value.isprintable():
+            return None, None, None
         try:
             url = urlsplit(value)
             if url.username is not None or url.password is not None:
@@ -341,6 +343,8 @@ def target(labels):
         "null",
         "undefined",
     }:
+        return None, None, None
+    if "%" in host:
         return None, None, None
     try:
         host = str(ipaddress.ip_address(host))
@@ -399,6 +403,21 @@ def kuma_rows(payload):
     return rows
 
 
+def reject_credential_echo(adapter, rows, secrets):
+    """Reject known credential echoes in projected string fields, before writing."""
+    markers = set(secrets)
+    if adapter == "kuma":
+        markers.add(base64.b64encode((":" + secrets[0]).encode()).decode())
+    for row in rows:
+        for value in row.values():
+            if isinstance(value, str) and any(
+                marker == value or (len(marker) >= 8 and marker in value)
+                for marker in markers
+                if marker
+            ):
+                raise ValueError("Integration projection contains a credential echo")
+
+
 def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
     origin = settings(adapter, env)
     if origin is None:
@@ -422,6 +441,7 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
             rows = kuma_rows(request(adapter, origin, secret, "monitors"))
         if len(rows) > MAX_ROWS:
             raise ValueError("Integration projection exceeds limit")
+        reject_credential_echo(adapter, rows, secret)
         rows.sort(
             key=lambda row: (
                 row["kind"],

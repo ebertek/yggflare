@@ -124,6 +124,85 @@ class IntegrationTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_target_rejects_control_characters_and_scoped_addresses(self):
+        for kind, url, host in (
+            ("http", "https://demo.\ninvalid/", ""),
+            ("http", "https://[fe80::1%private-marker]:443/", ""),
+            ("port", "", "fe80::1%private-marker"),
+        ):
+            with self.subTest(kind=kind, url=url, host=host):
+                self.assertEqual(
+                    adapter.target(
+                        {
+                            "monitor_type": kind,
+                            "monitor_url": url,
+                            "monitor_hostname": host,
+                            "monitor_port": "443",
+                        }
+                    ),
+                    (None, None, None),
+                )
+        self.assertEqual(
+            adapter.target(
+                {
+                    "monitor_type": "http",
+                    "monitor_url": "https://[2001:db8::1]:8443/private",
+                }
+            ),
+            ("2001:db8::1", 8443, "https"),
+        )
+
+    def test_known_credential_echo_rejected_before_publication(self):
+        import base64
+
+        marker = "synthetic-collector-credential"
+        basic = base64.b64encode((":" + marker).encode()).decode()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = root / "kuma-api-key.txt"
+            key.write_text(marker)
+            key.chmod(0o600)
+            adapter.refresh("kuma", root, ENV, root, lambda *_: METRICS)
+            view = root / "kuma-view.json"
+            original = view.read_bytes()
+            for echo in (marker, "prefix-" + marker, "Basic " + basic):
+                with self.subTest(echo=echo):
+                    payload = (
+                        "# TYPE monitor_status gauge\n"
+                        'monitor_status{monitor_name="'
+                        + echo
+                        + '",monitor_type="group"} 1\n'
+                    )
+                    with self.assertRaisesRegex(ValueError, "credential echo") as error:
+                        adapter.refresh("kuma", root, ENV, root, lambda *_: payload)
+                    self.assertNotIn(marker, str(error.exception))
+                    self.assertNotIn(basic, str(error.exception))
+                    self.assertEqual(view.read_bytes(), original)
+                    status = adapter.saved("kuma", root, ENV)
+                    self.assertTrue(status["available"])
+                    self.assertFalse(status["fresh"])
+                    self.assertFalse(status["last_refresh_verified"])
+                    self.assertNotIn(
+                        marker, (root / "kuma-view-status.json").read_text()
+                    )
+
+    def test_komodo_credential_echo_and_unknown_fields(self):
+        marker = "synthetic-collector-credential"
+        rows = adapter.komodo_rows(
+            "deployments",
+            [{"name": "worker", "info": {"state": "running", "secret": marker}}],
+        )
+        adapter.reject_credential_echo("komodo", rows, [marker])
+        self.assertNotIn(marker, json.dumps(rows))
+        for field in ("name", "container_name", "image"):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, "credential echo"):
+                    adapter.reject_credential_echo(
+                        "komodo", [{field: "prefix-" + marker}], [marker]
+                    )
+        with self.assertRaisesRegex(ValueError, "credential echo"):
+            adapter.reject_credential_echo("komodo", [{"name": "key"}], ["key"])
+
     def test_fixed_requests_reject_redirects(self):
         with patch.object(adapter.http.client, "HTTPConnection") as connection:
             response = connection.return_value.getresponse.return_value

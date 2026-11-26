@@ -130,7 +130,7 @@ def names(values):
 
 def endpoint(value):
     """Only origin addresses, never userinfo, paths, headers or query strings."""
-    if not isinstance(value, str) or len(value) > 2048:
+    if not isinstance(value, str) or len(value) > 2048 or not value.isprintable():
         return None
     try:
         url = urlsplit(value if "://" in value else "//" + value)
@@ -139,7 +139,7 @@ def endpoint(value):
         if url.scheme not in {"", "http", "https", "h2c", "tcp", "udp"}:
             return None
         host = url.hostname
-        if not host:
+        if not host or "%" in host:
             return None
         try:
             host = str(ipaddress.ip_address(host))
