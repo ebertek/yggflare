@@ -1,16 +1,23 @@
 """Offline guards and journal recovery for UniFi create reconciliation."""
 
+import io
 import ipaddress
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
 
+import cli
+import metrics
 import unifi_apply as apply
+import web
+from job_status import DNS_VERIFICATION_PENDING, JobPending, read_jobs, track
+from mcp_server import InventoryTools
 from unifi_reconcile_plan import TTL_SECONDS, LiveInputs
 
 NAME = "pilot.example.invalid"
@@ -52,6 +59,7 @@ class UniFiApplyTests(unittest.TestCase):
         self.data = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.path = self.data / "unifi-ownership.json"
         self.enterContext(patch.dict(os.environ, ENV))
+        self.enterContext(patch.object(apply, "DNS_VERIFICATION_ATTEMPTS", 1))
         self.load = self.enterContext(
             patch.object(apply, "load_live", return_value=LIVE)
         )
@@ -107,12 +115,13 @@ class UniFiApplyTests(unittest.TestCase):
 
     def test_recovery_requires_saved_policy_id_and_current_dns(self):
         self.query.side_effect = [
+            ("answered", [ADDRESS]),
             ("nxdomain", []),
             ("answered", [ADDRESS]),
             ("answered", [NAME + "."]),
         ]
         self.policies.side_effect = [[], [RESPONSE], [RESPONSE]]
-        with self.assertRaisesRegex(apply.ApplyError, "awaiting matching"):
+        with self.assertRaisesRegex(apply.DNSVerificationPending, "awaiting matching"):
             apply.run(self.data, NAME, FINGERPRINT)
         ledger = apply.load_ledger(self.path, LIVE.target)
         self.assertEqual(ledger["pending"]["policy_id"], POLICY)
@@ -120,6 +129,109 @@ class UniFiApplyTests(unittest.TestCase):
         self.assertIn("Recovered", apply.run(self.data, NAME, FINGERPRINT))
         self.assertTrue(apply.load_ledger(self.path, LIVE.target)["pilot_verified"])
         self.post.assert_called_once()
+
+    def test_bounded_retries_verify_without_reposting(self):
+        self.policies.side_effect = [[], [RESPONSE], [RESPONSE], [RESPONSE]]
+        self.query.side_effect = [
+            ("answered", [ADDRESS]),
+            ("nxdomain", []),
+            ("answered", [ADDRESS]),
+            ("nodata", []),
+            ("answered", [ADDRESS]),
+            ("answered", [NAME + "."]),
+        ]
+        with (
+            patch.object(apply, "DNS_VERIFICATION_ATTEMPTS", 3),
+            patch.object(apply.time, "sleep") as sleep,
+        ):
+            self.assertIn(
+                "Created and verified", apply.run(self.data, NAME, FINGERPRINT)
+            )
+        self.assertEqual(sleep.call_count, 2)
+        self.post.assert_called_once()
+        self.assertIsNone(apply.load_ledger(self.path, LIVE.target)["pending"])
+
+    def test_persisted_deadline_expires_without_reposting(self):
+        self.query.side_effect = [("answered", [ADDRESS]), ("nxdomain", [])]
+        with patch.object(apply.time, "time", return_value=1_800_000_000):
+            with self.assertRaises(apply.DNSVerificationPending):
+                apply.run(self.data, NAME, FINGERPRINT)
+        entry = apply.load_ledger(self.path, LIVE.target)["pending"]
+        self.assertEqual(entry["verification_deadline"], 1_800_000_600)
+        with patch.object(apply.time, "time", return_value=1_800_000_600):
+            with self.assertRaisesRegex(apply.ApplyError, "deadline expired"):
+                apply.run(self.data, NAME, FINGERPRINT)
+        self.assertEqual(apply.load_ledger(self.path, LIVE.target)["pending"], entry)
+        self.post.assert_called_once()
+        self.assertEqual(self.query.call_count, 2)
+
+    def test_legacy_acknowledgement_gets_a_deadline_once(self):
+        ledger = apply.load_ledger(self.path, LIVE.target)
+        ledger["pending"] = {
+            "operation": OPERATION,
+            "policy_id": POLICY,
+            "manual": True,
+        }
+        apply.write(self.path, ledger)
+        self.policies.side_effect = [[RESPONSE], [RESPONSE]]
+        self.query.side_effect = [("answered", [ADDRESS]), ("nxdomain", [])] * 2
+        for now in (1_800_000_000, 1_800_000_300):
+            with patch.object(apply.time, "time", return_value=now):
+                with self.assertRaises(apply.DNSVerificationPending):
+                    apply.run(self.data, NAME, FINGERPRINT)
+            saved = apply.load_ledger(self.path, LIVE.target)
+            self.assertEqual(saved["pending"]["verification_deadline"], 1_800_000_600)
+        self.post.assert_not_called()
+
+    def test_mismatch_or_transport_error_is_failure_not_propagation(self):
+        for reply, message in (
+            (("answered", ["wrong.example.invalid."]), "conflicting"),
+            (("timeout", []), "DNS verification failed"),
+        ):
+            with self.subTest(reply=reply):
+                self.policies.side_effect = [[], [RESPONSE]]
+                self.query.side_effect = [("answered", [ADDRESS]), reply]
+                self.post.reset_mock()
+                journal = self.data / "unifi-ownership.json"
+                journal.unlink(missing_ok=True)
+                with self.assertRaisesRegex(apply.ApplyError, message) as raised:
+                    apply.run(self.data, NAME, FINGERPRINT)
+                self.assertNotIsInstance(raised.exception, apply.DNSVerificationPending)
+                self.post.assert_called_once()
+                self.assertIsNotNone(
+                    apply.load_ledger(self.path, LIVE.target)["pending"]
+                )
+
+    def test_pending_is_reported_separately_by_jobs_and_metrics(self):
+        with track(self.data, "unifi_apply", self.fail):
+            pass
+        previous = read_jobs(self.data)["jobs"]["unifi_apply"]["last_success_at"]
+        with track(self.data, "unifi_apply", self.fail):
+            raise JobPending()
+        document = read_jobs(self.data)
+        job = document["jobs"]["unifi_apply"]
+        self.assertEqual(job["status"], DNS_VERIFICATION_PENDING)
+        self.assertEqual(job["last_success_at"], previous)
+        self.assertEqual(job["history"][-1]["status"], DNS_VERIFICATION_PENDING)
+        tools = InventoryTools(lambda: {"job_status": document})
+        jobs = tools.get_job_status()["jobs"]
+        self.assertEqual(
+            next(row for row in jobs if row["job"] == "unifi_apply")["status"],
+            DNS_VERIFICATION_PENDING,
+        )
+        with (
+            patch("mcp_server.InventoryTools", return_value=tools),
+            redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(cli.main(["system", "jobs", "--json"]), 0)
+        self.assertIn(DNS_VERIFICATION_PENDING, output.getvalue())
+        self.assertIn(
+            DNS_VERIFICATION_PENDING,
+            web.render("operations", {"job_status": document}, {"view": ["jobs"]}),
+        )
+        scrape = metrics.render(self.data, self.data).decode()
+        self.assertIn("yggflare_job_unifi_apply_pending_dns_verification 1", scrape)
+        self.assertNotIn("yggflare_job_unifi_apply_last_attempt_success", scrape)
 
     def test_stale_fingerprint_or_changed_live_inputs_block_create(self):
         with self.assertRaisesRegex(apply.ApplyError, "Live preview changed"):
@@ -236,6 +348,7 @@ class UniFiApplyTests(unittest.TestCase):
 
     def test_notice_waits_for_recovery_and_is_submitted_once(self):
         self.query.side_effect = [
+            ("answered", [ADDRESS]),
             ("nxdomain", []),
             ("answered", [ADDRESS]),
             ("answered", [NAME + "."]),
@@ -252,7 +365,9 @@ class UniFiApplyTests(unittest.TestCase):
             patch.dict(os.environ, {"YGGFLARE_UNIFI_DISCORD_NOTIFY": "true"}),
             patch.object(apply, "discord_notice", side_effect=notice) as send,
         ):
-            with self.assertRaisesRegex(apply.ApplyError, "awaiting matching"):
+            with self.assertRaisesRegex(
+                apply.DNSVerificationPending, "awaiting matching"
+            ):
                 apply.run(self.data, NAME, FINGERPRINT)
             send.assert_not_called()
             self.assertIn("Recovered", apply.run(self.data, NAME, FINGERPRINT))
