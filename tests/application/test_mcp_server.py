@@ -986,7 +986,13 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
         ) as client:
             result = await client.call_tool("list_devices", {})
             self.assertTrue(result.is_error)
-            self.assertIn("MCP query failed", str(result))
+            self.assertIn(
+                result.content[0].text,
+                (
+                    "MCP query failed; inspect local collection status",
+                    "Error executing tool list_devices",
+                ),
+            )
             self.assertNotIn("synthetic-private-loader-value", str(result))
 
     def test_guarded_query_failure_boundary_and_recovery(self):
