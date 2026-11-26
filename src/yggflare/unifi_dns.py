@@ -15,6 +15,7 @@ from integration_inventory import credentials
 from unifi_api import MAX_ROWS, all_rows, get_page, hostname, select_site, settings
 from yggflare_config import domain, network
 
+CANONICAL_TAG = "yggflare:canonical"
 RFC1918 = tuple(
     ipaddress.IPv4Network(cidr)
     for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
@@ -40,6 +41,38 @@ def is_rfc1918(address):
     return isinstance(address, ipaddress.IPv4Address) and any(
         address in block for block in RFC1918
     )
+
+
+def reverse_expectations(aliases, eligible, tagged):
+    """Select one eligible Cloudflare owner, with an explicit tag for shared IPs."""
+    results = []
+    for ip, names in sorted(aliases.items()):
+        if not is_rfc1918(ip):
+            continue
+        candidates = names & eligible
+        marked = candidates & tagged
+        canonical = None
+        if len(names) == 1 and candidates:
+            canonical = next(iter(candidates))
+            reason = "unique"
+        elif len(marked) == 1 and candidates == names:
+            canonical = next(iter(marked))
+            reason = "cloudflare_tag"
+        elif len(marked) > 1:
+            reason = "conflicting_tags"
+        elif candidates != names:
+            reason = "ineligible_alias"
+        else:
+            reason = "ambiguous"
+        results.append(
+            {
+                "address": str(ip),
+                "hostnames": sorted(names),
+                "canonical_hostname": canonical,
+                "selection": reason,
+            }
+        )
+    return results
 
 
 def plan(records, policies, zone, lan):
@@ -90,6 +123,7 @@ def plan(records, policies, zone, lan):
             raise ValueError("Unsupported UniFi DNS policy identity")
 
     rows = []
+    eligible, tagged = set(), set()
     for name, entries in sorted(groups.items()):
         a_records = [r for r in entries if r.get("type") == "A"]
         if not a_records:
@@ -122,7 +156,15 @@ def plan(records, policies, zone, lan):
             row["status"] = "unsupported_name"
         elif len(entries) != 1:
             row["status"] = "additional_address_or_alias"
-        elif len(aliases[address]) != 1 or local_ips[address] - {name}:
+        else:
+            eligible.add(name)
+            tags = a_records[0].get("tags")
+            if isinstance(tags, list) and CANONICAL_TAG in tags:
+                tagged.add(name)
+        if name not in eligible:
+            rows.append(row)
+            continue
+        if len(aliases[address]) != 1 or local_ips[address] - {name}:
             row["status"] = "ambiguous_reverse"
         elif any(
             name == suffix or name.endswith("." + suffix) for suffix in forwarders
@@ -146,6 +188,7 @@ def plan(records, policies, zone, lan):
         "excluded_a_records": excluded_a_records,
         "counts": dict(sorted(Counter(row["status"] for row in rows).items())),
         "rows": rows,
+        "reverse_expectations": reverse_expectations(aliases, eligible, tagged),
         "caveat": (
             "Configuration comparison only; PTR answers, ownership and "
             "complete upstream visibility are not verified. Private addresses "
@@ -154,19 +197,23 @@ def plan(records, policies, zone, lan):
     }
 
 
-def run():
-    config = settings(os.environ)
-    key = credentials("unifi")[0]
-    zone = domain("YGGFLARE_INTERNAL_DOMAIN")
-    lan = network("YGGFLARE_LAN_CIDR")
-    token = api_token()
+def cloudflare_records(zone, token):
     client = CloudflareClient(token)
     account = checked_id(os.environ.get("CLOUDFLARE_ACCOUNT_ID"), "account ID")
     zone_id = client.zone_id(zone, account)
     configured = os.environ.get("CLOUDFLARE_INTERNAL_ZONE_ID")
     if configured and checked_id(configured) != zone_id:
         raise ValueError("Configured internal zone does not match Cloudflare")
-    result = plan(client.list_dns(zone_id), collect(config, key), zone, lan)
+    return client.list_dns(zone_id)
+
+
+def run():
+    config = settings(os.environ)
+    key = credentials("unifi")[0]
+    zone = domain("YGGFLARE_INTERNAL_DOMAIN")
+    lan = network("YGGFLARE_LAN_CIDR")
+    token = api_token()
+    result = plan(cloudflare_records(zone, token), collect(config, key), zone, lan)
     encoded = json.dumps(result)
     if any(secret in encoded for secret in (key, token) if len(secret) >= 8):
         raise ValueError("DNS preflight contains a credential echo")

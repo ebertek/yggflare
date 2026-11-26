@@ -74,11 +74,58 @@ Aliases sharing an address, multiple A records, additional AAAA/CNAME
 records, LAN boundary addresses, local conflicts and forwarding/wildcard
 policies require review. Existing matching policies are not claimed. No
 other policies are changed or deleted.
-A candidate is a comparison result, not a write authorization or observed
-PTR answer. Verify the gateway's actual forward and reverse DNS responses,
-including IPv6 and DHCP-provided resolvers, before any migration.
+The report includes one reverse expectation per RFC1918 address in
+`reverse_expectations`. A single eligible name becomes the expected PTR
+target. For a shared address, tag exactly one eligible Cloudflare A record
+`yggflare:canonical`. A shared address with conflicting tags, no tag, or
+an ineligible alias remains unresolved. This selects a verification target
+and preserves the existing preflight conflict statuses.
+
 See the [UniFi DNS policy API reference](https://altered-tech.github.io/unifi-openapi-specs/network/v10.3.58/openapi.html#tag/DNS-Policies).
-Technitium remains in place until cutover validation.
+
+## Verify gateway DNS replies
+
+```sh
+docker exec yggflare yggflare unifi verify --json
+docker exec yggflare yggflare unifi verify HOSTNAME --json
+```
+
+The explicit verification command loads the desired internal A records
+from Cloudflare and queries port 53 directly at the validated numeric UniFi
+gateway address. It uses the returned A set and one PTR lookup per distinct
+IPv4 address, with TCP fallback for truncated UDP replies. There are no DNS
+requests to record addresses, no search suffixes, and no CNAME chasing.
+The optional exact hostname must be eligible in the internal zone, and its
+PTR expectation still considers all Cloudflare aliases for that IP.
+Each invocation supports up to 512 queries. On larger inventories, use the
+exact-hostname form. An unselected PTR can be observed but cannot pass.
+Exit status 0 means all selected replies match, 1 means at least one
+result requires review, and 2 means verification could not run. The report
+covers IPv4 A and PTR answers. AAAA records, IPv6 PTRs, and dual-stack
+policy reconciliation require separate validation.
+
+## Technitium migration procedure
+
+1. Save a private export of the existing Technitium zones, reverse records,
+   forwarding rules and resolver addresses. Record the current DHCPv4 and
+   IPv6 resolver settings and how to restore them. Keep Technitium running.
+2. Review `unifi plan --json` and reconcile the expected scope against the
+   Cloudflare zone. Resolve shared addresses explicitly and review local
+   policy conflicts and out-of-LAN records. Preserve unmanaged policies.
+3. Pilot a small set of operator-approved records while clients still use
+   Technitium. Run `unifi verify HOSTNAME --json`, then verify from a client
+   on each affected network that both resolvers yield the expected A and
+   PTR answers. Include existing AAAA, IPv6 reverse, forwarding and
+   external names wherever clients depend on them.
+4. Move a test network or a small client cohort to UniFi. Verify the
+   resolvers advertised by DHCPv4 and IPv6, refresh client leases where
+   needed, and test application lookups and reverse DNS. Expand in stages
+   only after the checks pass on the new resolver.
+5. On failure, restore the recorded resolver advertisements, renew
+   affected leases or allow the prior lease lifetime to elapse, and
+   confirm the old DNS answers and application lookups again. Retain
+   Technitium and the rollback export until all dependent networks and
+   workloads pass after the transition.
 
 ## UniFi Network evidence
 
