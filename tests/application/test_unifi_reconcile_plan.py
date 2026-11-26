@@ -5,7 +5,7 @@ import unittest
 
 from unifi_dns import plan
 from unifi_dns_verify import verify
-from unifi_reconcile_plan import preview
+from unifi_reconcile_plan import TTL_SECONDS, preview
 
 ZONE = "example.invalid"
 LAN = ipaddress.IPv4Network("192.168.10.0/24")
@@ -77,6 +77,7 @@ class UniFiCreatePreviewTests(unittest.TestCase):
                     "domain": f"candidate.{ZONE}",
                     "ipv4Address": "192.168.10.2",
                     "enabled": True,
+                    "ttlSeconds": TTL_SECONDS,
                 }
             ],
         )

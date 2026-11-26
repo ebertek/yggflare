@@ -9,17 +9,31 @@ import os
 import signal
 import sys
 from collections import Counter
+from dataclasses import dataclass
 
 from cloudflare_api import CloudflareError
 from cloudflare_credentials import api_token
 from integration_inventory import credentials
-from unifi_api import all_rows, select_site, settings
+from unifi_api import all_rows, hostname, select_site, settings
 from unifi_dns import cloudflare_records, plan
 from unifi_dns_verify import verify
 from yggflare_config import domain, network
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+TTL_SECONDS = 300
 MISSING = {"nxdomain", "nodata"}
+
+
+@dataclass(frozen=True, repr=False)
+class LiveInputs:
+    config: tuple
+    site: str
+    key: str
+    token: str
+    target: str
+    policies_id: str
+    inputs: str
+    comparison: dict
 
 
 def canonical_json(value):
@@ -30,13 +44,15 @@ def fingerprint(value):
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
-def preview(comparison, gateway, input_fingerprint, observe=verify):
+def preview(comparison, gateway, input_fingerprint, observe=verify, *, selected=""):
     """Propose absent policies only after exact forward and reverse checks."""
     reverse_by_address = {
         row["address"]: row for row in comparison["reverse_expectations"]
     }
     rows, eligible = [], []
     for item in comparison["rows"]:
+        if selected and item["hostname"] != selected:
+            continue
         choice = reverse_by_address.get(item["address"], {})
         status = item["status"]
         if status == "candidate":
@@ -73,6 +89,7 @@ def preview(comparison, gateway, input_fingerprint, observe=verify):
                         "domain": hostname,
                         "ipv4Address": address,
                         "enabled": True,
+                        "ttlSeconds": TTL_SECONDS,
                     }
                 )
             elif reverse["status"] == "matched" and forward["status"] == "matched":
@@ -88,11 +105,14 @@ def preview(comparison, gateway, input_fingerprint, observe=verify):
                     "reverse": reverse["status"],
                 }
             )
+    if selected and not rows:
+        raise ValueError("Unknown Cloudflare hostname")
     rows.sort(key=lambda row: row["hostname"])
     report = {
         "schema_version": SCHEMA_VERSION,
         "mode": "read_only_reconcile_plan",
         "source_zone": comparison["source_zone"],
+        "selected_hostname": selected or None,
         "configured_lan": comparison["configured_lan"],
         "excluded_a_records": comparison["excluded_a_records"],
         "counts": dict(sorted(Counter(row["status"] for row in rows).items())),
@@ -105,7 +125,11 @@ def preview(comparison, gateway, input_fingerprint, observe=verify):
     return report
 
 
-def run():
+def policy_fingerprint(policies):
+    return fingerprint(sorted(map(canonical_json, policies)))
+
+
+def load_live():
     config = settings(os.environ)
     zone = domain("YGGFLARE_INTERNAL_DOMAIN")
     lan = network("YGGFLARE_LAN_CIDR")
@@ -115,29 +139,50 @@ def run():
     site = select_site(config, key)
     policies = all_rows(config, key, "dns", site)
     comparison = plan(records, policies, zone, lan)
-    inputs = fingerprint(
+    target = fingerprint(
         {
             "gateway": config,
             "site": site,
+            "zone": zone,
             "cloudflare_account": os.environ.get("CLOUDFLARE_ACCOUNT_ID"),
-            "records": sorted(map(canonical_json, records)),
-            "policies": sorted(map(canonical_json, policies)),
+            "cloudflare_zone": os.environ.get("CLOUDFLARE_INTERNAL_ZONE_ID"),
         }
     )
-    report = preview(comparison, config[0], inputs)
-    encoded = json.dumps(report, indent=2, sort_keys=True)
-    if any(secret in encoded for secret in (key, token) if len(secret) >= 8):
+    policies_id = policy_fingerprint(policies)
+    inputs = fingerprint(
+        {
+            "target": target,
+            "records": sorted(map(canonical_json, records)),
+            "policies": policies_id,
+        }
+    )
+    return LiveInputs(config, site, key, token, target, policies_id, inputs, comparison)
+
+
+def review(live, selected=""):
+    if selected:
+        selected = hostname(selected)
+        if not selected:
+            raise ValueError("Invalid Cloudflare hostname")
+    report = preview(live.comparison, live.config[0], live.inputs, selected=selected)
+    encoded = canonical_json(report)
+    if any(secret in encoded for secret in (live.key, live.token) if len(secret) >= 8):
         raise ValueError("Reconciliation preview contains a credential echo")
     return report
 
 
+def run(selected=""):
+    return review(load_live(), selected)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("hostname", nargs="?", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     signal.alarm(120)
     try:
-        report = run()
+        report = run(args.hostname)
         if args.json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:

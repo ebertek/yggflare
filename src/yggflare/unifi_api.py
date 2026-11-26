@@ -97,32 +97,39 @@ def get_device(config, key, site, device):
     return _get_json(config, key, f"{PREFIX}/sites/{UUID(site)}/devices/{UUID(device)}")
 
 
-def _get_json(config, key, path):
+def connection(config):
     address, port, _, tls_name = config
     context = ssl.create_default_context()
     if CA_FILE.is_file():
         context.load_verify_locations(cafile=str(CA_FILE))
-    conn = FixedConnection(address, port, tls_name, context)
+    return FixedConnection(address, port, tls_name, context)
+
+
+def response_json(response, expected_status):
+    if response.status != expected_status:
+        raise ValueError("Unexpected UniFi HTTP status")
+    raw = response.read(MAX_RESPONSE + 1)
+    if len(raw) > MAX_RESPONSE:
+        raise ValueError("UniFi response exceeds byte limit")
+    document = json.loads(
+        raw,
+        object_pairs_hook=unique_object,
+        parse_float=finite_number,
+        parse_constant=finite_number,
+    )
+    validate_depth(document)
+    return document
+
+
+def _get_json(config, key, path):
+    conn = connection(config)
     try:
         conn.request(
             "GET",
             path,
             headers={"Accept": "application/json", "X-API-Key": key},
         )
-        response = conn.getresponse()
-        if response.status != 200:
-            raise ValueError("UniFi API did not return HTTP 200")
-        raw = response.read(MAX_RESPONSE + 1)
-        if len(raw) > MAX_RESPONSE:
-            raise ValueError("UniFi response exceeds byte limit")
-        document = json.loads(
-            raw,
-            object_pairs_hook=unique_object,
-            parse_float=finite_number,
-            parse_constant=finite_number,
-        )
-        validate_depth(document)
-        return document
+        return response_json(conn.getresponse(), 200)
     finally:
         conn.close()
 

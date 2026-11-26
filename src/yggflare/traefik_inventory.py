@@ -265,7 +265,7 @@ def collect(config, fetch=get_page):
     }
 
 
-def write(path, document):
+def write(path, document, *, durable=False):
     if "items" in document:
         document = {**document, "item_count": len(document["items"])}
     validate_depth(document)
@@ -279,7 +279,16 @@ def write(path, document):
         ) as handle:
             name = handle.name
             handle.write(encoded)
+            if durable:
+                handle.flush()
+                os.fsync(handle.fileno())
         os.replace(name, path)
+        if durable:
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     finally:
         if name is not None:
             Path(name).unlink(missing_ok=True)
