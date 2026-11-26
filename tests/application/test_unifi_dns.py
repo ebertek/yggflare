@@ -136,7 +136,7 @@ class UniFiDNSTests(unittest.TestCase):
                 unifi_dns.settings({**ENV, "YGGFLARE_UNIFI_API_URL": value})
 
     def test_only_fixed_get_and_no_redirects(self):
-        with patch("unifi_dns.FixedConnection") as conn:
+        with patch("unifi_api.FixedConnection") as conn:
             conn.return_value.getresponse.return_value.status = 302
             with self.assertRaises(ValueError):
                 unifi_dns.get_page(unifi_dns.settings(ENV), "KEY", "dns", SITE, 0)

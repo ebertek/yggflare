@@ -832,7 +832,8 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
             result = await client.call_tool("get_evidence_overview", {})
             self.assertFalse(result.is_error)
             sources = result.structured_content["items"]
-            self.assertEqual(len(sources), 10)
+            self.assertEqual(len(sources), 11)
+            self.assertIn("unifi", {source["source"] for source in sources})
             window = result.structured_content["observation_window"]
             self.assertEqual(
                 window["evaluated_at"], result.structured_content["evaluated_at"]
@@ -893,6 +894,8 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 ("list_komodo_stacks", "revision_match"),
                 ("list_komodo_stacks", "tracked_stack_inputs"),
                 ("list_kuma_monitors", "target_port"),
+                ("list_unifi_networks", "vlan_id"),
+                ("list_unifi_dns_policies", "policy_type"),
                 ("list_probe_results", "tls_verified"),
                 ("get_job_history", "duration_seconds"),
                 ("get_monitoring_coverage", "matching_monitor_count"),

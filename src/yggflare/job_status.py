@@ -18,6 +18,7 @@ JOBS = (
     "traefik",
     "komodo",
     "kuma",
+    "unifi",
     "probes",
 )
 MAX_HISTORY = 20

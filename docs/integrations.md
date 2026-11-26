@@ -37,8 +37,8 @@ validating the API's reachability and access restrictions.
 ## UniFi DNS migration preflight
 
 The explicit local CLI preflight compares live Cloudflare internal-zone
-records with local UniFi Network DNS policies. It is GET-only; no scheduler,
-saved collector, UI/MCP action, synchronization or writes are introduced.
+records with local UniFi Network DNS policies. This command performs a live,
+GET-only comparison independently of the saved UniFi evidence.
 
 Configure a numeric HTTPS LAN origin in `YGGFLARE_UNIFI_API_URL`.
 Set `YGGFLARE_UNIFI_SITE_ID` to the site UUID if more than one site is visible.
@@ -78,8 +78,39 @@ A candidate is a comparison result, not a write authorization or observed
 PTR answer. Verify the gateway's actual forward and reverse DNS responses,
 including IPv6 and DHCP-provided resolvers, before any migration.
 See the [UniFi DNS policy API reference](https://altered-tech.github.io/unifi-openapi-specs/network/v10.3.58/openapi.html#tag/DNS-Policies).
-The broader read-only UniFi inventory and guarded reconciliation are
-separate follow-ups; Technitium remains in place until cutover validation.
+Technitium remains in place until cutover validation.
+
+## UniFi Network evidence
+
+The optional collector shares the HTTPS, site selection and mounted key
+configuration above. Set `YGGFLARE_UNIFI_COLLECT_ENABLED=true` for a refresh
+every five minutes. The URL alone leaves scheduled collection disabled.
+The Network application and credential must support the local sites, adopted
+devices, connected clients, networks and DNS policy list endpoints. See the
+[UniFi Network API reference](https://developer.ui.com/network/v11.0.97).
+
+```sh
+docker exec yggflare yggflare unifi refresh
+docker exec yggflare yggflare unifi status --json
+docker exec yggflare yggflare unifi devices
+docker exec yggflare yggflare unifi clients
+docker exec yggflare yggflare unifi networks
+docker exec yggflare yggflare unifi dns --json --all
+```
+
+The Web UI UniFi tab, the MCP `unifi` group and CLI views use the same
+saved projection. Prometheus exports aggregate collection availability,
+freshness and resource counts. Doctor checks the local configuration,
+mounted key and snapshot freshness when scheduled collection is enabled.
+Only the scheduler and explicit refresh collect these observations.
+
+The collector reports device state, clients visible as connected,
+network/VLAN declarations and policy identities, enabled flags and
+IPv4 values where available. API visibility is limited to the selected site
+and credential. DHCP leases, physical links and actual DNS replies are
+outside this projection. A failed endpoint or incomplete page retains the
+last successful snapshot and leaves its latest refresh unverified.
+A verified snapshot expires after 15 minutes.
 
 ## Komodo and Uptime Kuma
 

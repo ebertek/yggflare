@@ -11,7 +11,7 @@ from pathlib import Path
 from evidence_summary import monitor_port_summary, probe_coverage
 from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
-from integration_inventory import ADAPTERS
+from integration_inventory import ADAPTER_KINDS
 from integration_inventory import saved as saved_integration
 from job_status import JOBS, read_jobs
 from probe_inventory import saved as saved_probes
@@ -424,7 +424,7 @@ def render(config, data, now=None):
                     sum(row.get("kind") == kind for row in traefik["items"]),
                 )
             )
-    for adapter in ADAPTERS:
+    for adapter, kinds in ADAPTER_KINDS.items():
         source = saved_integration(adapter, Path(data))
         values.extend(
             [
@@ -469,11 +469,6 @@ def render(config, data, now=None):
                 )
             )
         if source["available"]:
-            kinds = (
-                ("servers", "stacks", "stack_services", "deployments")
-                if adapter == "komodo"
-                else ("monitors",)
-            )
             for kind in kinds:
                 values.append(
                     (

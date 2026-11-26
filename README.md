@@ -8,7 +8,7 @@ and private inventories with observed runtime and network evidence.
 
 - Cloudflare Access, Tunnel and DNS audits, guarded reconciliation and owned-orphan cleanup.
 - Scoped IPv4/IPv6 discovery, device identity history and Discord notifications.
-- Traefik, Komodo, Uptime Kuma and independent connectivity evidence.
+- Traefik, UniFi, Komodo, Uptime Kuma and independent connectivity evidence.
 - Read-only Web UI, CLI, MCP server and Prometheus metrics.
 - Scheduled diagnostics, backups and isolated restore verification.
 
@@ -41,7 +41,7 @@ Images: `ghcr.io/ebertek/yggflare` with `main`, `sha-FULL_COMMIT_SHA` or
 | [Cloudflare](docs/cloudflare.md) | Audit, reconciliation and cleanup |
 | [Discovery](docs/discovery.md) | Network observations, alerts and collectors |
 | [Observability](docs/observability.md) | Web UI, CLI and Prometheus |
-| [Integrations](docs/integrations.md) | Traefik, Komodo, Kuma, probes and assurance |
+| [Integrations](docs/integrations.md) | Traefik, UniFi, Komodo, Kuma, probes and assurance |
 | [MCP](docs/mcp.md) | Tools, transports and permissions |
 | [Operations](docs/operations.md) | Scheduling, backups and diagnostics |
 | [Development](docs/development.md) | Layout, tests and releases |

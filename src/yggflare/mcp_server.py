@@ -24,6 +24,7 @@ from evidence_summary import (
 )
 from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
+from integration_inventory import ADAPTER_KINDS
 from integration_inventory import FIELDS as INTEGRATION_FIELDS
 from integration_inventory import saved as saved_integration
 from job_status import JOBS, artifact_status, backup_checks
@@ -32,6 +33,7 @@ from mcp.types import ToolAnnotations
 from probe_inventory import FIELDS as PROBE_FIELDS
 from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
+from unifi_inventory import FIELDS as UNIFI_FIELDS
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -334,6 +336,21 @@ class IntegrationRow(TypedDict, total=False):
     status: str
 
 
+class UniFiRow(TypedDict, total=False):
+    kind: str
+    name: str
+    state: str | None
+    address: str | None
+    mac: str | None
+    model: str | None
+    firmware: str | None
+    client_type: str | None
+    vlan_id: int | None
+    enabled: bool | None
+    management: str | None
+    policy_type: str | None
+
+
 class ProbeRow(TypedDict, total=False):
     target: str
     hostname: str
@@ -424,6 +441,10 @@ class TraefikPage(PageContext):
 
 class IntegrationPage(PageContext):
     items: list[IntegrationRow]
+
+
+class UniFiPage(PageContext):
+    items: list[UniFiRow]
 
 
 class ProbePage(PageContext):
@@ -1871,6 +1892,7 @@ class InventoryTools:
             ("komodo", saved_integration("komodo", Path("/data"))),
             ("kuma", saved_integration("kuma", Path("/data"))),
             ("probes", saved_probes(Path("/data"))),
+            ("unifi", saved_integration("unifi", Path("/data"))),
         )
         now = datetime.now(UTC)
         verified = network_collection_verified(scanned, coverage, network, now)
@@ -2350,11 +2372,7 @@ class InventoryTools:
     def _integration_status(self, adapter):
         data = saved_integration(adapter, Path("/data"))
         rows = data.pop("items")
-        kinds = (
-            ("servers", "stacks", "stack_services", "deployments")
-            if adapter == "komodo"
-            else ("monitors",)
-        )
+        kinds = ADAPTER_KINDS[adapter]
         return {
             **data,
             "counts": (
@@ -2364,6 +2382,40 @@ class InventoryTools:
             ),
             "caveat": "Only resources visible to the configured credential; not direct remote runtime or connectivity proof.",
         }
+
+    def get_unifi_status(self) -> dict[str, Any]:
+        """Read saved UniFi collection status and visible resource counts."""
+        return self._integration_status("unifi")
+
+    def list_unifi_devices(
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> UniFiPage:
+        """Read saved UniFi adopted device observations."""
+        return self._integration_rows(
+            "unifi", "devices", query, offset, limit, snapshot_id
+        )
+
+    def list_unifi_clients(
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> UniFiPage:
+        """Read saved UniFi connected client observations."""
+        return self._integration_rows(
+            "unifi", "clients", query, offset, limit, snapshot_id
+        )
+
+    def list_unifi_networks(
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> UniFiPage:
+        """Read saved UniFi network and VLAN declarations."""
+        return self._integration_rows(
+            "unifi", "networks", query, offset, limit, snapshot_id
+        )
+
+    def list_unifi_dns_policies(
+        self, query: str = "", offset: int = 0, limit: int = 25, snapshot_id: str = ""
+    ) -> UniFiPage:
+        """Read saved UniFi DNS policies."""
+        return self._integration_rows("unifi", "dns", query, offset, limit, snapshot_id)
 
     def get_komodo_status(self) -> dict[str, Any]:
         """Read saved Komodo collection state."""
@@ -2377,15 +2429,23 @@ class InventoryTools:
         data = saved_integration(adapter, Path("/data"))
         rows = data.pop("items")
         needle = query.strip().casefold()
+        fields = (
+            ("kind", *UNIFI_FIELDS[kind]) if adapter == "unifi" else INTEGRATION_FIELDS
+        )
+        search_fields = (
+            ("name", "address", "mac")
+            if adapter == "unifi"
+            else ("name", "server", "stack", "target_host")
+        )
         filtered = [
-            project(row, INTEGRATION_FIELDS)
+            project(row, fields)
             for row in rows
             if row.get("kind") == kind
             and (
                 not needle
                 or any(
                     needle in str(row.get(key) or "").casefold()
-                    for key in ("name", "server", "stack", "target_host")
+                    for key in search_fields
                 )
             )
         ]
@@ -2844,6 +2904,11 @@ TOOL_NAMES = (
     "list_traefik_routes",
     "list_traefik_services",
     "list_traefik_middlewares",
+    "get_unifi_status",
+    "list_unifi_devices",
+    "list_unifi_clients",
+    "list_unifi_networks",
+    "list_unifi_dns_policies",
     "get_komodo_status",
     "list_komodo_servers",
     "list_komodo_stacks",
@@ -2898,6 +2963,13 @@ GROUPS = {
         "list_traefik_services",
         "list_traefik_middlewares",
     ),
+    "unifi": (
+        "get_unifi_status",
+        "list_unifi_devices",
+        "list_unifi_clients",
+        "list_unifi_networks",
+        "list_unifi_dns_policies",
+    ),
     "komodo": (
         "get_komodo_status",
         "list_komodo_servers",
@@ -2935,6 +3007,7 @@ RESOURCE_METHODS = {
     "discovery": "get_discovery_status",
     "traefik": "get_traefik_status",
     "komodo": "get_komodo_status",
+    "unifi": "get_unifi_status",
     "monitoring": "get_kuma_status",
     "probes": "get_probe_status",
 }
