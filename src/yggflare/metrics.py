@@ -16,6 +16,7 @@ from integration_inventory import saved as saved_integration
 from job_status import JOBS, read_jobs
 from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
+from unifi_inventory import uplink_counts
 
 MAX_BYTES = 4 * 1024 * 1024
 STALE_CLOUDFLARE_SECONDS = 8 * 60 * 60
@@ -477,6 +478,15 @@ def render(config, data, now=None):
                         sum(row.get("kind") == kind for row in source["items"]),
                     )
                 )
+            if adapter == "unifi":
+                for state, count in (uplink_counts(source["items"]) or {}).items():
+                    values.append(
+                        (
+                            f"yggflare_unifi_uplink_{state}",
+                            "Saved adopted devices by UniFi uplink evidence status",
+                            count,
+                        )
+                    )
             if adapter == "komodo":
                 for state in (
                     "matched",

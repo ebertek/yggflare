@@ -151,3 +151,70 @@ class UniFiInventoryTests(unittest.TestCase):
             "list_unifi_devices",
             enabled_tools({"YGGFLARE_MCP_TOOL_GROUPS": "inventory"}),
         )
+
+    def test_device_uplink_projection_and_partial_failure(self):
+        child, parent = (row["id"] for row in ROWS["devices"])
+        for details, status in (
+            ({"id": child, "uplink": {"deviceId": parent}}, "reported"),
+            (
+                {"id": child, "uplink": {"deviceId": str(UUID(int=999))}},
+                "parent_not_visible",
+            ),
+            ({"id": child, "uplink": {"deviceId": child}}, "invalid"),
+            ({"id": parent}, "invalid"),
+            ({"id": child}, "not_reported"),
+        ):
+            with self.subTest(status=status):
+
+                def detail(config, key, site, device):
+                    self.assertEqual(site, SITE)
+                    if device == parent:
+                        raise TimeoutError
+                    return details
+
+                refresh(
+                    "unifi", self.root, ENV, self.root, self.fetch, device_detail=detail
+                )
+                result = saved("unifi", self.root, ENV)
+                self.assertTrue(result["fresh"])
+                gateway, switch = [
+                    row for row in result["items"] if row["kind"] == "devices"
+                ]
+                self.assertEqual(gateway["uplink_status"], status)
+                self.assertEqual(
+                    gateway["uplink_name"], "switch" if status == "reported" else None
+                )
+                self.assertEqual(switch["uplink_status"], "unavailable")
+                self.assertNotIn(parent, json.dumps(result))
+
+    def test_device_details_are_bounded_and_saved_for_operator_views(self):
+        child, parent = (row["id"] for row in ROWS["devices"])
+        with patch("unifi_inventory.DETAIL_LIMIT", 1):
+
+            def detail(config, key, site, device):
+                self.assertEqual(device, child)
+                return {"id": child, "uplink": {"deviceId": parent}}
+
+            refresh(
+                "unifi", self.root, ENV, self.root, self.fetch, device_detail=detail
+            )
+
+        with (
+            patch.dict(os.environ, ENV),
+            patch(
+                "mcp_server.saved_integration",
+                side_effect=lambda adapter, _: saved(adapter, self.root),
+            ),
+        ):
+            tools = InventoryTools()
+            self.assertEqual(
+                tools.list_unifi_devices()["items"][0]["uplink_name"], "switch"
+            )
+            self.assertEqual(
+                tools.get_unifi_status()["uplink_counts"]["not_checked"], 1
+            )
+            self.assertIn("uplink_name", web.render("unifi", {}, {"view": ["devices"]}))
+            self.assertIn(
+                "yggflare_unifi_uplink_reported 1",
+                metrics.render(self.root, self.root).decode(),
+            )

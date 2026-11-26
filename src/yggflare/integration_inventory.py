@@ -435,7 +435,9 @@ def reject_credential_echo(adapter, rows, secrets):
                 raise ValueError("Integration projection contains a credential echo")
 
 
-def refresh(adapter, data, env, secret_dir=Path("/config"), request=None):
+def refresh(
+    adapter, data, env, secret_dir=Path("/config"), request=None, *, device_detail=None
+):
     origin = settings(adapter, env)
     if origin is None:
         raise ValueError("Integration is not configured")
@@ -451,7 +453,10 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=None):
         secret = credentials(adapter, secret_dir, env=env)
         if adapter == "unifi":
             rows = unifi_inventory.collect(
-                origin, secret[0], request or unifi_api.get_page
+                origin,
+                secret[0],
+                request or unifi_api.get_page,
+                device_detail if request is not None else unifi_api.get_device,
             )
         elif adapter == "komodo":
             request = request or fetch

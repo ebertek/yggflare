@@ -89,6 +89,15 @@ def get_page(config, key, kind, site, offset):
         raise ValueError("Unsupported UniFi operation")
     if type(offset) is not int or not 0 <= offset < MAX_ROWS:
         raise ValueError("Invalid UniFi pagination offset")
+    return _get_json(config, key, f"{path}?offset={offset}&limit={PAGE_SIZE}")
+
+
+def get_device(config, key, site, device):
+    """Read details of one adopted device in the selected site."""
+    return _get_json(config, key, f"{PREFIX}/sites/{UUID(site)}/devices/{UUID(device)}")
+
+
+def _get_json(config, key, path):
     address, port, _, tls_name = config
     context = ssl.create_default_context()
     if CA_FILE.is_file():
@@ -97,7 +106,7 @@ def get_page(config, key, kind, site, offset):
     try:
         conn.request(
             "GET",
-            f"{path}?offset={offset}&limit={PAGE_SIZE}",
+            path,
             headers={"Accept": "application/json", "X-API-Key": key},
         )
         response = conn.getresponse()
