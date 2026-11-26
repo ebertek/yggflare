@@ -66,6 +66,10 @@ IDENTITY_FIELDS = (
 CLOUDFLARE_FIELDS = ("hostname", "lifecycle", "declared", "claimed", "tunnel_routes")
 
 
+class QueryError(ValueError):
+    """Fixed, public validation errors raised by the read-only query layer."""
+
+
 def bounded(value):
     """Bound untrusted discovery values and omit nested or unexpected objects."""
     if isinstance(value, str):
@@ -89,19 +93,19 @@ def project(record, fields):
 
 def page(rows, offset, limit, expected_snapshot_id=""):
     if offset < 0 or not 1 <= limit <= MAX_PAGE:
-        raise ValueError("offset must be nonnegative; limit must be between 1 and 50")
+        raise QueryError("offset must be nonnegative; limit must be between 1 and 50")
     # Fingerprint projected, filtered rows; do not retain private copies.
     digest = hashlib.sha256(
         json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     if expected_snapshot_id and expected_snapshot_id != digest:
-        raise ValueError("Result set changed; restart pagination at offset zero")
+        raise QueryError("Result set changed; restart pagination at offset zero")
     items = []
     used = 0
     for row in rows[offset : offset + limit]:
         size = len(json.dumps(row, ensure_ascii=True).encode())
         if size > 256 * 1024:
-            raise ValueError("Projected row exceeds response budget")
+            raise QueryError("Projected row exceeds response budget")
         if used + size > 256 * 1024:
             break
         items.append(row)
@@ -1268,7 +1272,7 @@ class InventoryTools:
         """Find exact hostname, alias, IP or MAC matches and saved identity evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
-            raise ValueError("identifier must not be empty")
+            raise QueryError("identifier must not be empty")
         data = self.loader()
         matches = [host for host in data.get("hosts", []) if identifier in terms(host)]
         state = data.get("network_state", {})
@@ -1331,7 +1335,7 @@ class InventoryTools:
         data = self.loader()
         fields = ("hostname", "ipv4", "field", "expected", "observed", "severity")
         if severity not in ("", "drift", "unknown"):
-            raise ValueError("severity must be drift, unknown, or empty")
+            raise QueryError("severity must be drift, unknown, or empty")
         diffs = data.get("diffs", [])
         rows = [
             project(item, fields)
@@ -1414,7 +1418,7 @@ class InventoryTools:
             "retained_missing",
         )
         if section and section not in sections:
-            raise ValueError("Unknown audit section")
+            raise QueryError("Unknown audit section")
         data = self.loader()
         audit = data.get("cloudflare_view", {}).get("audit", {})
         available = audit.get("version") == 1
@@ -1729,7 +1733,7 @@ class InventoryTools:
     ) -> FindingPage:
         """Read structured finding lifecycle; disappearance is not proof of resolution."""
         if status and status not in FINDING_STATES:
-            raise ValueError("Unknown finding status")
+            raise QueryError("Unknown finding status")
         data = self.loader()
         history = finding_rows(data.get("network_state", {}))
         needle = query.strip().casefold()
@@ -1997,7 +2001,7 @@ class InventoryTools:
     ) -> JobPage:
         """Page retained scheduler outcomes without reading logs or executing jobs."""
         if job and job not in JOBS:
-            raise ValueError("Unknown scheduled job")
+            raise QueryError("Unknown scheduled job")
         document = self.loader().get("job_status")
         jobs = (document or {}).get("jobs", {})
         rows = [
@@ -2113,7 +2117,7 @@ class InventoryTools:
     ) -> ServicePage:
         """Exact service, container, hostname, alias or LAN endpoint lookup."""
         if not identifier.strip():
-            raise ValueError("identifier must not be empty")
+            raise QueryError("identifier must not be empty")
         context, rows = self._service_rows(identifier, project_name)
         needle = identifier.strip().casefold()
         rows = [
@@ -2240,7 +2244,7 @@ class InventoryTools:
         self, kind, query, protocol, offset, limit, snapshot_id, *, exact_host=False
     ):
         if protocol and protocol not in {"http", "tcp", "udp"}:
-            raise ValueError("Unknown Traefik protocol")
+            raise QueryError("Unknown Traefik protocol")
         data = dict(saved_traefik(Path("/data")))
         rows = data.pop("items")
         fields = (
@@ -2422,7 +2426,7 @@ class InventoryTools:
         if scope not in {"services", "devices"} or (
             scope == "devices" and project_name
         ):
-            raise ValueError("Invalid monitoring coverage scope or project filter")
+            raise QueryError("Invalid monitoring coverage scope or project filter")
         kuma = dict(saved_integration("kuma", Path("/data")))
         monitors = kuma.pop("items")
         if scope == "devices":
@@ -2535,7 +2539,7 @@ class InventoryTools:
     ) -> ServicePage:
         """Correlate exact aliases and saved Cloudflare configuration, not reachability."""
         if not hostname.strip():
-            raise ValueError("hostname must not be empty")
+            raise QueryError("hostname must not be empty")
         context, services = self._service_rows("", "")
         return self._ingress_path(
             hostname, offset, limit, snapshot_id, context, services
@@ -2544,7 +2548,7 @@ class InventoryTools:
     def _ingress_path(self, hostname, offset, limit, snapshot_id, context, services):
         needle = normalized_monitor_host(hostname)
         if not needle:
-            raise ValueError("hostname must not be empty")
+            raise QueryError("hostname must not be empty")
         rows = [
             row
             for row in services
@@ -2744,7 +2748,7 @@ class InventoryTools:
         """Correlate a Docker hostname/alias/IP with saved Cloudflare lifecycle evidence."""
         identifier = identifier.strip().casefold()
         if not identifier:
-            raise ValueError("identifier must not be empty")
+            raise QueryError("identifier must not be empty")
         data = self.loader()
         lifecycle = {
             item.get("hostname", "").casefold(): item
@@ -2957,11 +2961,22 @@ def guarded(method, name, slots, audit):
                 for value in (*args, *kwargs.values())
             ):
                 raise ValueError("MCP filter exceeds length limit")
-            result = method(*args, **kwargs)
-            if (
-                len(json.dumps(result, ensure_ascii=True, allow_nan=False).encode())
-                > 1024 * 1024
-            ):
+            try:
+                result = method(*args, **kwargs)
+                size = len(
+                    json.dumps(result, ensure_ascii=True, allow_nan=False).encode()
+                )
+            except QueryError:
+                # Only explicit fixed query-layer validation errors are public.
+                raise
+            except Exception:
+                # Loader, adapter, parser and serializer errors may contain
+                # private paths, raw values, selectors or credential material.
+                # Leave the exception scope before raising the public error.
+                size = None
+            if size is None:
+                raise ValueError("MCP query failed; inspect local collection status")
+            if size > 1024 * 1024:
                 raise ValueError("MCP result exceeds response budget; narrow the query")
             outcome = "succeeded"
             return result

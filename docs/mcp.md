@@ -282,3 +282,5 @@ introduced.
 ## Output contracts
 
 Adapter-specific row schemas are exposed for Traefik, Komodo, Kuma, probe results, scheduler history, candidate monitoring coverage and finding history. Fields not present in a saved observation remain optional; no synthetic defaults imply success.
+
+MCP tool and data-resource queries share a guarded error boundary. Explicit fixed validation errors (including stale pagination fingerprints) remain actionable; unexpected loader, parser, adapter or serialization failures return a generic query error without the original exception text or exception chain. The MCP SDK may normalize these messages further to a generic tool error. Consult local collection status rather than requesting raw diagnostic payloads. This does not sanitize arbitrary free-form names into trusted instructions, nor does it cover SDK transport errors outside the query wrapper.

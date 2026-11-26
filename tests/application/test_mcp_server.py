@@ -977,6 +977,65 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     row = tool.output_schema["$defs"][row["$ref"].rsplit("/", 1)[-1]]
                 self.assertTrue(row.get("properties"), tool.name)
 
+    async def test_unexpected_loader_error_is_not_exposed_by_mcp(self):
+        def failing_loader():
+            raise ValueError("synthetic-private-loader-value")
+
+        async with Client(
+            build_server(failing_loader, env={}), raise_exceptions=False
+        ) as client:
+            result = await client.call_tool("list_devices", {})
+            self.assertTrue(result.is_error)
+            self.assertIn(
+                result.content[0].text,
+                (
+                    "MCP query failed; inspect local collection status",
+                    "Error executing tool list_devices",
+                ),
+            )
+            self.assertNotIn("synthetic-private-loader-value", str(result))
+
+    def test_guarded_query_failure_boundary_and_recovery(self):
+        import io
+        import threading
+        from contextlib import redirect_stderr
+
+        from mcp_server import QueryError, guarded, resource_reader
+
+        slots = threading.BoundedSemaphore(1)
+        secret = "synthetic-private-error-value"
+
+        def broken():
+            raise RuntimeError(secret)
+
+        def invalid_json():
+            return {"private": secret, "invalid": float("nan")}
+
+        def changed_snapshot():
+            raise QueryError("Result set changed; restart pagination at offset zero")
+
+        log = io.StringIO()
+        with redirect_stderr(log):
+            for failure in (broken, invalid_json):
+                with self.subTest(failure=failure.__name__):
+                    call = guarded(failure, "list_devices", slots, True)
+                    for read in (call, resource_reader(call)):
+                        with self.assertRaisesRegex(
+                            ValueError, "MCP query failed"
+                        ) as error:
+                            read()
+                        self.assertNotIn(secret, str(error.exception))
+                        self.assertIsNone(error.exception.__context__)
+            with self.assertRaisesRegex(QueryError, "restart pagination"):
+                guarded(changed_snapshot, "list_devices", slots, True)()
+            self.assertEqual(
+                guarded(lambda: {"ok": True}, "list_devices", slots, True)(),
+                {"ok": True},
+            )
+        self.assertNotIn(secret, log.getvalue())
+        self.assertIn("list_devices failed", log.getvalue())
+        self.assertIn("list_devices succeeded", log.getvalue())
+
     async def test_every_tool_returns_safe_structured_fixture_evidence(self):
         data = fixture()
         before = deepcopy(data)
