@@ -42,9 +42,7 @@ class UniFiDNSTests(unittest.TestCase):
         self.assertEqual(self.status([record()], [policy()]), {"matched": 1})
 
     def test_scope_and_proxy(self):
-        self.assertEqual(
-            self.status([record(address="8.8.8.8")]), {"out_of_scope": 1}
-        )
+        self.assertEqual(self.status([record(address="8.8.8.8")]), {"out_of_scope": 1})
         self.assertEqual(self.status([record(proxied=True)]), {"proxied_or_unknown": 1})
 
     def test_aliases_and_multiple_addresses(self):

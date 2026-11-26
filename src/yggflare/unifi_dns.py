@@ -240,7 +240,9 @@ def plan(records, policies, zone, lan):
             row["status"] = "additional_address_or_alias"
         elif len(aliases[address]) != 1 or local_ips[address] - {name}:
             row["status"] = "ambiguous_reverse"
-        elif any(name == suffix or name.endswith("." + suffix) for suffix in forwarders):
+        elif any(
+            name == suffix or name.endswith("." + suffix) for suffix in forwarders
+        ):
             row["status"] = "forwarding_or_wildcard_conflict"
         elif local[name]:
             matches = local[name]
