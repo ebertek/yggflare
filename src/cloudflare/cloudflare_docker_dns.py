@@ -1,4 +1,4 @@
-"""Review-only internal A-record coverage from explicit Docker address evidence."""
+"""Internal A-record coverage and strict creation candidates from Docker evidence."""
 
 import ipaddress
 import re
