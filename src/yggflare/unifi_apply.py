@@ -9,11 +9,14 @@ import json
 import os
 import re
 import signal
+import stat
 import sys
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from cloudflare_api import CloudflareError
+from discord_webhook import read_webhook
 from traefik_inventory import read, write
 from unifi_api import (
     MAX_ROWS,
@@ -35,7 +38,10 @@ from unifi_reconcile_plan import (
 
 DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
-MAX_AUTO_HOSTS = 32
+MAX_AUTO_HOSTS = 128
+HOSTS_FILE = "/yggflare-unifi-auto-hosts.txt"
+MAX_HOSTS_BYTES = MAX_AUTO_HOSTS * 254
+NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
 
 
 class ApplyError(ValueError):
@@ -88,7 +94,11 @@ def load_ledger(path, target):
     for entry in entries:
         if (
             not isinstance(entry, dict)
-            or entry.keys() != {"operation", "policy_id", "manual"}
+            or entry.keys() - {"notice"} != {"operation", "policy_id", "manual"}
+            or (
+                "notice" in entry
+                and (entry is pending or entry["notice"] not in NOTICE_STATES)
+            )
             or not valid_operation(entry["operation"])
             or type(entry["manual"]) is not bool
         ):
@@ -147,6 +157,54 @@ def create_policy(live, key, operation):
     return identifier
 
 
+def discord_notice(operation):
+    webhook = urlsplit(read_webhook())
+    message = {
+        "content": (
+            f"UniFi DNS policy created and verified: "
+            f"{operation['domain']} → {operation['ipv4Address']} "
+            f"(TTL {operation['ttlSeconds']}s; A and PTR match)."
+        ),
+        "allowed_mentions": {"parse": []},
+    }
+    conn = http.client.HTTPSConnection("discord.com", timeout=10)
+    try:
+        resource = webhook.path + ("?" + webhook.query if webhook.query else "")
+        conn.request(
+            "POST",
+            resource,
+            body=json.dumps(message).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "DiscordBot (https://github.com/ebertek/yggflare, 1.0)",
+            },
+        )
+        return conn.getresponse().status in (200, 204)
+    finally:
+        conn.close()
+
+
+def deliver_notice(path, ledger):
+    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") != "true":
+        return
+    for entry in ledger["owned"]:
+        if entry.get("notice") != "pending":
+            continue
+        # Discord provides no idempotency key. Persist before sending so a
+        # crash or lost response cannot cause us to submit the same notice twice.
+        entry["notice"] = "attempted"
+        write(path, ledger, durable=True)
+        try:
+            accepted = discord_notice(entry["operation"])
+        except (ValueError, OSError, http.client.HTTPException):
+            accepted = False
+        entry["notice"] = "accepted" if accepted else "unconfirmed"
+        write(path, ledger, durable=True)
+        if not accepted:
+            print("UniFi DNS Discord notification was not confirmed.", file=sys.stderr)
+        break
+
+
 def confirm_pending(path, ledger, live):
     entry = ledger["pending"]
     policy_id = entry["policy_id"]
@@ -184,6 +242,8 @@ def confirm_pending(path, ledger, live):
         gateway, reverse_name, "PTR"
     ) != ("answered", [name + "."]):
         raise ApplyError("Acknowledged policy is awaiting matching A and PTR replies")
+    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
+        entry["notice"] = "pending"
     ledger["owned"].append(entry)
     ledger["pilot_verified"] |= entry["manual"]
     ledger["pending"] = None
@@ -193,7 +253,30 @@ def confirm_pending(path, ledger, live):
 def automatic_hosts():
     if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
         raise ApplyError("Scheduled UniFi creates are disabled")
-    names = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS", "").split(",")
+    inline = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS", "")
+    path = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS_FILE", "")
+    if path:
+        if path != HOSTS_FILE or inline:
+            raise ApplyError(
+                "Select either the fixed UniFi allowlist config or the inline list"
+            )
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or not 0 < info.st_size <= MAX_HOSTS_BYTES
+                or not os.fstatvfs(handle.fileno()).f_flag & os.ST_RDONLY
+            ):
+                raise ApplyError(
+                    "UniFi automatic allowlist must be a bounded read-only config"
+                )
+            raw = handle.read(MAX_HOSTS_BYTES + 1)
+        if len(raw) > MAX_HOSTS_BYTES:
+            raise ApplyError("UniFi automatic allowlist exceeds byte limit")
+        names = raw.decode("ascii").splitlines()
+    else:
+        names = inline.split(",")
     if (
         not 1 <= len(names) <= MAX_AUTO_HOSTS
         or any(hostname(name) is None or hostname(name) != name for name in names)
@@ -216,8 +299,10 @@ def run(data, selected="", approval="", *, automatic=False):
         live = load_live()
         ledger_path = data / "unifi-ownership.json"
         ledger = load_ledger(ledger_path, live.target)
+        deliver_notice(ledger_path, ledger)
         if ledger["pending"] is not None:
             confirm_pending(ledger_path, ledger, live)
+            deliver_notice(ledger_path, ledger)
             return "Recovered and verified the pending UniFi create"
         owned = {entry["operation"]["domain"] for entry in ledger["owned"]}
         owned_ips = {entry["operation"]["ipv4Address"] for entry in ledger["owned"]}
@@ -279,6 +364,7 @@ def run(data, selected="", approval="", *, automatic=False):
         ledger["pending"]["policy_id"] = create_policy(live, live.key, operation)
         write(ledger_path, ledger, durable=True)
         confirm_pending(ledger_path, ledger, live)
+        deliver_notice(ledger_path, ledger)
         return "Created and verified one UniFi DNS policy"
 
 

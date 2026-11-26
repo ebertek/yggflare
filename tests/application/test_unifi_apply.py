@@ -209,6 +209,88 @@ class UniFiApplyTests(unittest.TestCase):
         self.post.assert_not_called()
         self.assertFalse(self.path.exists())
 
+    def test_full_allowlist_is_bounded_and_explicit(self):
+        names = [f"host-{index}.example.invalid" for index in range(107)]
+        with patch.dict(
+            os.environ,
+            {
+                "YGGFLARE_UNIFI_AUTO_APPLY": "true",
+                "YGGFLARE_UNIFI_AUTO_HOSTS": ",".join(names),
+            },
+        ):
+            self.assertEqual(apply.automatic_hosts(), set(names))
+        with patch.dict(
+            os.environ,
+            {
+                "YGGFLARE_UNIFI_AUTO_APPLY": "true",
+                "YGGFLARE_UNIFI_AUTO_HOSTS": ",".join(names),
+                "YGGFLARE_UNIFI_AUTO_HOSTS_FILE": apply.HOSTS_FILE,
+            },
+        ):
+            with self.assertRaisesRegex(apply.ApplyError, "either"):
+                apply.automatic_hosts()
+        config = self.data / "allowlist"
+        config.write_text("\n".join(names) + "\n")
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "YGGFLARE_UNIFI_AUTO_APPLY": "true",
+                    "YGGFLARE_UNIFI_AUTO_HOSTS": "",
+                    "YGGFLARE_UNIFI_AUTO_HOSTS_FILE": str(config),
+                },
+            ),
+            patch.object(apply, "HOSTS_FILE", str(config)),
+            patch.object(apply.os, "fstatvfs") as filesystem,
+        ):
+            filesystem.return_value.f_flag = 0
+            with self.assertRaisesRegex(apply.ApplyError, "read-only"):
+                apply.automatic_hosts()
+            filesystem.return_value.f_flag = os.ST_RDONLY
+            self.assertEqual(apply.automatic_hosts(), set(names))
+
+    def test_notice_waits_for_recovery_and_is_submitted_once(self):
+        self.query.side_effect = [
+            ("nxdomain", []),
+            ("answered", [ADDRESS]),
+            ("answered", [NAME + "."]),
+        ]
+        self.policies.side_effect = [[], [RESPONSE], [RESPONSE]]
+
+        def notice(operation):
+            entry = apply.load_ledger(self.path, LIVE.target)["owned"][0]
+            self.assertEqual(entry["notice"], "attempted")
+            self.assertEqual(operation, OPERATION)
+            return True
+
+        with (
+            patch.dict(os.environ, {"YGGFLARE_UNIFI_DISCORD_NOTIFY": "true"}),
+            patch.object(apply, "discord_notice", side_effect=notice) as send,
+        ):
+            with self.assertRaisesRegex(apply.ApplyError, "awaiting matching"):
+                apply.run(self.data, NAME, FINGERPRINT)
+            send.assert_not_called()
+            self.assertIn("Recovered", apply.run(self.data, NAME, FINGERPRINT))
+            ledger = apply.load_ledger(self.path, LIVE.target)
+            self.assertEqual(ledger["owned"][0]["notice"], "accepted")
+            apply.deliver_notice(self.path, ledger)
+            send.assert_called_once_with(OPERATION)
+            self.post.assert_called_once()
+
+    def test_lost_discord_response_does_not_replay_or_clear_ownership(self):
+        with (
+            patch.dict(os.environ, {"YGGFLARE_UNIFI_DISCORD_NOTIFY": "true"}),
+            patch.object(apply, "discord_notice", side_effect=TimeoutError) as send,
+        ):
+            self.assertIn(
+                "Created and verified", apply.run(self.data, NAME, FINGERPRINT)
+            )
+            ledger = apply.load_ledger(self.path, LIVE.target)
+            self.assertEqual(ledger["owned"][0]["notice"], "unconfirmed")
+            self.assertIsNone(ledger["pending"])
+            apply.deliver_notice(self.path, ledger)
+            send.assert_called_once()
+
     def test_transport_sends_one_fixed_post_and_verifies_acknowledgement(self):
         with patch.object(apply, "connection") as connect:
             conn = connect.return_value

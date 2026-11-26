@@ -165,14 +165,29 @@ operator for any state repair.
 ## Opt-in scheduled UniFi creates
 
 After a verified manual pilot, set `YGGFLARE_UNIFI_AUTO_APPLY=true` and
-`YGGFLARE_UNIFI_AUTO_HOSTS` to a comma-separated list of up to 32 exact,
-reviewed internal hostnames. The controller proposes and revalidates at
+`YGGFLARE_UNIFI_AUTO_HOSTS` to a comma-separated list of up to 128 exact,
+reviewed internal hostnames. To keep deployment names in private GitOps,
+mount a read-only Compose config at `/yggflare-unifi-auto-hosts.txt`
+with one hostname per line and select it with
+`YGGFLARE_UNIFI_AUTO_HOSTS_FILE=/yggflare-unifi-auto-hosts.txt`. Select
+either the file or the inline list. The controller proposes and revalidates at
 most one eligible create per five-minute cycle using the same safety
 checks and journal. Its outcome appears as the `unifi_apply` scheduled
 job. Existing ownership blocks recreation if a previously created policy
 disappears or drifts. MCP, the Web UI, and Prometheus remain read-only.
 Automatic creates default to off. Disable the opt-in to stop the
 scheduled writer.
+
+Set `YGGFLARE_UNIFI_DISCORD_NOTIFY=true` to send a notice via the
+existing Yggflare Discord webhook after a new policy is verified. The
+notice includes the hostname, IPv4 address, and TTL. Verification after
+a delayed PTR queues the same notice as immediate success. Existing
+records and older journal entries are not replayed. Yggflare journals the
+attempt before sending and does not resubmit an unconfirmed request,
+because Discord webhooks lack an idempotency key. Check the scheduler log
+for unconfirmed delivery. To roll back to a build that predates the
+notification journal fields, disable automatic creates first and retain
+the current journal.
 
 ## Technitium migration procedure
 
