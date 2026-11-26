@@ -18,6 +18,7 @@ from cloudflare_orphans import (
     scope,
 )
 from cloudflare_write_api import CloudflareWriter
+from discord_embed import embed_payload, inline_code
 from yggflare_config import cloudflare_settings
 
 
@@ -101,20 +102,13 @@ def notify_retirement(hostname):
         webhook = secret.read_text(encoding="utf-8").strip()
         if webhook:
             message = json.dumps(
-                {
-                    "allowed_mentions": {"parse": []},
-                    "embeds": [
-                        {
-                            "title": "Yggflare - Managed orphan retired",
-                            "description": f"Removed Cloudflare resources for `{hostname}` "
-                            "after the configured absence grace period.",
-                            "color": 3066993,
-                            "footer": {
-                                "text": "Automatic cleanup • Verified ownership"
-                            },
-                        }
-                    ],
-                }
+                embed_payload(
+                    "Cloudflare orphan retired",
+                    f"{inline_code(hostname)}\n"
+                    "Managed DNS, Tunnel and Access cleanup completed.",
+                    "success",
+                    footer="Automatic cleanup · Verified ownership",
+                )
             ).encode("utf-8")
             request = urllib.request.Request(
                 webhook,

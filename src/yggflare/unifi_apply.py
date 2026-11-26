@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from cloudflare_api import CloudflareError
 from cloudflare_docker_dns import canonical_name, scoped_address
+from discord_embed import embed_payload, inline_code
 from discord_webhook import read_webhook
 from job_status import DNS_VERIFICATION_PENDING_EXIT
 from traefik_inventory import read, write
@@ -183,19 +184,13 @@ def create_policy(live, key, operation):
 
 def discord_notice(operation):
     webhook = urlsplit(read_webhook())
-    message = {
-        "allowed_mentions": {"parse": []},
-        "embeds": [
-            {
-                "title": "✅ UniFi DNS created",
-                "description": (
-                    f"`{operation['domain']}` → `{operation['ipv4Address']}`\n"
-                    f"A & PTR verified · TTL {operation['ttlSeconds']}s"
-                ),
-                "color": 3066993,
-            }
-        ],
-    }
+    message = embed_payload(
+        "UniFi DNS created",
+        f"{inline_code(operation['domain'])} → "
+        f"{inline_code(operation['ipv4Address'])}\n"
+        f"A & PTR verified · TTL {operation['ttlSeconds']}s",
+        "success",
+    )
     conn = http.client.HTTPSConnection("discord.com", timeout=10)
     try:
         resource = webhook.path + ("?" + webhook.query if webhook.query else "")

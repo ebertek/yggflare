@@ -158,6 +158,9 @@ production acceptance are distinct. Never move a published version tag.
 - Use validated fixed-path read-only Docker secret mounts or explicitly
   supported private config files with strict permissions. Never log
   arguments, tokens, webhook URLs, raw exceptions or payloads.
+- Use the shared Discord embed builder for all notifications: compact titles,
+  consistent success/warning/info colours, literal identifiers, no mentions.
+  Preserve delivery, verification and deduplication semantics.
 - Validate Discord webhook URLs with the shared helper before sending.
   Archives may contain credentials; restrict access. Restore tests use
   isolated temporary storage and reject traversal, symlinks, hardlinks

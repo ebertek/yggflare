@@ -1,6 +1,7 @@
 """Read-only tests for batch scheduling of verified automatic orphan cleanup."""
 
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -75,6 +76,23 @@ class OrphanCleanupBatchTests(unittest.TestCase):
             self.assertEqual(
                 [call.args[0] for call in notify.call_args_list], hosts[:count]
             )
+
+    def test_retirement_notification_uses_shared_success_embed(self):
+        webhook = "https://discord.com/api/webhooks/123456789012345678/fixture"
+        with (
+            patch.object(cleanup.Path, "is_file", return_value=True),
+            patch.object(cleanup.Path, "read_text", return_value=webhook),
+            patch.object(cleanup.urllib.request, "urlopen") as post,
+        ):
+            cleanup.notify_retirement("host.example.invalid")
+            request = post.call_args.args[0]
+            payload = json.loads(request.data)
+            self.assertEqual(payload["allowed_mentions"], {"parse": []})
+            embed = payload["embeds"][0]
+            self.assertEqual(embed["title"], "✅ Cloudflare orphan retired")
+            self.assertEqual(embed["color"], 3066993)
+            self.assertIn("`host.example.invalid`", embed["description"])
+            post.assert_called_once()
 
     def test_invalid_cleanup_budget_blocks_before_network_access(self):
         for budget in ("-1", "invalid"):
