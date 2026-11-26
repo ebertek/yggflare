@@ -31,6 +31,7 @@ KOMODO_READS = {
 SECRET_FILES = {
     "komodo": ("komodo-api-key.txt", "komodo-api-secret.txt"),
     "kuma": ("kuma-api-key.txt",),
+    "unifi": ("unifi-api-key.txt",),
 }
 # Explicit file settings select fixed Docker secret names. No arbitrary paths,
 # credential values in environment variables, or fallback on a missing secret.
@@ -38,6 +39,7 @@ SECRET_MOUNTS = {
     "komodo-api-key.txt": ("YGGFLARE_KOMODO_API_KEY_FILE", "komodo_api_key"),
     "komodo-api-secret.txt": ("YGGFLARE_KOMODO_API_SECRET_FILE", "komodo_api_secret"),
     "kuma-api-key.txt": ("YGGFLARE_KUMA_API_KEY_FILE", "kuma_api_key"),
+    "unifi-api-key.txt": ("YGGFLARE_UNIFI_API_KEY_FILE", "unifi_api_key"),
 }
 DOCKER_SECRETS = Path("/run/secrets")
 

@@ -34,6 +34,41 @@ URL paths, queries, userinfo, raw middleware settings and error messages are
 excluded. Configuration is optional and should be enabled only after
 validating the API's reachability and access restrictions.
 
+## UniFi DNS migration preflight
+
+The explicit local CLI preflight compares live Cloudflare internal-zone
+records with local UniFi Network DNS policies. It is GET-only; no scheduler,
+saved collector, UI/MCP action, synchronization or writes are introduced.
+
+Configure a numeric HTTPS LAN origin in `YGGFLARE_UNIFI_API_URL`.
+Set `YGGFLARE_UNIFI_SITE_ID` to the site UUID if more than one site is visible.
+Use a dedicated least-privilege API key in the private
+`/config/unifi-api-key.txt` (mode 0600), or explicitly mount a read-only
+Docker secret at `/run/secrets/unifi_api_key` and set
+`YGGFLARE_UNIFI_API_KEY_FILE=/run/secrets/unifi_api_key`.
+Never paste credentials into command arguments, logs or public commits.
+TLS verification is mandatory; supply a trusted CA at
+`/config/unifi-ca.pem` when needed and set
+`YGGFLARE_UNIFI_TLS_NAME` to the certificate's verified name if it differs
+from the numeric address. No redirects, insecure TLS or legacy login.
+
+```sh
+docker exec yggflare yggflare unifi plan
+docker exec yggflare yggflare unifi plan --json
+```
+
+Only the configured Cloudflare internal zone and LAN CIDR are in scope.
+Unproxied, unambiguous single IPv4 records are candidates; aliases sharing
+an address, multiple A records, additional AAAA/CNAME records, local
+conflicts and forwarding/wildcard policies require review. Existing matching
+policies are not claimed. No other policies are changed or deleted.
+A candidate is a comparison result, not a write authorization or observed
+PTR answer. Verify the gateway's actual forward and reverse DNS responses,
+including IPv6 and DHCP-provided resolvers, before any migration.
+See the [UniFi DNS policy API reference](https://altered-tech.github.io/unifi-openapi-specs/network/v10.3.58/openapi.html#tag/DNS-Policies).
+The broader read-only UniFi inventory and guarded reconciliation are
+separate follow-ups; Technitium remains in place until cutover validation.
+
 ## Komodo and Uptime Kuma
 
 Both optional collectors run every five minutes when configured and keep
