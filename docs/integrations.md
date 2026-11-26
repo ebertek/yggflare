@@ -126,15 +126,12 @@ unchanged. Review the counts and operations before any future rollout.
 
 ## Guarded UniFi DNS pilot
 
-Keep automatic creates disabled for the pilot. Use a dedicated UniFi key
-that can read and create DNS policies on the target site, in addition to
-the existing collection key. Mount it as a read-only Compose secret at
-`/run/secrets/unifi_write_api_key` and set
-`YGGFLARE_UNIFI_WRITE_API_KEY_FILE=/run/secrets/unifi_write_api_key`.
-Provision the secret through the deployment's private source. The apply
-process checks that the two keys differ and see the same site and DNS
-policies. Only the writer sends a POST, and it uses the documented UniFi
-DNS policy create endpoint with a 300-second TTL.
+Keep automatic creates disabled for the pilot. The existing UniFi key
+must be able to read and create DNS policies on the target site. Creates
+require the read-only Compose secret at `/run/secrets/unifi_api_key`,
+selected by `YGGFLARE_UNIFI_API_KEY_FILE`. The writer reuses this key
+for the documented DNS policy POST with a 300-second TTL. Collection,
+previews, and presentation continue to make read-only requests.
 
 On the approved rollout, choose one in-scope hostname and review the exact
 operation and fingerprint. Pause concurrent manual or automated DNS policy

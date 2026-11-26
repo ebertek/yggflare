@@ -17,7 +17,7 @@ ADDRESS = "192.168.10.20"
 FINGERPRINT = "a" * 64
 SITE = str(UUID(int=1))
 POLICY = str(UUID(int=2))
-ENV = {"YGGFLARE_UNIFI_WRITE_API_KEY_FILE": apply.WRITE_KEY_FILE}
+ENV = {"YGGFLARE_UNIFI_API_KEY_FILE": apply.UNIFI_KEY_FILE}
 OPERATION = {
     "operation": "create",
     "type": "A_RECORD",
@@ -61,10 +61,6 @@ class UniFiApplyTests(unittest.TestCase):
                 return_value={"operations": [OPERATION], "fingerprint": FINGERPRINT},
             )
         )
-        self.enterContext(
-            patch.object(apply, "credentials", return_value=("fixture-write-key",))
-        )
-        self.enterContext(patch.object(apply, "select_site", return_value=SITE))
         self.policies = self.enterContext(
             patch.object(apply, "all_rows", side_effect=[[], [RESPONSE]])
         )
@@ -81,6 +77,7 @@ class UniFiApplyTests(unittest.TestCase):
 
     def acknowledge(self, live, key, operation):
         self.assertEqual(live, LIVE)
+        self.assertEqual(key, LIVE.key)
         self.assertEqual(operation, OPERATION)
         journal = apply.load_ledger(self.path, LIVE.target)
         self.assertIsNone(journal["pending"]["policy_id"])
@@ -93,7 +90,7 @@ class UniFiApplyTests(unittest.TestCase):
         self.assertTrue(ledger["pilot_verified"])
         self.assertIsNone(ledger["pending"])
         self.assertEqual(ledger["owned"][0]["policy_id"], POLICY)
-        self.assertNotIn("fixture-write-key", self.path.read_text())
+        self.assertNotIn(LIVE.key, self.path.read_text())
         self.post.assert_called_once()
 
     def test_lost_create_acknowledgement_blocks_retries(self):
@@ -203,6 +200,15 @@ class UniFiApplyTests(unittest.TestCase):
         self.post.assert_called_once()
         self.query.assert_not_called()
 
+    def test_create_requires_the_existing_compose_secret_mount(self):
+        with patch.dict(os.environ, {"YGGFLARE_UNIFI_API_KEY_FILE": ""}):
+            with self.assertRaisesRegex(
+                apply.ApplyError, "existing read-only Compose secret"
+            ):
+                apply.run(self.data, NAME, FINGERPRINT)
+        self.post.assert_not_called()
+        self.assertFalse(self.path.exists())
+
     def test_transport_sends_one_fixed_post_and_verifies_acknowledgement(self):
         with patch.object(apply, "connection") as connect:
             conn = connect.return_value
@@ -210,9 +216,7 @@ class UniFiApplyTests(unittest.TestCase):
             response.status = 201
             response.read.return_value = json.dumps(RESPONSE).encode()
             original_create = CREATE_POLICY
-            self.assertEqual(
-                original_create(LIVE, "fixture-write-key", OPERATION), POLICY
-            )
+            self.assertEqual(original_create(LIVE, LIVE.key, OPERATION), POLICY)
             args, kwargs = conn.request.call_args
             self.assertEqual(
                 args, ("POST", f"{apply.PREFIX}/sites/{SITE}/dns/policies")
@@ -224,7 +228,7 @@ class UniFiApplyTests(unittest.TestCase):
             conn.request.assert_called_once()
             response.status = 302
             with self.assertRaises(ValueError):
-                original_create(LIVE, "fixture-write-key", OPERATION)
+                original_create(LIVE, LIVE.key, OPERATION)
 
 
 CREATE_POLICY = apply.create_policy

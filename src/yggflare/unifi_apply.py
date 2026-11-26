@@ -14,7 +14,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from cloudflare_api import CloudflareError
-from integration_inventory import credentials
 from traefik_inventory import read, write
 from unifi_api import (
     MAX_ROWS,
@@ -24,7 +23,6 @@ from unifi_api import (
     hostname,
     response_json,
     row_id,
-    select_site,
 )
 from unifi_dns import ipv4, is_rfc1918, plan
 from unifi_dns_verify import query
@@ -36,7 +34,7 @@ from unifi_reconcile_plan import (
 )
 
 DIGEST = re.compile(r"[0-9a-f]{64}")
-WRITE_KEY_FILE = "/run/secrets/unifi_write_api_key"
+UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
 MAX_AUTO_HOSTS = 32
 
 
@@ -253,11 +251,10 @@ def run(data, selected="", approval="", *, automatic=False):
             raise ApplyError("An owned hostname or address requires manual review")
         if len(ledger["owned"]) >= MAX_ROWS:
             raise ApplyError("Ownership ledger is at capacity")
-        if os.environ.get("YGGFLARE_UNIFI_WRITE_API_KEY_FILE") != WRITE_KEY_FILE:
-            raise ApplyError("Mount the dedicated UniFi write key at its fixed path")
-        key = credentials("unifi_write")[0]
-        if hmac.compare_digest(key, live.key):
-            raise ApplyError("The UniFi write key must differ from the collection key")
+        if os.environ.get("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
+            raise ApplyError(
+                "UniFi creates require the existing read-only Compose secret mount"
+            )
         refreshed = load_live()
         if refreshed.inputs != live.inputs:
             raise ApplyError(
@@ -268,16 +265,9 @@ def run(data, selected="", approval="", *, automatic=False):
             not automatic and not hmac.compare_digest(checked["fingerprint"], approval)
         ):
             raise ApplyError("Fresh gateway replies changed the preview")
-        if (
-            select_site(refreshed.config, key) != refreshed.site
-            or policy_fingerprint(
-                all_rows(refreshed.config, key, "dns", refreshed.site)
-            )
-            != refreshed.policies_id
-        ):
-            raise ApplyError(
-                "UniFi write credential sees different site or policy inputs"
-            )
+        policies = all_rows(refreshed.config, refreshed.key, "dns", refreshed.site)
+        if policy_fingerprint(policies) != refreshed.policies_id:
+            raise ApplyError("UniFi policies changed immediately before create")
         live = refreshed
         # Journal before issuing a single POST. No retry after a lost acknowledgement.
         ledger["pending"] = {
@@ -286,7 +276,7 @@ def run(data, selected="", approval="", *, automatic=False):
             "manual": not automatic,
         }
         write(ledger_path, ledger, durable=True)
-        ledger["pending"]["policy_id"] = create_policy(live, key, operation)
+        ledger["pending"]["policy_id"] = create_policy(live, live.key, operation)
         write(ledger_path, ledger, durable=True)
         confirm_pending(ledger_path, ledger, live)
         return "Created and verified one UniFi DNS policy"
