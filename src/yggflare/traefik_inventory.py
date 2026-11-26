@@ -5,9 +5,11 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import math
 import os
 import re
 import signal
+import stat
 import sys
 import tempfile
 from datetime import UTC, datetime
@@ -21,6 +23,7 @@ SECTIONS = tuple(
     if not (protocol == "udp" and kind == "middlewares")
 )
 MAX_BYTES = 4 * 1024 * 1024
+MAX_SNAPSHOT_DEPTH = 32
 PAGE_SIZE = 100
 MAX_PAGES = 10
 INTERVAL = 300
@@ -263,7 +266,10 @@ def collect(config, fetch=get_page):
 
 
 def write(path, document):
-    encoded = json.dumps(document, separators=(",", ":"))
+    if "items" in document:
+        document = {**document, "item_count": len(document["items"])}
+    validate_depth(document)
+    encoded = json.dumps(document, separators=(",", ":"), allow_nan=False)
     if len(encoded.encode()) > MAX_BYTES:
         raise ValueError("Traefik snapshot exceeds size limit")
     name = None
@@ -279,14 +285,101 @@ def write(path, document):
             Path(name).unlink(missing_ok=True)
 
 
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate snapshot field")
+        result[key] = value
+    return result
+
+
+def finite_number(value):
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("Nonfinite snapshot number")
+    return result
+
+
+def validate_depth(document):
+    """Bound nesting independently of the Python JSON decoder recursion limit."""
+    end = object()
+    pending = [(iter((document,)), 0)]
+    while pending:
+        values, depth = pending[-1]
+        value = next(values, end)
+        if value is end:
+            pending.pop()
+        elif isinstance(value, (dict, list)):
+            if depth >= MAX_SNAPSHOT_DEPTH:
+                raise ValueError("Snapshot nesting exceeds limit")
+            children = value.values() if isinstance(value, dict) else value
+            pending.append((iter(children), depth + 1))
+
+
 def read(path):
+    """Read one bounded regular file descriptor; never follow links or block on FIFOs."""
     try:
-        if path.is_symlink() or path.stat().st_size > MAX_BYTES:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
+                return {}
+            raw = handle.read(MAX_BYTES + 1)
+        if len(raw) > MAX_BYTES:
             return {}
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) and value.get("version") == 1 else {}
-    except (OSError, ValueError, TypeError):
-        return {}
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=unique_object,
+            parse_constant=finite_number,
+            parse_float=finite_number,
+        )
+        if (
+            isinstance(value, dict)
+            and type(value.get("version")) is int
+            and value["version"] == 1
+        ):
+            validate_depth(value)
+            return value
+    except (OSError, ValueError, TypeError, RecursionError):
+        pass
+    return {}
+
+
+def snapshot_rows(view, maximum):
+    """Missing rows are not empty evidence; validate count when it was recorded."""
+    rows = view.get("items")
+    if (
+        not isinstance(rows, list)
+        or len(rows) > maximum
+        or not all(isinstance(row, dict) for row in rows)
+    ):
+        return None
+    if "item_count" in view and (
+        type(view["item_count"]) is not int or view["item_count"] != len(rows)
+    ):
+        return None
+    return rows
+
+
+def valid_rows(rows):
+    if rows is None:
+        return False
+    seen = set()
+    for row in rows:
+        protocol, kind = row.get("protocol"), row.get("kind")
+        identifier = name(row.get("name"))
+        if (
+            (protocol, kind) not in SECTIONS
+            or not identifier
+            or row.get("status") not in ("enabled", "disabled", "warning", "unknown")
+        ):
+            return False
+        key = (protocol, kind, identifier)
+        if key in seen:
+            return False
+        seen.add(key)
+    return True
 
 
 def refresh(data, config, fetch=get_page):
@@ -320,12 +413,8 @@ def saved(data, env=None):
     view = read(data / "traefik-view.json")
     status = read(data / "traefik-view-status.json")
     matches = bool(config and view.get("source_id") == source_id(config))
-    rows = view.get("items", [])
-    available = (
-        matches
-        and isinstance(rows, list)
-        and all(isinstance(row, dict) for row in rows)
-    )
+    rows = snapshot_rows(view, len(SECTIONS) * MAX_PAGES * PAGE_SIZE)
+    available = matches and valid_rows(rows)
     age = None
     if available:
         try:

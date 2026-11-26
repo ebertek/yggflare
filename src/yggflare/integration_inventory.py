@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from docker_inventory import image_reference
 from prometheus_client.parser import text_string_to_metric_families
 from stack_revision import enrich_stacks
-from traefik_inventory import read, source_id, timestamp, write
+from traefik_inventory import read, snapshot_rows, source_id, timestamp, write
 
 ADAPTERS = ("komodo", "kuma")
 INTERVAL = 300
@@ -464,6 +464,39 @@ def refresh(adapter, data, env, secret_dir=Path("/config"), request=fetch):
         return view
 
 
+def valid_rows(adapter, rows):
+    if rows is None:
+        return False
+    for row in rows:
+        kind = row.get("kind")
+        if not safe_name(row.get("name")):
+            return False
+        if adapter == "kuma":
+            if kind != "monitors" or row.get("status") not in (
+                "up",
+                "down",
+                "pending",
+                "maintenance",
+                "unknown",
+            ):
+                return False
+            port = row.get("target_port")
+            if port is not None and (type(port) is not int or not 1 <= port <= 65535):
+                return False
+            if row.get("target_host") is not None and not safe_name(row["target_host"]):
+                return False
+        elif kind == "stack_services":
+            if not safe_name(row.get("stack")) or not safe_name(row.get("service")):
+                return False
+        elif kind not in ("servers", "stacks", "deployments") or not isinstance(
+            row.get("state"), str
+        ):
+            return False
+        elif row["state"] not in STATES:
+            return False
+    return True
+
+
 def saved(adapter, data, env=None):
     env = os.environ if env is None else env
     configured = bool(env.get("YGGFLARE_" + adapter.upper() + "_API_URL"))
@@ -474,13 +507,8 @@ def saved(adapter, data, env=None):
     view = read(data / (adapter + "-view.json"))
     status = read(data / (adapter + "-view-status.json"))
     match = bool(origin and view.get("source_id") == source_id(origin))
-    rows = view.get("items")
-    available = (
-        match
-        and isinstance(rows, list)
-        and len(rows) <= MAX_ROWS
-        and all(isinstance(row, dict) for row in rows)
-    )
+    rows = snapshot_rows(view, MAX_ROWS)
+    available = match and valid_rows(adapter, rows)
     age = None
     if available:
         try:
