@@ -158,6 +158,15 @@ def main(argv=None):
         else:
             command = [sys.executable, "/app/integration_inventory.py", args.component]
         return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation == "verify":
+        if args.approval is not None or args.max_operations or args.details:
+            parser.error("unifi verify accepts an optional hostname and --json")
+        command = [sys.executable, "/app/unifi_dns_verify.py"]
+        if args.json:
+            command.append("--json")
+        if args.argument:
+            command.extend(("--", args.argument))
+        return subprocess.run(command, check=False).returncode
     if args.component == "unifi" and args.operation == "plan":
         if args.argument or args.approval or args.max_operations or args.details:
             parser.error("unifi plan accepts only --json")

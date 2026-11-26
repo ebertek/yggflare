@@ -8,3 +8,6 @@ uvicorn>=0.34,<1
 
 # Parse only Kuma's supported Prometheus metrics, never its internal Socket.IO API.
 prometheus-client>=0.22,<1
+
+# Direct gateway DNS queries with validated replies and TCP fallback.
+dnspython>=2.7,<3
