@@ -2975,9 +2975,7 @@ def guarded(method, name, slots, audit):
                 # Leave the exception scope before raising the public error.
                 size = None
             if size is None:
-                raise ValueError(
-                    "MCP query failed; inspect local collection status"
-                )
+                raise ValueError("MCP query failed; inspect local collection status")
             if size > 1024 * 1024:
                 raise ValueError("MCP result exceeds response budget; narrow the query")
             outcome = "succeeded"
