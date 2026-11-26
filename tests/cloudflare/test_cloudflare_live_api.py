@@ -205,10 +205,7 @@ class LiveIntegrationTests(unittest.TestCase):
             self.assertEqual(report["blocked"], [])
             findings = report["web_view"]["audit"]["findings"]
             self.assertEqual(
-                [
-                    (row["hostname"], row["status"], row["category"])
-                    for row in findings
-                ],
+                [(row["hostname"], row["status"], row["category"]) for row in findings],
                 [
                     ("offline.ygg.nu", "missing_a", "compose"),
                     ("running.ygg.nu", "missing_a", "runtime"),

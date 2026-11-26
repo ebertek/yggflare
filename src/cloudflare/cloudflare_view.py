@@ -131,7 +131,9 @@ def audit_projection(report):
         add("static_dns", item, ("hostname", "status", "reason", "expected", "actual"))
     docker = report.get("docker_dns", {})
     for item in docker.get("findings", []):
-        add("docker_dns", item, ("hostname", "status", "category", "expected", "actual"))
+        add(
+            "docker_dns", item, ("hostname", "status", "category", "expected", "actual")
+        )
     internal = report.get("unaccounted_ygg_dns", {})
     for item in internal.get("findings", []):
         add("unaccounted_dns", item, ("hostname", "type", "category", "proxied"))
