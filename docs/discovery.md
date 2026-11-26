@@ -62,19 +62,19 @@ scope. Enable only the sources you want. Optional collector switches default to 
 Results appear in **Discovery**, not authoritative inventory or Cloudflare state.
 A failed source produces a sanitized warning while other sources continue.
 
-| Environment variable | Collection |
-|---|---|
-| `YGGFLARE_DISCOVERY_SSDP` | One IPv4 SSDP M-SEARCH per interface; up to 128 replies within three seconds |
-| `YGGFLARE_DISCOVERY_LLDP` | Read LLDP/CDP neighbours from an existing lldpd socket |
-| `YGGFLARE_DISCOVERY_RA` | Solicit scoped ICMPv6 Router Advertisements with `rdisc6`; one short probe per configured interface |
-| `YGGFLARE_DISCOVERY_NETBIOS` | NetBIOS node-status names for all observed, in-scope IPv4 addresses, with bounded workers and per-target timeouts |
-| `YGGFLARE_DISCOVERY_SMB` | Anonymous listing for scoped targets with observed TCP/445 or TCP/139 |
-| `YGGFLARE_DISCOVERY_SMB_MAX_TARGETS` | 1–4096; inherits general discovery limit (default 512) |
-| `YGGFLARE_DISCOVERY_SMB_WORKERS` | 1–16; default 8 |
-| `YGGFLARE_DISCOVERY_SNMP` | Query explicitly configured SNMP targets with mounted credentials |
-| `YGGFLARE_DISCOVERY_SNMP_TARGETS` | Comma-separated IPv4 addresses within the LAN scope; empty by default, maximum 16 |
-| `YGGFLARE_DISCOVERY_MAX_TARGETS` | Maximum distinct active-probe candidates per address family; default 512, configurable 1–4096 |
-| `YGGFLARE_DISCOVERY_P0F` | Ten-second passive fingerprint sample per interface |
+| Environment variable                 | Collection                                                                                                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `YGGFLARE_DISCOVERY_SSDP`            | One IPv4 SSDP M-SEARCH per interface; up to 128 replies within three seconds                                      |
+| `YGGFLARE_DISCOVERY_LLDP`            | Read LLDP/CDP neighbours from an existing lldpd socket                                                            |
+| `YGGFLARE_DISCOVERY_RA`              | Solicit scoped ICMPv6 Router Advertisements with `rdisc6`; one short probe per configured interface               |
+| `YGGFLARE_DISCOVERY_NETBIOS`         | NetBIOS node-status names for all observed, in-scope IPv4 addresses, with bounded workers and per-target timeouts |
+| `YGGFLARE_DISCOVERY_SMB`             | Anonymous listing for scoped targets with observed TCP/445 or TCP/139                                             |
+| `YGGFLARE_DISCOVERY_SMB_MAX_TARGETS` | 1–4096; inherits general discovery limit (default 512)                                                            |
+| `YGGFLARE_DISCOVERY_SMB_WORKERS`     | 1–16; default 8                                                                                                   |
+| `YGGFLARE_DISCOVERY_SNMP`            | Query explicitly configured SNMP targets with mounted credentials                                                 |
+| `YGGFLARE_DISCOVERY_SNMP_TARGETS`    | Comma-separated IPv4 addresses within the LAN scope; empty by default, maximum 16                                 |
+| `YGGFLARE_DISCOVERY_MAX_TARGETS`     | Maximum distinct active-probe candidates per address family; default 512, configurable 1–4096                     |
+| `YGGFLARE_DISCOVERY_P0F`             | Ten-second passive fingerprint sample per interface                                                               |
 
 Example first-pass configuration for a host with the selected interfaces and CIDRs:
 
@@ -88,66 +88,38 @@ YGGFLARE_DISCOVERY_SNMP: "false"
 YGGFLARE_DISCOVERY_P0F: "false"
 ```
 
-SSDP records only service type, USN and server identity. Advertised URLs are not
-fetched. This implements the discovery protocol directly; no gssdp subprocess is
-needed. IPv6 SSDP is not implemented. NetBIOS and SMB have ten-second command
-bounds; anonymous SMB denial is normal and does not trigger password attempts.
-NetBIOS requires `nmblookup` from Debian `samba-common-bin`, installed and
-verified by the image. The optional collector queries every **observed in-scope**
-IPv4 address (rather than only the lowest 16), using at most eight workers and
-a three-second timeout per target. No response is normal for devices without
-NetBIOS: exit code 1 and the collector's per-target timeout yield no identity
-evidence and no warning. Missing executables and unexpected exit codes remain
-warnings. The reduced timeout may miss unusually slow legitimate responders;
-this is a lightweight supplementary identity signal, not a full NetBIOS audit.
-Anonymous SMB enumeration requires observed open TCP/445 or TCP/139, preferring 445. No SMB file content is read. Cached addresses need not still be reachable.
+### Collector limits
+
+- SSDP: records service type, USN and server identity; never fetches URLs.
+  IPv6 SSDP is not supported.
+- NetBIOS: queries observed in-scope IPv4 addresses with up to eight workers
+  and a three-second timeout per target. No reply is normal.
+- SMB: anonymous listings only, for observed TCP/445 or TCP/139 (prefer 445).
+  No file content or password attempts. Each listing has a ten-second limit.
+- Missing utilities, invalid settings and unexpected execution errors produce
+  warnings; other sources continue.
 
 ## Scan runtime and progress
 
-Manual `yggflare network run` and scheduled scans report unbuffered phase
-start/end timings to stderr/stdout, with 15-second heartbeats while long-running
-subprocesses are captured. This makes host discovery, the combined IPv4 TCP pass,
-DNS-SD and supplemental discovery distinguishable without logging packet data,
-secrets or raw scan output.
+Scans report phase timings and 15-second heartbeats without raw packet data.
 
-Supplemental Nmap targets default to up to 512 **unique observed addresses**
-per family (configurable from 1 to 4096 using
-`YGGFLARE_DISCOVERY_MAX_TARGETS`). Targets are scanned in bounded batches of
-at most 64 addresses **by address family and selected interface**
-instead of starting one Nmap process per target. When two configured interfaces
-observe the same IP, all passive/ARP/NDP evidence is retained, but active Nmap
-and NDP use just one interface, preferring the kernel's egress route where it
-matches an observing interface. This avoids redundant scans and wasted target
-slots; failures to resolve a preferred route fall back to the first configured
-observing interface. Each batch has a 90-second process limit and each host
-retains the existing 15-second Nmap host limit. Parsed XML is attributed only
-to the explicit scoped addresses in that batch.
+The primary IPv4 scan uses host discovery followed by one TCP scan of
+responsive non-Docker targets. The port set combines:
 
-An unanswered `ndisc6` solicitation (documented exit code 2) is not an
-execution failure or evidence that the device disappeared. Exit code 1,
-missing utilities and timeouts remain warnings. NetBIOS node-status queries use at most eight concurrent workers, and
-ordinary no-reply timeouts are not collector errors. Supplemental observations
-are best-effort, not authoritative DNS changes.
+- Fixed IoT/management ports.
+- All TCP ports declared in the private inventory.
+- At least Nmap's top 100 TCP ports, including frequency ties.
 
-The regular IPv4 scan uses host discovery followed by **one combined TCP
-scan** of responsive, non-Docker targets. Its port list is the union of:
-1. the fixed Yggflare IoT/management port list,
-2. every TCP port declared in the private inventory, and
-3. at least Nmap's top 100 TCP ports as ranked by the installed
-   `/usr/share/nmap/nmap-services` database.
+The installed `nmap-services` database must be valid; a partial substitute
+is not accepted. The scan uses SYN probing and light service identification.
 
-The third component includes frequency ties at the 100th rank so changes in
-tie order cannot silently drop coverage. Yggflare fails closed if the installed
-Nmap services database is missing, malformed, oversized or has too few TCP
-rankings; it does **not** run a reduced-coverage scan that would later be
-mistaken for a complete inventory. The image checks for that database at build
-time. The single scan preserves `-sS`, scoped targets, `-Pn`, `-n`, `-T3`,
-bounded retry/host timeout, and light `-sV` service identification.
+Supplemental scans process at most 64 targets per batch by address family
+and interface (90-second batch and 15-second host limits). Duplicate IPs
+are probed on one observing interface, preferring the kernel egress route.
+Passive observations from all configured interfaces are retained.
 
-The original top-100 pass did not attempt `-sV`; running light version probes
-on newly covered popular ports can cost additional time. The reduction in
-Nmap process startup and repeated SYN probing should be benchmarked on the
-deployed network rather than assumed. No fixed runtime guarantee is implied.
+A missing NDP reply (exit status 2) is normal. Execution errors remain
+warnings. Scan duration depends on the network; there is no fixed guarantee.
 
 ## IPv6 Router Advertisements (rdisc6)
 
@@ -261,13 +233,23 @@ These collectors are best-effort identity evidence. They do not produce automati
 DNS changes, ownership claims or Discord drift alerts. Missing utilities, daemon
 sockets or permissions are shown as collector warnings.
 
-
 ## Saved coverage evidence
 
-Network discovery now retains aggregate scan coverage evidence: Nmap completion metadata, TCP requested/represented/omitted targets, explicit timeouts, port-evidence target count, selected port count, Docker exclusions and DNS-SD browse outcome. `get_discovery_status` exposes this metadata; legacy/offline snapshots are marked unavailable. Omissions from Nmap `--open` are not evidence of closed ports, timeouts or offline devices. Existing discovery/alert decisions are unchanged. All paginated MCP tools expose concrete typed row fields, with mixed legacy values retained where necessary.
+View the last scan in Web UI Operations → Discovery coverage, MCP
+`get_discovery_status` or:
 
-The same discovery coverage is available in the Web UI under Operations → Discovery coverage, and through `yggflare network coverage --json`. It becomes available after a new live scan; no historical coverage is fabricated.
+```sh
+docker exec yggflare yggflare network coverage --json
+```
 
-Supplemental discovery coverage reports the saved per-collector configuration, execution counts, no-reply outcomes, parse failures, unavailable executables, target limits and unverified Nmap completion for the fixed supported sources. It is available in MCP `get_discovery_status`, Web Operations → Discovery coverage and `yggflare network coverage --json`. Counts are invocations/batches, not complete device or port coverage; a configured source with no eligible targets can remain unattempted. SMB's configurable target limit and worker counts are explicit. No changes to discovery scope or alert policy.
+The report includes:
 
-SMB enumeration uses scoped targets with previously observed open TCP/445 or TCP/139, preferring 445. Set `YGGFLARE_DISCOVERY_SMB_MAX_TARGETS` (1–4096; defaults to `YGGFLARE_DISCOVERY_MAX_TARGETS`, otherwise 512) and `YGGFLARE_DISCOVERY_SMB_WORKERS` (1–16; default 8) to bound concurrent anonymous listings. Each listing retains its 10-second execution deadline. Invalid SMB settings disable only that collector and produce a sanitized warning. Missing port evidence is not proof of closure. Aggregate selection and outcomes (access denied, refusal, remote timeout, local deadline, execution failure and successful listings with/without shares) are reported without raw diagnostics. No credentials, new scan scope or alert policy changes.
+- Nmap completion, TCP requested/represented/omitted targets and timeouts.
+- Selected ports, positive port evidence, Docker exclusions and DNS-SD outcome.
+- Per-source configuration, attempts, no replies, failures, limits and parser outcomes.
+- SMB target selection, concurrency and anonymous listing outcomes.
+
+Counts describe invocations and observed evidence, not complete coverage.
+An omitted Nmap `--open` result does not prove a port is closed or a host
+is offline. Missing coverage remains unknown; these views never change
+scan scope, DNS or alert decisions.

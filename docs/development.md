@@ -2,18 +2,11 @@
 
 [Documentation index](README.md) · [Project README](../README.md)
 
-The image is `ghcr.io/ebertek/yggflare` . Available tags are `main` ,
-`sha-FULL_COMMIT_SHA` and `vMAJOR.MINOR.PATCH` ; no `latest` tag is published. Pin the
-image by digest in production.
+The image is `ghcr.io/ebertek/yggflare`, with `main`,
+`sha-FULL_COMMIT_SHA` and `vMAJOR.MINOR.PATCH` tags. Pin a digest in production.
 
-Each published image identifies its Git revision in startup logs and through
-`yggflare --version` . After an update, rerun `doctor` and `cloudflare audit` before
-enabling writes.
-
-See [AGENTS.md](../AGENTS.md) for development and test commands. CI checks Python tests,
-Ruff, Black and the Docker build.
-
-Licensed under [Apache-2.0](../LICENSE); see [NOTICE](../NOTICE).
+CI runs the Python suites, Ruff, Black and a Docker build.
+See [AGENTS.md](../AGENTS.md) for contributor rules.
 
 ## Source layout
 
@@ -31,7 +24,9 @@ dashboards/           Optional Grafana dashboard
 scripts/              Host-side maintenance and migration helpers
 ```
 
-The repository is a Docker-first application, not a published Python distribution. The source directories are added to the test import path; the Dockerfile maps them to the established `/app`, `/app/cloudflare` and `/app/network-inventory` runtime locations. This preserves existing CLI and direct diagnostic entry points. Test files are excluded from the image. Dependencies are declared in the root `requirements.txt`; tooling settings are in `pyproject.toml`.
+The Dockerfile maps source directories to `/app`, `/app/cloudflare` and
+`/app/network-inventory`. Tests are excluded from the image. Dependencies
+are in `requirements.txt`; tooling configuration is in `pyproject.toml`.
 
 ## Local checks
 
@@ -57,10 +52,19 @@ python -m unittest discover -s tests/network_inventory -p 'test_*.py'
 docker build -t yggflare:dev .
 ```
 
-The environment values above reproduce the CI fixtures; they are not production configuration. Tests are offline and use temporary files and mocked APIs. Never point development tests at live credentials or inventory state. Use the separate suites as CI does to preserve their isolation.
-
-See [AGENTS.md](../AGENTS.md) for mandatory safety rules. The historical `scripts/import-legacy-code.sh` stages a separate ignored directory for manual review and does not overwrite maintained source.
+The example environment reproduces CI fixtures, not a deployment. Tests use
+mocked APIs and temporary files. Run the three suites separately and never
+use live credentials or inventory.
 
 ## Release process
 
-See the [v1.4.0 release candidate](release-v1.4.0.md) for the consolidated roadmap and acceptance checklist. The publish workflow repeats lint and all unit-test suites before building and pushing the image. A stable tag at current main HEAD also updates `:main`; a historical stable tag does not. Check the actual workflow and image revision after publication, and never move an existing release tag. Source merge, image publication and deployment acceptance are distinct events.
+1. Merge reviewed changes to `main` and verify CI and Lint.
+2. Publish an approved `vMAJOR.MINOR.PATCH` tag at the reviewed commit.
+3. Confirm GHCR publication and the image's source revision.
+4. Publish [release notes](https://github.com/ebertek/yggflare/releases).
+5. Pin the verified digest in the deployment and run
+   [deployment acceptance](operations.md#deployment-acceptance).
+
+The publish workflow repeats lint and tests before pushing. A stable tag at
+current main HEAD also updates `:main`; a historical stable tag does not.
+Never move a published tag.

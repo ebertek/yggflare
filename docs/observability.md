@@ -22,16 +22,16 @@ and Prometheus reachability before changing a production listener.
 
 The interface includes:
 
-| Route | View |
-|---|---|
-| `/inventory` | Declared and observed devices, filters and export links |
-| `/discovery` | Source evidence, identity confidence and unresolved conflicts |
-| `/ports` | Observed services and DNS-SD announcements |
-| `/diff` | Declared-versus-observed differences |
-| `/drift` | Active findings, pending confirmations and timelines |
-| `/reserved` / `/retired` | Display-only catalogs |
-| `/cloudflare` | Managed, orphaned and unmanaged resource status |
-| `/api/inventory.json` / `/api/inventory.csv` | Inventory exports |
+| Route                                        | View                                                          |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `/inventory`                                 | Declared and observed devices, filters and export links       |
+| `/discovery`                                 | Source evidence, identity confidence and unresolved conflicts |
+| `/ports`                                     | Observed services and DNS-SD announcements                    |
+| `/diff`                                      | Declared-versus-observed differences                          |
+| `/drift`                                     | Active findings, pending confirmations and timelines          |
+| `/reserved` / `/retired`                     | Display-only catalogs                                         |
+| `/cloudflare`                                | Managed, orphaned and unmanaged resource status               |
+| `/api/inventory.json` / `/api/inventory.csv` | Inventory exports                                             |
 
 `/metrics` exposes aggregate Prometheus gauges, scan timestamps and Cloudflare
 snapshot health. It includes no device labels or credentials and triggers no scans. A
@@ -87,22 +87,13 @@ firewall restrictions as well as reverse-proxy authentication.
 
 ## Finding lifecycle and evidence quality
 
-The Findings tab and `yggflare network findings` / `network transitions`
-read structured history from the saved network scan. Stable IDs are derived
-from finding identity, not the notification text. History begins with the
-first post-upgrade observation; legacy first-seen dates are not invented.
-At most 1,024 findings and 256 transitions are retained; active observations
-are prioritized, and truncation is reported. A failed browse does not
-advance DNS-SD last-seen timestamps. Missing observations are not proof of
-repair; an inventory match requires positive matching observation against
-the current declaration. These presentation records never control alerts.
+The Findings tab and CLI expose stable finding IDs and bounded history
+(1,024 findings, 256 transitions). Truncation is reported; missing
+observations do not prove repair. These views never control alerts.
 
-The Operations tab's Source evidence quality view and
-`yggflare system evidence --json` distinguish freshness, last collection
-verification, completeness and availability. Freshness thresholds reflect
-the expected schedule, not guaranteed execution. Optional collectors now
-also appear in scheduler history. New aggregate metrics describe finding
-history and optional job outcomes.
+Operations → Source evidence quality distinguishes availability, freshness,
+last collection verification and completeness. A fresh snapshot is not
+proof that every source or check succeeded.
 
 ```sh
 docker exec yggflare yggflare network findings --json
@@ -110,29 +101,37 @@ docker exec yggflare yggflare network transitions --json
 docker exec yggflare yggflare system evidence --json
 ```
 
-Web pagination links carry the previous result-set fingerprint. CLI users
-may pass `--snapshot-id` with `--offset` to reject changed result sets.
-This fingerprint is not a frozen server-side snapshot or source timestamp.
-Every paged MCP tool also accepts its own optional `snapshot_id` alongside
-`offset` and `limit`. Reuse the same filters and restart on a mismatch.
-Paged structured output includes the versioned, typed pagination envelope
-and source-specific context; row fields remain adapter-specific.
+Use source timestamps and the observation window when comparing evidence.
+The window is not an atomic multi-source snapshot.
 
 ## Coverage and pagination
 
-Prometheus coverage metrics include fixed `yggflare_network_tcp_*` aggregate counts and `yggflare_discovery_<source>_*` invocation, failure, no-reply, parser and limitation evidence for configured sources. They describe the last saved scan, not cumulative counters; unavailable legacy observations are omitted. Metric names use a fixed allowlist, with no device identities or secret data in labels.
+CLI list views support `--limit 1..50`, `--offset`, `--snapshot-id` and
+`--all`. All-pages output is bounded to 10,000 rows/16 MiB and rejects
+changed result sets; nested ingress layers are not aggregated.
 
-Read-only paginated CLI commands accept `--limit 1..50` or `--all` (stable top-level result set, up to 10,000 rows/16 MiB, rejects changed snapshots; does not aggregate nested ingress layers). Examples: `yggflare kuma coverage --all --json`, `yggflare kuma monitors --limit 10 --json`.
+Prometheus uses fixed, aggregate metrics for:
 
-New aggregate gauges: `yggflare_komodo_tracked_stack_inputs_{matched,changed,same_reported_revision,unknown}`, `yggflare_kuma_primary_scan_{selection_available,numeric_ipv4_tcp_endpoints,selected_endpoints,not_selected_endpoints}`, `yggflare_probe_configuration_available`, and `yggflare_probe_coverage_{configured_checks,observed_checks,passed_checks,failed_checks,inconclusive_checks}`. Missing evidence is omitted, not zero-filled. Compare freshness and availability gauges first. Scrapes read saved state and the validated local probe allowlist only; no live Docker, Git or network activity. Fixed aggregate names only, no per-device labels.
+- Network TCP selection and supplemental discovery execution.
+- Collector availability, freshness and scheduler outcomes.
+- Komodo tracked inputs, Kuma monitor port selection and probe coverage.
 
-
-See [Integrations and service assurance](integrations.md) for source-specific interpretation.
+Unavailable outcomes are omitted, not zero-filled. Scrapes read saved
+state and the local probe allowlist; they never start live collection.
+See [integrations](integrations.md) for interpretation.
 
 ## Assurance dashboard
 
-The [importable Grafana dashboard](../dashboards/yggflare.json) includes current and historical tracked-stack input comparisons, numeric monitor port selection and configured/observed probe outcomes. The evidence availability and freshness panel must be interpreted before outcome counts. Missing series are not zero-filled. Import the JSON into Grafana using the existing Prometheus datasource; the dashboard UID is unchanged. No notification rules or automatic deployment are included.
+Import the [Grafana dashboard](../dashboards/yggflare.json) using the existing
+Prometheus datasource and preserve its UID. Check freshness and availability
+before interpreting counts. The dashboard does not install alert rules.
 
-Dashboard status colors are presentation cues, not alert rules. Raw host counts, scan age and duration are neutral because their normal values depend on deployment and scheduling. Nonzero review candidates and pending events are amber; stale/unavailable evidence and failed probes are red. Unknown and inconclusive results are not failures. Missing data is not converted to zero.
+Neutral colours represent raw counts, age and duration; amber indicates
+review candidates; red indicates stale/unavailable evidence or failed
+checks. Unknown and inconclusive results are not failures.
 
-Human-readable Web UI tables and operator CLI text escape nonprintable characters, including Unicode direction/format controls; HTML still escapes markup. The saved network status summary replaces these characters with spaces. CSV exports prefix formula-like cells (including leading whitespace and compatibility variants of formula operators) with an apostrophe and escape nonprintable text. This mitigates formula evaluation on import but cannot guarantee every spreadsheet application's behavior. Use the JSON export for exact values; saved state, reconciliation and structured CLI/MCP evidence are unchanged.
+## Exports
+
+JSON preserves projected values. Web/CLI text escapes nonprintable
+characters and HTML markup. CSV also neutralizes formula-like cells.
+Treat all observed names and values as untrusted data.
