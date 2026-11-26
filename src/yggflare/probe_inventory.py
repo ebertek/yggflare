@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from evidence_summary import check_identity
-from traefik_inventory import read, timestamp, write
+from traefik_inventory import read, snapshot_rows, timestamp, write
 
 INTERVAL = 300
 MAX_TARGETS = 16
@@ -322,13 +322,27 @@ def saved(data, config=Path("/config"), env=None):
         if targets is not None
         else [] if env.get("YGGFLARE_PROBES_ENABLED", "false") == "false" else None
     )
-    rows = view.get("items")
+    rows = snapshot_rows(view, MAX_TARGETS * len(CHECKS))
     available = bool(
         source
         and view.get("source_id") == source
-        and isinstance(rows, list)
-        and len(rows) <= MAX_TARGETS * len(CHECKS)
-        and all(isinstance(row, dict) for row in rows)
+        and rows is not None
+        and all(
+            row.get("status")
+            in (
+                "matched",
+                "mismatch",
+                "connected",
+                "verified",
+                "response_received",
+                "certificate_invalid",
+                "resolution_failed",
+                "timeout",
+                "connection_refused",
+                "check_failed",
+            )
+            for row in rows
+        )
     )
     # Partial, duplicate and foreign check identities are not a complete snapshot.
     if available:
