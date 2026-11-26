@@ -129,6 +129,9 @@ def audit_projection(report):
     static = report.get("static_dns", {})
     for item in static.get("findings", []):
         add("static_dns", item, ("hostname", "status", "reason", "expected", "actual"))
+    docker = report.get("docker_dns", {})
+    for item in docker.get("findings", []):
+        add("docker_dns", item, ("hostname", "status", "category", "expected", "actual"))
     internal = report.get("unaccounted_ygg_dns", {})
     for item in internal.get("findings", []):
         add("unaccounted_dns", item, ("hostname", "type", "category", "proxied"))
@@ -138,6 +141,7 @@ def audit_projection(report):
     return {
         "version": 1,
         "static_dns_enabled": static.get("enabled") is True,
+        "docker_dns_enabled": docker.get("enabled") is True,
         "internal_dns_enabled": internal.get("enabled") is True,
         "total_findings": len(rows),
         "truncated": len(rows) > MAX_AUDIT_ROWS,

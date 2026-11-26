@@ -250,6 +250,7 @@ class PageContext(TypedDict, total=False):
     ownership_counts: dict[str, int]
     audit_available: bool
     static_dns_enabled: bool | None
+    docker_dns_enabled: bool | None
     internal_dns_enabled: bool | None
     snapshot_total_findings: int | None
     snapshot_total: int | None
@@ -1427,6 +1428,7 @@ class InventoryTools:
             "proposed",
             "blocked",
             "static_dns",
+            "docker_dns",
             "unaccounted_dns",
             "retained_missing",
         )
@@ -1469,6 +1471,9 @@ class InventoryTools:
             ),
             "internal_dns_enabled": (
                 audit.get("internal_dns_enabled") if available else None
+            ),
+            "docker_dns_enabled": (
+                audit.get("docker_dns_enabled") if available else None
             ),
             "snapshot_total_findings": (
                 audit.get("total_findings") if available else None
