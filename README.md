@@ -1,50 +1,37 @@
 # Yggflare
 
-Yggflare is a self-hosted, Docker-based infrastructure controller for Cloudflare,
-LAN discovery and operational assurance. It correlates Docker Compose declarations
-and private inventories with observed runtime and network evidence.
+Yggflare is a self-hosted infrastructure controller for Docker Compose,
+Cloudflare and UniFi, with LAN discovery and read-only operational views.
 
 ## Features
 
-- Cloudflare Access, Tunnel and DNS audits, guarded reconciliation and owned-orphan cleanup.
-- Scoped IPv4/IPv6 discovery, device identity history and Discord notifications.
-- Traefik, UniFi, Komodo, Uptime Kuma and independent connectivity evidence.
-- Read-only Web UI, CLI, MCP server and Prometheus metrics.
-- Scheduled diagnostics, backups and isolated restore verification.
+- Cloudflare Access, Tunnel and DNS reconciliation with ownership safeguards.
+- UniFi device, client and network inventory, guarded DNS creation and A/PTR verification.
+- IPv4/IPv6 discovery, device identity history and Discord notifications.
+- Traefik, Komodo, Uptime Kuma and independent connectivity checks.
+- Web UI, CLI, read-only MCP, Prometheus metrics and backups.
 
-Cloudflare writes, orphan cleanup and HTTP listeners are opt-in. Discovery never
-modifies authoritative inventory or DNS. Docker socket access is effectively
-host-root access; deploy only on a trusted Linux host.
+Automatic writes and HTTP listeners are opt-in. Run on a trusted Linux host:
+Docker socket access is effectively host-root access.
 
 ## Quick start
 
-Follow the [installation guide](docs/setup.md) to configure the supplied
-[Compose file](compose.yaml), private inventory and mounted credentials. Then run:
+Configure the supplied [Compose file](compose.yaml), inventory and credentials
+using the [setup guide](docs/setup.md).
 
 ```sh
 docker compose config --quiet
 docker compose pull
 docker compose up -d
-docker exec yggflare yggflare --version
 docker exec yggflare yggflare doctor run
 docker exec yggflare yggflare cloudflare audit
 ```
 
-Images: `ghcr.io/ebertek/yggflare` with `main`, `sha-FULL_COMMIT_SHA` or
-`vMAJOR.MINOR.PATCH` tags. Pin a digest for production.
+Image: `ghcr.io/ebertek/yggflare`. Use a [release](https://github.com/ebertek/yggflare/releases)
+or pin a verified image digest.
 
 ## Documentation
 
-| Guide | Topics |
-| --- | --- |
-| [Setup](docs/setup.md) | Installation, configuration and inventory |
-| [Cloudflare](docs/cloudflare.md) | Audit, reconciliation and cleanup |
-| [Discovery](docs/discovery.md) | Network observations, alerts and collectors |
-| [Observability](docs/observability.md) | Web UI, CLI and Prometheus |
-| [Integrations](docs/integrations.md) | Traefik, UniFi, Komodo, Kuma, probes and assurance |
-| [MCP](docs/mcp.md) | Tools, transports and permissions |
-| [Operations](docs/operations.md) | Scheduling, backups and diagnostics |
-| [Development](docs/development.md) | Layout, tests and releases |
-| [v1.4.0 release candidate](docs/release-v1.4.0.md) | Consolidated changes and release acceptance |
+See the [documentation index](docs/README.md) for all guides.
 
 Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
