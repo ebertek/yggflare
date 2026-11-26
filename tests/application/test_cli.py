@@ -88,6 +88,23 @@ class CommandTests(unittest.TestCase):
                     cli.main(arguments)
                 self.assertEqual(error.exception.code, 2)
 
+    def test_operator_text_escapes_controls_without_changing_json(self):
+        import json
+
+        value = "example\u202e\x1b\nFAKE"
+        result = {"items": [{"name": value}], "total": 1}
+        with patch("mcp_server.InventoryTools") as tools:
+            tools.return_value.list_docker_services.return_value = result
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(cli.main(["services", "list"]), 0)
+            self.assertNotIn("\u202e", output.getvalue())
+            self.assertNotIn("\x1b", output.getvalue())
+            self.assertNotIn("\nFAKE", output.getvalue())
+            self.assertIn(r"\u202e", output.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(cli.main(["services", "list", "--json"]), 0)
+            self.assertEqual(json.loads(output.getvalue()), result)
+
     def test_operator_views_use_read_only_queries(self):
         with (
             patch("mcp_server.InventoryTools") as tools,

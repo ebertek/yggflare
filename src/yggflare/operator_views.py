@@ -1,8 +1,10 @@
 """Explicit read-only operator views over the same query layer as MCP."""
 
 import json
-from html import escape
 from urllib.parse import urlencode
+
+from presentation_text import html_text as escape
+from presentation_text import visible_text
 
 # Fixed dispatch; never use user input to select arbitrary Python methods.
 VIEWS = {
@@ -211,10 +213,7 @@ def display(value):
         return ", ".join(display(item) for item in value)
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=True, sort_keys=True)
-    # Escape terminal control characters as well as embedded newlines.
-    return "".join(
-        char if char.isprintable() else repr(char)[1:-1] for char in str(value)
-    )
+    return visible_text(value)
 
 
 def sections(result):
@@ -238,15 +237,20 @@ def sections(result):
 
 def cli_text(result):
     context, groups = sections(result)
-    lines = [f"{key}: {display(value)}" for key, value in context.items()]
+    lines = [
+        f"{visible_text(key)}: {display(value)}" for key, value in context.items()
+    ]
     for title, rows in groups:
-        lines.append("\n" + title + ":")
+        lines.append("\n" + visible_text(title) + ":")
         if not rows:
             lines.append("  No observations in this page")
         for row in rows:
             lines.append(
                 "  "
-                + " | ".join(f"{key}={display(value)}" for key, value in row.items())
+                + " | ".join(
+                    f"{visible_text(key)}={display(value)}"
+                    for key, value in row.items()
+                )
             )
     return "\n".join(lines)
 

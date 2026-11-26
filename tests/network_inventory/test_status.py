@@ -96,6 +96,14 @@ class SavedStatusTests(unittest.TestCase):
         self.assertNotIn("\nFAKE ALERT", output.getvalue())
         self.assertIn("NEW DNS-SD bad.local FAKE ALERT", output.getvalue())
 
+    def test_bidi_and_format_controls_do_not_reach_terminal(self):
+        self.state["alert_pending_confirmations"] = ["device\u202e\u200b"]
+        self.write()
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(status.main([], path=self.path), 0)
+        self.assertNotIn("\u202e", output.getvalue())
+        self.assertNotIn("\u200b", output.getvalue())
+
     def test_missing_or_invalid_state_is_explicit_error(self):
         self.path.unlink()
         with contextlib.redirect_stderr(io.StringIO()) as errors:

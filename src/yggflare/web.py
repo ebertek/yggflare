@@ -8,7 +8,6 @@ import os
 import socket
 import sys
 import traceback
-from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -21,6 +20,8 @@ from job_status import health, read_jobs
 from metrics import render as render_metrics
 from operator_views import VIEWS
 from operator_views import render as render_operator
+from presentation_text import csv_cell
+from presentation_text import html_text as escape
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
 
 
@@ -522,7 +523,7 @@ class Handler(BaseHTTPRequestHandler):
                 for host in data["hosts"]:
                     writer.writerow(
                         [
-                            (
+                            csv_cell(
                                 ", ".join(host.get(key, []))
                                 if isinstance(host.get(key), list)
                                 else host.get(key, "")
