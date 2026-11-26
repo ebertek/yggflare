@@ -346,6 +346,39 @@ class UniFiApplyTests(unittest.TestCase):
             },
         )
 
+    def test_discord_notice_uses_compact_success_embed(self):
+        webhook = "https://discord.com/api/webhooks/123456789012345678/fixture-token"
+        with (
+            patch.object(apply, "read_webhook", return_value=webhook),
+            patch.object(apply.http.client, "HTTPSConnection") as connect,
+        ):
+            conn = connect.return_value
+            conn.getresponse.return_value.status = 204
+            self.assertTrue(apply.discord_notice(OPERATION))
+            connect.assert_called_once_with("discord.com", timeout=10)
+            args, kwargs = conn.request.call_args
+            self.assertEqual(
+                args, ("POST", "/api/webhooks/123456789012345678/fixture-token")
+            )
+            self.assertEqual(
+                json.loads(kwargs["body"]),
+                {
+                    "allowed_mentions": {"parse": []},
+                    "embeds": [
+                        {
+                            "title": "✅ UniFi DNS created",
+                            "description": (
+                                f"`{NAME}` → `{ADDRESS}`\n"
+                                f"A & PTR verified · TTL {TTL_SECONDS}s"
+                            ),
+                            "color": 3066993,
+                        }
+                    ],
+                },
+            )
+            conn.request.assert_called_once()
+            conn.close.assert_called_once()
+
     def test_notice_waits_for_recovery_and_is_submitted_once(self):
         self.query.side_effect = [
             ("answered", [ADDRESS]),

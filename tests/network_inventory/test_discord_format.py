@@ -2,6 +2,7 @@
 
 import unittest
 
+from discord_embed import text_units
 from discord_format import render
 
 
@@ -15,6 +16,8 @@ class DiscordFormattingTests(unittest.TestCase):
             ]
         )
         embed = payload["embeds"][0]
+        self.assertEqual(embed["title"], "⚠️ Network inventory changes")
+        self.assertEqual(embed["color"], 15105570)
         self.assertEqual(len(embed["fields"]), 3)
         self.assertEqual(embed["fields"][0]["name"], "Devices")
         self.assertIn("tcp/4070", embed["fields"][1]["value"])
@@ -23,7 +26,8 @@ class DiscordFormattingTests(unittest.TestCase):
 
     def test_test_message_is_not_a_drift_alert(self):
         embed = render(["TEST ONLY: delivery"], test=True)["embeds"][0]
-        self.assertIn("Delivery test", embed["title"])
+        self.assertEqual(embed["title"], "✅ Delivery test")
+        self.assertEqual(embed["color"], 3066993)
         self.assertNotIn("inventory", embed["title"])
 
     def test_long_alerts_respect_discord_field_limits(self):
@@ -31,7 +35,34 @@ class DiscordFormattingTests(unittest.TestCase):
         embed = payload["embeds"][0]
         self.assertLessEqual(len(embed["fields"]), 25)
         for field in embed["fields"]:
-            self.assertLessEqual(len(field["value"]), 1024)
+            self.assertLessEqual(text_units(field["value"]), 1024)
+        units = sum(
+            text_units(field["name"]) + text_units(field["value"])
+            for field in embed["fields"]
+        )
+        units += sum(
+            text_units(value)
+            for value in (embed["title"], embed["description"], embed["footer"]["text"])
+        )
+        self.assertLessEqual(units, 6000)
+        shown = sum(field["value"].count("\n") + 1 for field in embed["fields"])
+        self.assertIn(f"{35 - shown} additional observations", embed["footer"]["text"])
+
+    def test_service_changes_use_info_style_and_preserve_confirmation(self):
+        payload = render(
+            ["NEW PORT host.example.invalid 192.168.1.2: tcp/443 (2/2 scans)"]
+        )
+        embed = payload["embeds"][0]
+        self.assertEqual(embed["title"], "ℹ️ Network inventory changes")
+        self.assertEqual(embed["color"], 3447003)
+        self.assertIn("2/2 scans", embed["fields"][0]["value"])
+
+    def test_observed_text_stays_inside_code_span(self):
+        payload = render(["NEW DEVICE @everyone\n`unsafe`"])
+        field = payload["embeds"][0]["fields"][0]["value"]
+        self.assertEqual(field.count("`"), 2)
+        self.assertNotIn("@everyone", field)
+        self.assertNotIn("\n", field)
 
 
 if __name__ == "__main__":
