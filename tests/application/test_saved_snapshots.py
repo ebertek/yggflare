@@ -26,7 +26,12 @@ class SavedSnapshotTests(unittest.TestCase):
             ):
                 with self.subTest(payload=payload[:64]):
                     path.write_bytes(payload)
-                    self.assertEqual(traefik.read(path), {})
+                    self.assertFalse(traefik.read(path))
+            deep = (
+                "[" * traefik.MAX_SNAPSHOT_DEPTH + "]" * traefik.MAX_SNAPSHOT_DEPTH
+            )
+            path.write_text('{"version":1,"items":[null,' + deep + "]}")
+            self.assertFalse(traefik.read(path))
             path.write_text('{"version":1,"items":[]}')
             self.assertEqual(traefik.read(path), {"version": 1, "items": []})
             link = root / "link"

@@ -23,6 +23,7 @@ SECTIONS = tuple(
     if not (protocol == "udp" and kind == "middlewares")
 )
 MAX_BYTES = 4 * 1024 * 1024
+MAX_SNAPSHOT_DEPTH = 32
 PAGE_SIZE = 100
 MAX_PAGES = 10
 INTERVAL = 300
@@ -267,6 +268,7 @@ def collect(config, fetch=get_page):
 def write(path, document):
     if "items" in document:
         document = {**document, "item_count": len(document["items"])}
+    validate_depth(document)
     encoded = json.dumps(document, separators=(",", ":"), allow_nan=False)
     if len(encoded.encode()) > MAX_BYTES:
         raise ValueError("Traefik snapshot exceeds size limit")
@@ -299,6 +301,22 @@ def finite_number(value):
     return result
 
 
+def validate_depth(document):
+    """Bound nesting independently of the Python JSON decoder recursion limit."""
+    end = object()
+    pending = [(iter((document,)), 0)]
+    while pending:
+        values, depth = pending[-1]
+        value = next(values, end)
+        if value is end:
+            pending.pop()
+        elif isinstance(value, (dict, list)):
+            if depth >= MAX_SNAPSHOT_DEPTH:
+                raise ValueError("Snapshot nesting exceeds limit")
+            children = value.values() if isinstance(value, dict) else value
+            pending.append((iter(children), depth + 1))
+
+
 def read(path):
     """Read one bounded regular file descriptor; never follow links or block on FIFOs."""
     try:
@@ -321,6 +339,7 @@ def read(path):
             and type(value.get("version")) is int
             and value["version"] == 1
         ):
+            validate_depth(value)
             return value
     except (OSError, ValueError, TypeError, RecursionError):
         pass
