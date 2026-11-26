@@ -101,7 +101,9 @@ production acceptance are distinct. Never move a published version tag.
 - Findings and histories are presentation-only. Require positive evidence
   to claim resolution. Preserve immediate identity drift alerts and
   confirmation thresholds for new ports/DNS-SD. Pending alerts and
-  pending Discord delivery are separate.
+  pending Discord delivery are separate. New TCP ports and DNS-SD
+  identities require two successful observations by default (range 1–10);
+  raw findings stay visible before notification.
 - Keep scan and snapshot state bounded, atomic and validated. Preserve
   last-known-good data on failure. Do not invent historical coverage or
   treat invalid/missing results as empty success.
@@ -110,7 +112,8 @@ production acceptance are distinct. Never move a published version tag.
 
 - Use fixed, documented API paths and bounded collection. No generic API,
   shell, redirects, write/execute endpoints or raw response exposure.
-  Explicitly selected invalid secrets fail closed; no fallback.
+  Explicitly selected invalid secrets fail closed; no fallback. Never load
+  credentials from read-only presentation paths.
 - Komodo/Kuma use restricted credentials and numeric origins; plaintext
   LAN HTTP requires explicit opt-in. Komodo tracked-input comparisons
   read existing Git objects only, without fetch/checkout or manifest export.
@@ -157,7 +160,8 @@ production acceptance are distinct. Never move a published version tag.
   arguments, tokens, webhook URLs, raw exceptions or payloads.
 - Validate Discord webhook URLs with the shared helper before sending.
   Archives may contain credentials; restrict access. Restore tests use
-  isolated temporary storage and reject unsafe archive members.
+  isolated temporary storage and reject traversal, symlinks, hardlinks
+  and extraction bombs.
 
 ## Configuration and documentation
 

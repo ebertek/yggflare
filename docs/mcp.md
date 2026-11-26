@@ -7,7 +7,7 @@ the existing inventory presentation model and saved discovery and
 Cloudflare lifecycle snapshots. Both stdio and optional Streamable HTTP
 use the same read-only tool registry. HTTP is disabled by default.
 
-### Stdio transport
+## Stdio transport
 
 The stdio server runs when explicitly invoked:
 
@@ -133,7 +133,7 @@ Tools never run scans, call Cloudflare, trigger reconciliation or send
 notifications. Only trusted clients should receive private infrastructure
 metadata.
 
-### Resources, prompts and tool groups
+## Resources, prompts and tool groups
 
 Both transports expose fixed JSON resources (`yggflare://schema`, inventory,
 operations, jobs, discovery, traefik, komodo, monitoring, probes, unifi) and six
@@ -152,7 +152,7 @@ admission wait and a 1 MiB serialized result limit. Optional
 time to stderr; no inputs or result data are logged. These bounds do not
 provide a hard execution deadline for an already-started local read.
 
-### Streamable HTTP transport
+## Streamable HTTP transport
 
 The optional listener is independent of the inventory web UI and serves
 `/mcp`. The controller refreshes Cloudflare lifecycle snapshots when either
@@ -182,7 +182,7 @@ invalid or unreadable token, invalid configuration or occupied port.
 Rotate the token by replacing the file and recreating the container.
 The token is private and may be included in protected backup archives.
 
-### Optional per-client authorization
+## Optional per-client authorization
 
 The default single-token configuration is unchanged. For several trusted
 HTTP clients with different information needs, create a private

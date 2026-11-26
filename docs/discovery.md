@@ -31,7 +31,7 @@ Additional SSDP, NetBIOS, LLDP, SMB, SNMP and passive fingerprint sources are
 described in [supplemental discovery options](#additional-discovery-sources). Only enable sources appropriate
 to your network.
 
-### Identity and history
+## Identity and history
 
 Yggflare correlates inventory declarations, observed MACs, IPv4/IPv6 addresses and
 discovery evidence. It retains first/last observed timestamps, address changes and an
@@ -44,7 +44,7 @@ presented separately; DNS-SD names and OS guesses are hints, not identity keys.
 A missing observation does **not** prove that a device is offline. Histories are
 bounded and saved in `/data/network-inventory/state.json`.
 
-### Notifications
+## Notifications
 
 Unknown devices and changed MAC/IP observations notify immediately. Newly open TCP
 ports and new DNS-SD service identities require **two successful observations** by

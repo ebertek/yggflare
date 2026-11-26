@@ -105,28 +105,42 @@ before enabling writes.
 credentials and resources. Values exported only to your shell do **not** reach the
 container unless the Compose `environment:` section forwards them.
 
-| Variable                                                      | Default                             | Function                                                                               |
-| ------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `YGGFLARE_VERSION`                                            | `main`                              | Image tag in the supplied Compose file                                                 |
-| `CLOUDFLARE_EXTERNAL_ZONE_ID` / `CLOUDFLARE_INTERNAL_ZONE_ID` | Resolve by domain                   | Optional explicit zone IDs                                                             |
-| `CLOUDFLARE_API_TOKEN_FILE`                                   | `/run/secrets/cloudflare_api_token` | Mounted token path                                                                     |
-| `CLOUDFLARE_STATIC_DNS_REQUIRED`                              | `true`                              | Require static inventory during audits                                                 |
-| `CLOUDFLARE_STATIC_DNS_SYNC`                                  | `false`                             | Include static DNS changes in writable plans                                           |
-| `CLOUDFLARE_DOCKER_DNS_SYNC`                                  | `false`                             | Opt into guarded creation of missing Docker A records                                  |
-| `YGGFLARE_CLOUDFLARE_DNS_RESERVE`                             | `10`                                | Keep this many internal-zone DNS record slots free when Docker DNS creation is enabled |
-| `YGGFLARE_CLOUDFLARE_AUTO_APPLY`                              | `false`                             | Enable guarded automatic reconciliation                                                |
-| `YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE`                         | `3`                                 | Automatic operations per cycle; `0` means all validated changes                        |
-| `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`                            | `false`                             | Enable owned-orphan retirement; also requires auto-apply                               |
-| `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE`                 | `1`                                 | Orphans retired per cycle; `0` means all eligible orphans                              |
-| `YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS`                      | `24`                                | Continuous absence required before deletion; 24–720                                    |
-| `YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS`                        | `2`                                 | Repeated scans before port/DNS-SD notifications; 1–10                                  |
-| `YGGFLARE_WEB_ENABLED` / `YGGFLARE_METRICS_ENABLED`           | `false` / `false`                   | Read-only HTTP UI and optional metrics                                                 |
-| `YGGFLARE_WEB_BIND` / `YGGFLARE_WEB_PORT`                     | `127.0.0.1` / `8787`                | Web listener                                                                           |
-| `YGGFLARE_LOG_FORMAT`                                         | `text`                              | Timestamped text or newline-delimited JSON                                             |
-| `YGGFLARE_WATCH_COMPOSE` / `YGGFLARE_WATCH_DOCKER`            | `true` / `true`                     | React to source and Docker topology changes                                            |
-| `YGGFLARE_WATCH_POLL_SECONDS`                                 | `15`                                | Compose file polling interval                                                          |
-| `YGGFLARE_WATCH_DEBOUNCE_SECONDS`                             | `20`                                | Wait for writes to settle                                                              |
-| `YGGFLARE_WATCH_COOLDOWN_SECONDS`                             | `60`                                | Minimum interval between reactive audits                                               |
+### Cloudflare
+
+| Variable                                      | Default                             | Purpose                         |
+| --------------------------------------------- | ----------------------------------- | ------------------------------- |
+| `CLOUDFLARE_API_TOKEN_FILE`                   | `/run/secrets/cloudflare_api_token` | Token file                      |
+| `CLOUDFLARE_DOCKER_DNS_SYNC`                  | `false`                             | Create missing Docker A records |
+| `CLOUDFLARE_EXTERNAL_ZONE_ID`                 | Resolve by domain                   | Optional external zone ID       |
+| `CLOUDFLARE_INTERNAL_ZONE_ID`                 | Resolve by domain                   | Optional internal zone ID       |
+| `CLOUDFLARE_STATIC_DNS_REQUIRED`              | `true`                              | Require static inventory        |
+| `CLOUDFLARE_STATIC_DNS_SYNC`                  | `false`                             | Enable static DNS writes        |
+| `YGGFLARE_CLOUDFLARE_AUTO_APPLY`              | `false`                             | Automatic reconciliation        |
+| `YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE`         | `3`                                 | Apply operations per cycle      |
+| `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP`            | `false`                             | Retire owned orphans            |
+| `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE` | `1`                                 | Retirements per cycle           |
+| `YGGFLARE_CLOUDFLARE_DNS_RESERVE`             | `10`                                | Reserved internal DNS slots     |
+| `YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS`      | `24`                                | Grace period (24–720 hours)     |
+
+Batch size `0` opts into all validated operations. Cleanup also requires
+automatic apply. See [Cloudflare](cloudflare.md) for the quota and write rules.
+
+### Application
+
+| Variable                               | Default     | Purpose                   |
+| -------------------------------------- | ----------- | ------------------------- |
+| `YGGFLARE_LOG_FORMAT`                  | `text`      | Text or JSON logs         |
+| `YGGFLARE_METRICS_ENABLED`             | `false`     | Prometheus metrics        |
+| `YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS` | `2`         | Confirmation scans (1–10) |
+| `YGGFLARE_VERSION`                     | `main`      | Image tag                 |
+| `YGGFLARE_WATCH_COMPOSE`               | `true`      | Watch Compose             |
+| `YGGFLARE_WATCH_COOLDOWN_SECONDS`      | `60`        | Minimum reactive interval |
+| `YGGFLARE_WATCH_DEBOUNCE_SECONDS`      | `20`        | Wait for writes to settle |
+| `YGGFLARE_WATCH_DOCKER`                | `true`      | Watch Docker topology     |
+| `YGGFLARE_WATCH_POLL_SECONDS`          | `15`        | Compose polling interval  |
+| `YGGFLARE_WEB_BIND`                    | `127.0.0.1` | HTTP bind address         |
+| `YGGFLARE_WEB_ENABLED`                 | `false`     | Web UI                    |
+| `YGGFLARE_WEB_PORT`                    | `8787`      | HTTP port                 |
 
 Application defaults apply even when a setting is omitted. To override a value not
 forwarded by the supplied Compose file, add it to that service's `environment:`.

@@ -8,7 +8,7 @@
 | Network scan                                 | Daily at 05:15 UTC                             |
 | Backup                                       | Daily at 04:00 UTC; keep 14 snapshots          |
 
-Watchers trigger Cloudflare audits, not new LAN scans. Watchers trigger Cloudflare audits, not LAN scans. Optional integrations
+Watchers trigger Cloudflare audits, not LAN scans. Optional integrations
 refresh every five minutes; UniFi automatic creation is separately opt-in.
 The controller logs job durations and outcomes and handles shutdown signals.
 
