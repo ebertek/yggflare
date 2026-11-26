@@ -184,12 +184,17 @@ def create_policy(live, key, operation):
 def discord_notice(operation):
     webhook = urlsplit(read_webhook())
     message = {
-        "content": (
-            f"UniFi DNS policy created and verified: "
-            f"{operation['domain']} → {operation['ipv4Address']} "
-            f"(TTL {operation['ttlSeconds']}s; A and PTR match)."
-        ),
         "allowed_mentions": {"parse": []},
+        "embeds": [
+            {
+                "title": "✅ UniFi DNS created",
+                "description": (
+                    f"`{operation['domain']}` → `{operation['ipv4Address']}`\n"
+                    f"A & PTR verified · TTL {operation['ttlSeconds']}s"
+                ),
+                "color": 3066993,
+            }
+        ],
     }
     conn = http.client.HTTPSConnection("discord.com", timeout=10)
     try:
