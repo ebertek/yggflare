@@ -1,6 +1,7 @@
 """Pure summaries of saved evidence; no active collection."""
 
 import ipaddress
+from datetime import UTC, datetime
 
 
 def selected_tcp_ports(state):
@@ -117,3 +118,74 @@ def probe_coverage(configured_checks, rows, available, fresh):
             probe_outcome(row) == outcome for row in matching
         )
     return result
+
+
+def observation_time(value):
+    """Only explicit timezone-aware timestamps are comparable."""
+    if not isinstance(value, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(value)
+        return stamp.astimezone(UTC) if stamp.tzinfo is not None else None
+    except (ValueError, OverflowError):
+        return None
+
+
+def observation_window(sources, now):
+    """Describe timestamp spread without asserting synchronized collection."""
+    times = {}
+    unknown = []
+    for source, value in sources.items():
+        stamp = observation_time(value)
+        if stamp is None or stamp > now:
+            unknown.append(source)
+        else:
+            times[source] = stamp
+    earliest = min(times.values()) if times else None
+    latest = max(times.values()) if times else None
+    return {
+        "evaluated_at": now.isoformat(),
+        "timestamped_sources": sorted(times),
+        "unknown_timestamp_sources": sorted(unknown),
+        "earliest_observed_at": earliest.isoformat() if earliest else None,
+        "latest_observed_at": latest.isoformat() if latest else None,
+        "spread_seconds": (
+            round((latest - earliest).total_seconds(), 1)
+            if len(times) >= 2
+            else None
+        ),
+        "caveat": (
+            "Independent observation times, not an atomic snapshot. "
+            "Missing or future timestamps are excluded; spread is not health."
+        ),
+    }
+
+
+def network_collection_verified(scanned, coverage, job, now):
+    """Associate scheduler outcomes only with observations in their time window."""
+    observed = observation_time(scanned)
+    if observed is None or observed > now:
+        return None
+    start = observation_time(job.get("started_at"))
+    finish = observation_time(job.get("finished_at"))
+    status = job.get("status")
+    if start is not None and observed < start <= now:
+        # A newer attempt is not evidence that the retained snapshot is current.
+        return (
+            False if status in ("failed", "interrupted", "completion_unknown") else None
+        )
+    if start is not None and start <= observed:
+        if finish is not None and observed <= finish <= now:
+            if status == "succeeded":
+                return True
+            if status in ("failed", "interrupted"):
+                return False
+    # Positive saved coverage also supports an explicit, unscheduled scan.
+    if (
+        coverage.get("available")
+        and observation_time(coverage.get("observed_at")) == observed
+        and coverage.get("host_discovery", {}).get("run_completed") is True
+        and coverage.get("tcp", {}).get("run_completed") is not False
+    ):
+        return True
+    return None

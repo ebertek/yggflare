@@ -14,7 +14,14 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Required, TypedDict
 
-from evidence_summary import monitor_port_summary, probe_coverage, selected_tcp_ports
+from evidence_summary import (
+    monitor_port_summary,
+    network_collection_verified,
+    observation_time,
+    observation_window,
+    probe_coverage,
+    selected_tcp_ports,
+)
 from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
 from integration_inventory import FIELDS as INTEGRATION_FIELDS
@@ -210,6 +217,16 @@ class ProbeStatus(TypedDict, total=False):
     caveat: str
 
 
+class ObservationWindow(TypedDict):
+    evaluated_at: str
+    timestamped_sources: list[str]
+    unknown_timestamp_sources: list[str]
+    earliest_observed_at: str | None
+    latest_observed_at: str | None
+    spread_seconds: float | None
+    caveat: str
+
+
 class PageContext(TypedDict, total=False):
     schema_version: Required[int]
     total: Required[int]
@@ -263,6 +280,7 @@ class PageContext(TypedDict, total=False):
     traefik_snapshot: dict[str, Any]
     integration_snapshots: dict[str, Any]
     correlation_caveat: str
+    observation_window: ObservationWindow
     traefik_runtime_verified: bool | None
     reachability_verified: bool | None
 
@@ -667,6 +685,7 @@ class EvidenceOverview(TypedDict):
     schema_version: int
     evaluated_at: str
     items: list[EvidenceSource]
+    observation_window: ObservationWindow
 
 
 def evidence_source(
@@ -683,14 +702,8 @@ def evidence_source(
     caveat="",
 ):
     now = now or datetime.now(UTC)
-    age = None
-    try:
-        if observed_at:
-            value = datetime.fromisoformat(observed_at)
-            if value.tzinfo is not None:
-                age = (now - value).total_seconds()
-    except (TypeError, ValueError):
-        pass
+    stamp = observation_time(observed_at)
+    age = (now - stamp).total_seconds() if stamp is not None else None
     freshness = (
         "unavailable"
         if not available
@@ -1825,9 +1838,6 @@ class InventoryTools:
         jobs = (data.get("job_status") or {}).get("jobs", {})
         network = jobs.get("network_scan", {})
         scanned = state.get("scanned_at") or data.get("scanned_at")
-        verified = (
-            network.get("status") == "succeeded" if network.get("status") else None
-        )
         supplemental = state.get("supplemental", {})
         supplemental_coverage = supplemental_coverage_context(supplemental)
         configured_sources = [
@@ -1848,20 +1858,17 @@ class InventoryTools:
             )
         )
         coverage = scan_coverage_context(state)
-        discovery = coverage.get("host_discovery", {})
         tcp = coverage.get("tcp", {})
-        if (
-            coverage.get("available")
-            and discovery.get("run_completed") is True
-            and tcp.get("run_completed") is not False
-        ):
-            # A saved live scan is itself positive collection evidence even if
-            # an explicit CLI invocation has no scheduler record.
-            if not network.get("status"):
-                verified = True
         cloud = cloudflare_context(data)
         view = self.service_loader()
+        adapters = (
+            ("traefik", saved_traefik(Path("/data"))),
+            ("komodo", saved_integration("komodo", Path("/data"))),
+            ("kuma", saved_integration("kuma", Path("/data"))),
+            ("probes", saved_probes(Path("/data"))),
+        )
         now = datetime.now(UTC)
+        verified = network_collection_verified(scanned, coverage, network, now)
 
         def row(source, **kwargs):
             return evidence_source(source, now=now, **kwargs)
@@ -1942,12 +1949,7 @@ class InventoryTools:
                 caveat="Local engine only; no remote-host or replica completeness guarantee.",
             ),
         ]
-        for source, evidence in (
-            ("traefik", saved_traefik(Path("/data"))),
-            ("komodo", saved_integration("komodo", Path("/data"))),
-            ("kuma", saved_integration("kuma", Path("/data"))),
-            ("probes", saved_probes(Path("/data"))),
-        ):
+        for source, evidence in adapters:
             items.append(
                 row(
                     source,
@@ -1963,7 +1965,18 @@ class InventoryTools:
                     caveat="Saved bounded observation; visibility and health are not implied by successful collection.",
                 )
             )
-        return {"schema_version": 1, "evaluated_at": now.isoformat(), "items": items}
+        return {
+            "schema_version": 1,
+            "evaluated_at": now.isoformat(),
+            "items": items,
+            "observation_window": observation_window(
+                {
+                    item["source"]: item["observed_at"] if item["available"] else None
+                    for item in items
+                },
+                now,
+            ),
+        }
 
     def get_yggflare_health(self) -> dict[str, Any]:
         """Read controller heartbeat, build identity and saved snapshot context."""
@@ -2735,6 +2748,22 @@ class InventoryTools:
             }
             for name, value in (("komodo", komodo), ("kuma", kuma), ("probes", probes))
         }
+        result["observation_window"] = observation_window(
+            {
+                "compose_and_local_docker": result.get("observed_at"),
+                "cloudflare": result["cloudflare"].get("audited_at"),
+                "traefik": (
+                    result["traefik_snapshot"].get("observed_at")
+                    if result["traefik_snapshot"].get("available")
+                    else None
+                ),
+                **{
+                    name: value.get("observed_at") if value.get("available") else None
+                    for name, value in result["integration_snapshots"].items()
+                },
+            },
+            datetime.now(UTC),
+        )
         result["correlation_caveat"] = (
             "Exact aliases, project/stack names, monitor hostnames, Docker friendly names and explicit numeric service addresses are candidate matches only. Docker target identity is not exported. Shared addresses and port declarations do not prove application identity. "
             "Probe results apply to their listed numeric destination and local vantage; they do not establish external reachability, proxy routing or authentication. "

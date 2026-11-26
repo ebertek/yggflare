@@ -771,6 +771,10 @@ class CrossSourceTests(unittest.TestCase):
         self.assertEqual(result["layers"]["kuma"]["total"], 1)
         self.assertEqual(result["layers"]["probes"]["total"], 1)
         self.assertFalse(result["integration_snapshots"]["probes"]["fresh"])
+        self.assertIn(
+            "probes", result["observation_window"]["unknown_timestamp_sources"]
+        )
+        self.assertIsNone(result["observation_window"]["spread_seconds"])
         self.assertIsNone(result["reachability_verified"])
         self.assertNotIn("never-export", str(result))
 
@@ -829,6 +833,10 @@ class MCPRegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result.is_error)
             sources = result.structured_content["items"]
             self.assertEqual(len(sources), 10)
+            window = result.structured_content["observation_window"]
+            self.assertEqual(
+                window["evaluated_at"], result.structured_content["evaluated_at"]
+            )
             self.assertIn("completeness", sources[0])
             self.assertEqual(result.structured_content["schema_version"], 1)
 
