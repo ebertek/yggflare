@@ -45,6 +45,58 @@ class UniFiDNSTests(unittest.TestCase):
         self.assertEqual(self.status([record(address="8.8.8.8")]), {"out_of_scope": 1})
         self.assertEqual(self.status([record(proxied=True)]), {"proxied_or_unknown": 1})
 
+    def test_all_rfc1918_ranges_are_reported_without_expanding_lan(self):
+        records = [
+            record("a", "10.1.2.3"),
+            record("b", "172.16.0.1"),
+            record("c", "172.31.255.254"),
+            record("d", "192.168.10.40"),
+            record("e", "192.168.50.40"),
+        ]
+        result = unifi_dns.plan(records, [], ZONE, LAN)
+        self.assertEqual(result["counts"], {"candidate": 5})
+        self.assertEqual(result["source_zone"], ZONE)
+        self.assertEqual(result["configured_lan"], str(LAN))
+        self.assertTrue(all(row["rfc1918"] for row in result["rows"]))
+        self.assertEqual(sum(row["in_configured_lan"] for row in result["rows"]), 1)
+
+    def test_special_use_addresses_are_not_rfc1918(self):
+        for address in (
+            "127.0.0.1",
+            "169.254.1.1",
+            "100.64.0.1",
+            "192.0.2.1",
+            "198.18.0.1",
+            "172.15.255.255",
+            "172.32.0.1",
+            "224.0.0.1",
+            "0.0.0.0",
+        ):
+            with self.subTest(address=address):
+                self.assertEqual(
+                    self.status([record(address=address)]), {"out_of_scope": 1}
+                )
+
+    def test_configured_lan_boundary_is_not_candidate(self):
+        for address in ("192.168.10.0", "192.168.10.255"):
+            self.assertEqual(
+                self.status([record(address=address)]), {"configured_lan_boundary": 1}
+            )
+
+    def test_multiple_addresses_and_excluded_names_are_visible(self):
+        records = [
+            record(address="192.168.10.41"),
+            record(address="192.168.10.40"),
+            record("*"),
+            {**record(), "name": "other.example.com"},
+        ]
+        result = unifi_dns.plan(records, [], ZONE, LAN)
+        self.assertEqual(result["excluded_a_records"], 2)
+        row = result["rows"][0]
+        self.assertEqual(row["status"], "ambiguous_forward")
+        self.assertIsNone(row["address"])
+        self.assertEqual(row["addresses"], ["192.168.10.40", "192.168.10.41"])
+
     def test_aliases_and_multiple_addresses(self):
         self.assertEqual(
             self.status([record(), record("other")]), {"ambiguous_reverse": 2}

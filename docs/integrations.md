@@ -57,11 +57,23 @@ docker exec yggflare yggflare unifi plan
 docker exec yggflare yggflare unifi plan --json
 ```
 
-Only the configured Cloudflare internal zone and LAN CIDR are in scope.
-Unproxied, unambiguous single IPv4 records are candidates; aliases sharing
-an address, multiple A records, additional AAAA/CNAME records, local
-conflicts and forwarding/wildcard policies require review. Existing matching
-policies are not claimed. No other policies are changed or deleted.
+The live Cloudflare zone selected by `YGGFLARE_INTERNAL_DOMAIN` is the
+source for this comparison, including records not managed by Yggflare.
+Compose and the private static inventory remain upstream declarations;
+this command does not synthesize missing DNS records from either source.
+Unproxied, unambiguous single A records in the exact RFC 1918 blocks
+(`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are candidates.
+Loopback, link-local, CGNAT, documentation and other special-use ranges
+are not RFC 1918. The report identifies whether each single address is
+within the configured LAN CIDR; out-of-LAN private candidates require
+explicit scope review before any future write. The configured LAN CIDR
+still limits the UniFi API destination; discovery scope is unchanged.
+The report includes all valid numeric A values for ambiguous names and
+counts excluded A records with wildcard, invalid or out-of-zone names.
+Aliases sharing an address, multiple A records, additional AAAA/CNAME
+records, LAN boundary addresses, local conflicts and forwarding/wildcard
+policies require review. Existing matching policies are not claimed. No
+other policies are changed or deleted.
 A candidate is a comparison result, not a write authorization or observed
 PTR answer. Verify the gateway's actual forward and reverse DNS responses,
 including IPv6 and DHCP-provided resolvers, before any migration.
