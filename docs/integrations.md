@@ -164,15 +164,32 @@ operator for any state repair.
 
 ## Opt-in scheduled UniFi creates
 
-After a verified manual pilot, set `YGGFLARE_UNIFI_AUTO_APPLY=true` and
-`YGGFLARE_UNIFI_AUTO_HOSTS` to a comma-separated list of up to 32 exact,
-reviewed internal hostnames. The controller proposes and revalidates at
-most one eligible create per five-minute cycle using the same safety
-checks and journal. Its outcome appears as the `unifi_apply` scheduled
-job. Existing ownership blocks recreation if a previously created policy
-disappears or drifts. MCP, the Web UI, and Prometheus remain read-only.
+After a verified manual pilot, set `YGGFLARE_UNIFI_AUTO_APPLY=true`.
+Automatic scope comes from explicit Compose IPv4 declarations inside the
+configured Docker CIDR and primary IPv4 entries in the private static
+inventory. A Cloudflare candidate must have the exact declared hostname
+and address. Duplicate or ambiguous declarations, runtime-only names,
+and Cloudflare-only names stay out of automatic scope. The writer
+re-reads the declarations before creating. Manual hostname-specific
+approval is still available for candidates outside automatic scope.
+
+The controller creates at most one eligible policy per five-minute
+cycle using the live checks and journal. The outcome appears as the
+`unifi_apply` scheduled job. Existing ownership blocks recreation of a
+previously owned hostname or address if its policy disappears or drifts.
 Automatic creates default to off. Disable the opt-in to stop the
 scheduled writer.
+
+Set `YGGFLARE_UNIFI_DISCORD_NOTIFY=true` to send a notice via the
+existing Yggflare Discord webhook after a new policy is verified. The
+notice includes the hostname, IPv4 address, and TTL. Verification after
+a delayed PTR queues the same notice as immediate success. Existing
+records and older journal entries are not replayed. Yggflare journals the
+attempt before sending and does not resubmit an unconfirmed request,
+because Discord webhooks lack an idempotency key. Check the scheduler log
+for unconfirmed delivery. To roll back to a build that predates the
+notification journal fields, disable automatic creates first and retain
+the current journal.
 
 ## Technitium migration procedure
 

@@ -1,5 +1,6 @@
 """Offline guards and journal recovery for UniFi create reconciliation."""
 
+import ipaddress
 import json
 import os
 import tempfile
@@ -137,14 +138,13 @@ class UniFiApplyTests(unittest.TestCase):
             os.environ,
             {
                 "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                "YGGFLARE_UNIFI_AUTO_HOSTS": NAME,
             },
         ):
             with self.assertRaisesRegex(apply.ApplyError, "manual pilot"):
                 apply.run(self.data, automatic=True)
         self.post.assert_not_called()
 
-    def test_automatic_creates_only_one_allowlisted_unowned_name(self):
+    def test_automatic_creates_only_one_declared_unowned_name(self):
         existing = {
             **OPERATION,
             "domain": "previous.example.invalid",
@@ -171,12 +171,14 @@ class UniFiApplyTests(unittest.TestCase):
         apply.write(self.path, ledger)
         self.post.side_effect = None
         self.post.return_value = POLICY
-        with patch.dict(
-            os.environ,
-            {
-                "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                "YGGFLARE_UNIFI_AUTO_HOSTS": NAME,
-            },
+        with (
+            patch.object(apply, "automatic_targets", return_value={(NAME, ADDRESS)}),
+            patch.dict(
+                os.environ,
+                {
+                    "YGGFLARE_UNIFI_AUTO_APPLY": "true",
+                },
+            ),
         ):
             self.assertIn("Created and verified", apply.run(self.data, automatic=True))
         first_review = self.review.call_args_list[0].args[0]
@@ -208,6 +210,71 @@ class UniFiApplyTests(unittest.TestCase):
                 apply.run(self.data, NAME, FINGERPRINT)
         self.post.assert_not_called()
         self.assertFalse(self.path.exists())
+
+    def test_exact_declarations_exclude_runtime_only_and_ambiguous_addresses(self):
+        zone = "example.invalid"
+        docker_range = ipaddress.IPv4Network("192.168.10.0/24")
+        services = [
+            {"Name": "a/app", "Hostname": "configured", "IPv4Addresses": [ADDRESS]},
+            {"Name": "a/runtime-only"},
+            {"Name": "a/first", "IPv4Addresses": ["192.168.10.30"]},
+            {"Name": "a/second", "IPv4Addresses": ["192.168.10.30"]},
+            {"Name": "a/outside", "IPv4Addresses": ["192.168.11.20"]},
+        ]
+        self.assertEqual(
+            apply.declared_targets(
+                services,
+                {"printer.example.invalid": "192.168.11.10"},
+                zone,
+                docker_range,
+            ),
+            {
+                ("configured.example.invalid", ADDRESS),
+                ("printer.example.invalid", "192.168.11.10"),
+            },
+        )
+
+    def test_notice_waits_for_recovery_and_is_submitted_once(self):
+        self.query.side_effect = [
+            ("nxdomain", []),
+            ("answered", [ADDRESS]),
+            ("answered", [NAME + "."]),
+        ]
+        self.policies.side_effect = [[], [RESPONSE], [RESPONSE]]
+
+        def notice(operation):
+            entry = apply.load_ledger(self.path, LIVE.target)["owned"][0]
+            self.assertEqual(entry["notice"], "attempted")
+            self.assertEqual(operation, OPERATION)
+            return True
+
+        with (
+            patch.dict(os.environ, {"YGGFLARE_UNIFI_DISCORD_NOTIFY": "true"}),
+            patch.object(apply, "discord_notice", side_effect=notice) as send,
+        ):
+            with self.assertRaisesRegex(apply.ApplyError, "awaiting matching"):
+                apply.run(self.data, NAME, FINGERPRINT)
+            send.assert_not_called()
+            self.assertIn("Recovered", apply.run(self.data, NAME, FINGERPRINT))
+            ledger = apply.load_ledger(self.path, LIVE.target)
+            self.assertEqual(ledger["owned"][0]["notice"], "accepted")
+            apply.deliver_notice(self.path, ledger)
+            send.assert_called_once_with(OPERATION)
+            self.post.assert_called_once()
+
+    def test_lost_discord_response_does_not_replay_or_clear_ownership(self):
+        with (
+            patch.dict(os.environ, {"YGGFLARE_UNIFI_DISCORD_NOTIFY": "true"}),
+            patch.object(apply, "discord_notice", side_effect=TimeoutError) as send,
+        ):
+            self.assertIn(
+                "Created and verified", apply.run(self.data, NAME, FINGERPRINT)
+            )
+            ledger = apply.load_ledger(self.path, LIVE.target)
+            self.assertEqual(ledger["owned"][0]["notice"], "unconfirmed")
+            self.assertIsNone(ledger["pending"])
+            apply.deliver_notice(self.path, ledger)
+            send.assert_called_once()
 
     def test_transport_sends_one_fixed_post_and_verifies_acknowledgement(self):
         with patch.object(apply, "connection") as connect:

@@ -10,10 +10,14 @@ import os
 import re
 import signal
 import sys
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from cloudflare_api import CloudflareError
+from cloudflare_docker_dns import canonical_name, scoped_address
+from discord_webhook import read_webhook
 from traefik_inventory import read, write
 from unifi_api import (
     MAX_ROWS,
@@ -32,10 +36,11 @@ from unifi_reconcile_plan import (
     policy_fingerprint,
     review,
 )
+from yggflare_config import network
 
 DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
-MAX_AUTO_HOSTS = 32
+NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
 
 
 class ApplyError(ValueError):
@@ -88,7 +93,11 @@ def load_ledger(path, target):
     for entry in entries:
         if (
             not isinstance(entry, dict)
-            or entry.keys() != {"operation", "policy_id", "manual"}
+            or entry.keys() - {"notice"} != {"operation", "policy_id", "manual"}
+            or (
+                "notice" in entry
+                and (entry is pending or entry["notice"] not in NOTICE_STATES)
+            )
             or not valid_operation(entry["operation"])
             or type(entry["manual"]) is not bool
         ):
@@ -147,6 +156,54 @@ def create_policy(live, key, operation):
     return identifier
 
 
+def discord_notice(operation):
+    webhook = urlsplit(read_webhook())
+    message = {
+        "content": (
+            f"UniFi DNS policy created and verified: "
+            f"{operation['domain']} → {operation['ipv4Address']} "
+            f"(TTL {operation['ttlSeconds']}s; A and PTR match)."
+        ),
+        "allowed_mentions": {"parse": []},
+    }
+    conn = http.client.HTTPSConnection("discord.com", timeout=10)
+    try:
+        resource = webhook.path + ("?" + webhook.query if webhook.query else "")
+        conn.request(
+            "POST",
+            resource,
+            body=json.dumps(message).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "DiscordBot (https://github.com/ebertek/yggflare, 1.0)",
+            },
+        )
+        return conn.getresponse().status in (200, 204)
+    finally:
+        conn.close()
+
+
+def deliver_notice(path, ledger):
+    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") != "true":
+        return
+    for entry in ledger["owned"]:
+        if entry.get("notice") != "pending":
+            continue
+        # Discord provides no idempotency key. Persist before sending so a
+        # crash or lost response cannot cause us to submit the same notice twice.
+        entry["notice"] = "attempted"
+        write(path, ledger, durable=True)
+        try:
+            accepted = discord_notice(entry["operation"])
+        except (ValueError, OSError, http.client.HTTPException):
+            accepted = False
+        entry["notice"] = "accepted" if accepted else "unconfirmed"
+        write(path, ledger, durable=True)
+        if not accepted:
+            print("UniFi DNS Discord notification was not confirmed.", file=sys.stderr)
+        break
+
+
 def confirm_pending(path, ledger, live):
     entry = ledger["pending"]
     policy_id = entry["policy_id"]
@@ -184,28 +241,63 @@ def confirm_pending(path, ledger, live):
         gateway, reverse_name, "PTR"
     ) != ("answered", [name + "."]):
         raise ApplyError("Acknowledged policy is awaiting matching A and PTR replies")
+    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
+        entry["notice"] = "pending"
     ledger["owned"].append(entry)
     ledger["pilot_verified"] |= entry["manual"]
     ledger["pending"] = None
     write(path, ledger, durable=True)
 
 
-def automatic_hosts():
-    if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
-        raise ApplyError("Scheduled UniFi creates are disabled")
-    names = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS", "").split(",")
-    if (
-        not 1 <= len(names) <= MAX_AUTO_HOSTS
-        or any(hostname(name) is None or hostname(name) != name for name in names)
-        or len(set(names)) != len(names)
-    ):
-        raise ApplyError("Set a bounded, exact UniFi automatic hostname allowlist")
-    return set(names)
+def declared_targets(services, static_hosts, zone, docker_network):
+    """Return unambiguous exact hostname/address declarations."""
+    declarations = [(name, {address}) for name, address in static_hosts.items()]
+    for service in services:
+        name = service.get("ContainerName") or service["Name"].rsplit("/", 1)[-1]
+        host = canonical_name(service.get("Hostname") or name, zone)
+        if host:
+            values = service.get("IPv4Addresses", [])
+            addresses = {scoped_address(value, docker_network) for value in values}
+            declarations.append((host, addresses))
+
+    by_name = Counter(name for name, _ in declarations)
+    by_address = Counter(
+        address for _, addresses in declarations for address in addresses
+    )
+    return {
+        (name, address)
+        for name, addresses in declarations
+        for address in addresses
+        if by_name[name] == 1
+        and len(addresses) == 1
+        and address is not None
+        and by_address[address] == 1
+    }
+
+
+def automatic_targets(zone):
+    try:
+        from cloudflare_desired import compose_inventory
+        from cloudflare_static_dns import load_inventory_details
+
+        services = compose_inventory(Path("/compose-source"))
+        static_hosts, _ = load_inventory_details(
+            Path("/config/static-hosts.json"), required=True
+        )
+        return declared_targets(
+            services, static_hosts, zone, network("YGGFLARE_DOCKER_CIDR")
+        )
+    except Exception:
+        # YAML parser diagnostics may include source lines from private Compose.
+        raise ApplyError(
+            "Cannot validate Compose and static DNS declarations"
+        ) from None
 
 
 def run(data, selected="", approval="", *, automatic=False):
     if automatic:
-        allowed = automatic_hosts()
+        if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
+            raise ApplyError("Scheduled UniFi creates are disabled")
     elif hostname(selected) != selected or not DIGEST.fullmatch(approval):
         raise ApplyError(
             "Apply requires one exact hostname and a SHA-256 preview fingerprint"
@@ -216,8 +308,10 @@ def run(data, selected="", approval="", *, automatic=False):
         live = load_live()
         ledger_path = data / "unifi-ownership.json"
         ledger = load_ledger(ledger_path, live.target)
+        deliver_notice(ledger_path, ledger)
         if ledger["pending"] is not None:
             confirm_pending(ledger_path, ledger, live)
+            deliver_notice(ledger_path, ledger)
             return "Recovered and verified the pending UniFi create"
         owned = {entry["operation"]["domain"] for entry in ledger["owned"]}
         owned_ips = {entry["operation"]["ipv4Address"] for entry in ledger["owned"]}
@@ -226,17 +320,19 @@ def run(data, selected="", approval="", *, automatic=False):
                 raise ApplyError(
                     "A verified manual pilot is required before automatic creates"
                 )
+            targets = automatic_targets(live.comparison["source_zone"])
             eligible = [
                 row
                 for row in live.comparison["rows"]
-                if row["hostname"] in allowed - owned
+                if (row["hostname"], row["address"]) in targets
+                and row["hostname"] not in owned
                 and row["address"] not in owned_ips
             ]
             report = review(
                 replace(live, comparison={**live.comparison, "rows": eligible})
             )
             if not report["operations"]:
-                return "No eligible allowlisted UniFi creates"
+                return "No eligible declared UniFi creates"
         else:
             report = review(live, selected)
             if not hmac.compare_digest(report["fingerprint"], approval):
@@ -268,6 +364,11 @@ def run(data, selected="", approval="", *, automatic=False):
         policies = all_rows(refreshed.config, refreshed.key, "dns", refreshed.site)
         if policy_fingerprint(policies) != refreshed.policies_id:
             raise ApplyError("UniFi policies changed immediately before create")
+        if automatic and (
+            operation["domain"],
+            operation["ipv4Address"],
+        ) not in automatic_targets(refreshed.comparison["source_zone"]):
+            raise ApplyError("DNS declaration changed immediately before create")
         live = refreshed
         # Journal before issuing a single POST. No retry after a lost acknowledgement.
         ledger["pending"] = {
@@ -279,6 +380,7 @@ def run(data, selected="", approval="", *, automatic=False):
         ledger["pending"]["policy_id"] = create_policy(live, live.key, operation)
         write(ledger_path, ledger, durable=True)
         confirm_pending(ledger_path, ledger, live)
+        deliver_notice(ledger_path, ledger)
         return "Created and verified one UniFi DNS policy"
 
 
