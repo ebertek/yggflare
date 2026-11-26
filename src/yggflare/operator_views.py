@@ -237,9 +237,7 @@ def sections(result):
 
 def cli_text(result):
     context, groups = sections(result)
-    lines = [
-        f"{visible_text(key)}: {display(value)}" for key, value in context.items()
-    ]
+    lines = [f"{visible_text(key)}: {display(value)}" for key, value in context.items()]
     for title, rows in groups:
         lines.append("\n" + visible_text(title) + ":")
         if not rows:
