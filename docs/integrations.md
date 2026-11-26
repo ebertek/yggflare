@@ -164,17 +164,19 @@ operator for any state repair.
 
 ## Opt-in scheduled UniFi creates
 
-After a verified manual pilot, set `YGGFLARE_UNIFI_AUTO_APPLY=true` and
-`YGGFLARE_UNIFI_AUTO_HOSTS` to a comma-separated list of up to 128 exact,
-reviewed internal hostnames. To keep deployment names in private GitOps,
-mount a read-only Compose config at `/yggflare-unifi-auto-hosts.txt`
-with one hostname per line and select it with
-`YGGFLARE_UNIFI_AUTO_HOSTS_FILE=/yggflare-unifi-auto-hosts.txt`. Select
-either the file or the inline list. The controller proposes and revalidates at
-most one eligible create per five-minute cycle using the same safety
-checks and journal. Its outcome appears as the `unifi_apply` scheduled
-job. Existing ownership blocks recreation if a previously created policy
-disappears or drifts. MCP, the Web UI, and Prometheus remain read-only.
+After a verified manual pilot, set `YGGFLARE_UNIFI_AUTO_APPLY=true`.
+Automatic scope comes from explicit Compose IPv4 declarations inside the
+configured Docker CIDR and primary IPv4 entries in the private static
+inventory. A Cloudflare candidate must have the exact declared hostname
+and address. Duplicate or ambiguous declarations, runtime-only names,
+and Cloudflare-only names stay out of automatic scope. The writer
+re-reads the declarations before creating. Manual hostname-specific
+approval is still available for candidates outside automatic scope.
+
+The controller creates at most one eligible policy per five-minute
+cycle using the live checks and journal. The outcome appears as the
+`unifi_apply` scheduled job. Existing ownership blocks recreation of a
+previously owned hostname or address if its policy disappears or drifts.
 Automatic creates default to off. Disable the opt-in to stop the
 scheduled writer.
 

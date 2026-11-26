@@ -1,5 +1,6 @@
 """Offline guards and journal recovery for UniFi create reconciliation."""
 
+import ipaddress
 import json
 import os
 import tempfile
@@ -137,14 +138,13 @@ class UniFiApplyTests(unittest.TestCase):
             os.environ,
             {
                 "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                "YGGFLARE_UNIFI_AUTO_HOSTS": NAME,
             },
         ):
             with self.assertRaisesRegex(apply.ApplyError, "manual pilot"):
                 apply.run(self.data, automatic=True)
         self.post.assert_not_called()
 
-    def test_automatic_creates_only_one_allowlisted_unowned_name(self):
+    def test_automatic_creates_only_one_declared_unowned_name(self):
         existing = {
             **OPERATION,
             "domain": "previous.example.invalid",
@@ -171,12 +171,14 @@ class UniFiApplyTests(unittest.TestCase):
         apply.write(self.path, ledger)
         self.post.side_effect = None
         self.post.return_value = POLICY
-        with patch.dict(
-            os.environ,
-            {
-                "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                "YGGFLARE_UNIFI_AUTO_HOSTS": NAME,
-            },
+        with (
+            patch.object(apply, "automatic_targets", return_value={(NAME, ADDRESS)}),
+            patch.dict(
+                os.environ,
+                {
+                    "YGGFLARE_UNIFI_AUTO_APPLY": "true",
+                },
+            ),
         ):
             self.assertIn("Created and verified", apply.run(self.data, automatic=True))
         first_review = self.review.call_args_list[0].args[0]
@@ -209,45 +211,28 @@ class UniFiApplyTests(unittest.TestCase):
         self.post.assert_not_called()
         self.assertFalse(self.path.exists())
 
-    def test_full_allowlist_is_bounded_and_explicit(self):
-        names = [f"host-{index}.example.invalid" for index in range(107)]
-        with patch.dict(
-            os.environ,
-            {
-                "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                "YGGFLARE_UNIFI_AUTO_HOSTS": ",".join(names),
-            },
-        ):
-            self.assertEqual(apply.automatic_hosts(), set(names))
-        with patch.dict(
-            os.environ,
-            {
-                "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                "YGGFLARE_UNIFI_AUTO_HOSTS": ",".join(names),
-                "YGGFLARE_UNIFI_AUTO_HOSTS_FILE": apply.HOSTS_FILE,
-            },
-        ):
-            with self.assertRaisesRegex(apply.ApplyError, "either"):
-                apply.automatic_hosts()
-        config = self.data / "allowlist"
-        config.write_text("\n".join(names) + "\n")
-        with (
-            patch.dict(
-                os.environ,
-                {
-                    "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-                    "YGGFLARE_UNIFI_AUTO_HOSTS": "",
-                    "YGGFLARE_UNIFI_AUTO_HOSTS_FILE": str(config),
-                },
+    def test_exact_declarations_exclude_runtime_only_and_ambiguous_addresses(self):
+        zone = "example.invalid"
+        docker_range = ipaddress.IPv4Network("192.168.10.0/24")
+        services = [
+            {"Name": "a/app", "Hostname": "configured", "IPv4Addresses": [ADDRESS]},
+            {"Name": "a/runtime-only"},
+            {"Name": "a/first", "IPv4Addresses": ["192.168.10.30"]},
+            {"Name": "a/second", "IPv4Addresses": ["192.168.10.30"]},
+            {"Name": "a/outside", "IPv4Addresses": ["192.168.11.20"]},
+        ]
+        self.assertEqual(
+            apply.declared_targets(
+                services,
+                {"printer.example.invalid": "192.168.11.10"},
+                zone,
+                docker_range,
             ),
-            patch.object(apply, "HOSTS_FILE", str(config)),
-            patch.object(apply.os, "fstatvfs") as filesystem,
-        ):
-            filesystem.return_value.f_flag = 0
-            with self.assertRaisesRegex(apply.ApplyError, "read-only"):
-                apply.automatic_hosts()
-            filesystem.return_value.f_flag = os.ST_RDONLY
-            self.assertEqual(apply.automatic_hosts(), set(names))
+            {
+                ("configured.example.invalid", ADDRESS),
+                ("printer.example.invalid", "192.168.11.10"),
+            },
+        )
 
     def test_notice_waits_for_recovery_and_is_submitted_once(self):
         self.query.side_effect = [

@@ -9,13 +9,14 @@ import json
 import os
 import re
 import signal
-import stat
 import sys
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from cloudflare_api import CloudflareError
+from cloudflare_docker_dns import canonical_name, scoped_address
 from discord_webhook import read_webhook
 from traefik_inventory import read, write
 from unifi_api import (
@@ -35,12 +36,10 @@ from unifi_reconcile_plan import (
     policy_fingerprint,
     review,
 )
+from yggflare_config import network
 
 DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
-MAX_AUTO_HOSTS = 128
-HOSTS_FILE = "/yggflare-unifi-auto-hosts.txt"
-MAX_HOSTS_BYTES = MAX_AUTO_HOSTS * 254
 NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
 
 
@@ -250,45 +249,55 @@ def confirm_pending(path, ledger, live):
     write(path, ledger, durable=True)
 
 
-def automatic_hosts():
-    if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
-        raise ApplyError("Scheduled UniFi creates are disabled")
-    inline = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS", "")
-    path = os.environ.get("YGGFLARE_UNIFI_AUTO_HOSTS_FILE", "")
-    if path:
-        if path != HOSTS_FILE or inline:
-            raise ApplyError(
-                "Select either the fixed UniFi allowlist config or the inline list"
-            )
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as handle:
-            info = os.fstat(handle.fileno())
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or not 0 < info.st_size <= MAX_HOSTS_BYTES
-                or not os.fstatvfs(handle.fileno()).f_flag & os.ST_RDONLY
-            ):
-                raise ApplyError(
-                    "UniFi automatic allowlist must be a bounded read-only config"
-                )
-            raw = handle.read(MAX_HOSTS_BYTES + 1)
-        if len(raw) > MAX_HOSTS_BYTES:
-            raise ApplyError("UniFi automatic allowlist exceeds byte limit")
-        names = raw.decode("ascii").splitlines()
-    else:
-        names = inline.split(",")
-    if (
-        not 1 <= len(names) <= MAX_AUTO_HOSTS
-        or any(hostname(name) is None or hostname(name) != name for name in names)
-        or len(set(names)) != len(names)
-    ):
-        raise ApplyError("Set a bounded, exact UniFi automatic hostname allowlist")
-    return set(names)
+def declared_targets(services, static_hosts, zone, docker_network):
+    """Return unambiguous exact hostname/address declarations."""
+    declarations = [(name, {address}) for name, address in static_hosts.items()]
+    for service in services:
+        name = service.get("ContainerName") or service["Name"].rsplit("/", 1)[-1]
+        host = canonical_name(service.get("Hostname") or name, zone)
+        if host:
+            values = service.get("IPv4Addresses", [])
+            addresses = {scoped_address(value, docker_network) for value in values}
+            declarations.append((host, addresses))
+
+    by_name = Counter(name for name, _ in declarations)
+    by_address = Counter(
+        address for _, addresses in declarations for address in addresses
+    )
+    return {
+        (name, address)
+        for name, addresses in declarations
+        for address in addresses
+        if by_name[name] == 1
+        and len(addresses) == 1
+        and address is not None
+        and by_address[address] == 1
+    }
+
+
+def automatic_targets(zone):
+    try:
+        from cloudflare_desired import compose_inventory
+        from cloudflare_static_dns import load_inventory_details
+
+        services = compose_inventory(Path("/compose-source"))
+        static_hosts, _ = load_inventory_details(
+            Path("/config/static-hosts.json"), required=True
+        )
+        return declared_targets(
+            services, static_hosts, zone, network("YGGFLARE_DOCKER_CIDR")
+        )
+    except Exception:
+        # YAML parser diagnostics may include source lines from private Compose.
+        raise ApplyError(
+            "Cannot validate Compose and static DNS declarations"
+        ) from None
 
 
 def run(data, selected="", approval="", *, automatic=False):
     if automatic:
-        allowed = automatic_hosts()
+        if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
+            raise ApplyError("Scheduled UniFi creates are disabled")
     elif hostname(selected) != selected or not DIGEST.fullmatch(approval):
         raise ApplyError(
             "Apply requires one exact hostname and a SHA-256 preview fingerprint"
@@ -311,17 +320,19 @@ def run(data, selected="", approval="", *, automatic=False):
                 raise ApplyError(
                     "A verified manual pilot is required before automatic creates"
                 )
+            targets = automatic_targets(live.comparison["source_zone"])
             eligible = [
                 row
                 for row in live.comparison["rows"]
-                if row["hostname"] in allowed - owned
+                if (row["hostname"], row["address"]) in targets
+                and row["hostname"] not in owned
                 and row["address"] not in owned_ips
             ]
             report = review(
                 replace(live, comparison={**live.comparison, "rows": eligible})
             )
             if not report["operations"]:
-                return "No eligible allowlisted UniFi creates"
+                return "No eligible declared UniFi creates"
         else:
             report = review(live, selected)
             if not hmac.compare_digest(report["fingerprint"], approval):
@@ -353,6 +364,11 @@ def run(data, selected="", approval="", *, automatic=False):
         policies = all_rows(refreshed.config, refreshed.key, "dns", refreshed.site)
         if policy_fingerprint(policies) != refreshed.policies_id:
             raise ApplyError("UniFi policies changed immediately before create")
+        if automatic and (
+            operation["domain"],
+            operation["ipv4Address"],
+        ) not in automatic_targets(refreshed.comparison["source_zone"]):
+            raise ApplyError("DNS declaration changed immediately before create")
         live = refreshed
         # Journal before issuing a single POST. No retry after a lost acknowledgement.
         ledger["pending"] = {
