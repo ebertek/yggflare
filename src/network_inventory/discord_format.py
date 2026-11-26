@@ -42,7 +42,7 @@ def render(messages, test=False):
     if test:
         return embed_payload(
             "Delivery test",
-            "Notification delivery verified.\nTest only · No drift detected.",
+            "Notification delivery verified.\nTEST ONLY · No drift detected.",
             "success",
         )
     groups = [
