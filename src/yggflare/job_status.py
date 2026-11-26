@@ -22,8 +22,14 @@ JOBS = (
     "unifi_apply",
     "probes",
 )
+DNS_VERIFICATION_PENDING_EXIT = 3
+DNS_VERIFICATION_PENDING = "pending_dns_verification"
 MAX_HISTORY = 20
 MAX_BYTES = 128 * 1024
+
+
+class JobPending(Exception):
+    """The guarded UniFi create is acknowledged and awaiting DNS evidence."""
 
 
 def now():
@@ -98,6 +104,11 @@ def track(data, job, warn):
     persist()
     try:
         yield
+    except JobPending:
+        if job != "unifi_apply":
+            row["status"] = "failed"
+            raise
+        row["status"] = DNS_VERIFICATION_PENDING
     except BaseException as error:
         row["status"] = "failed" if isinstance(error, Exception) else "interrupted"
         raise

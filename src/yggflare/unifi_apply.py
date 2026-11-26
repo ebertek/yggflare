@@ -10,14 +10,17 @@ import os
 import re
 import signal
 import sys
+import time
 from collections import Counter
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from cloudflare_api import CloudflareError
 from cloudflare_docker_dns import canonical_name, scoped_address
 from discord_webhook import read_webhook
+from job_status import DNS_VERIFICATION_PENDING_EXIT
 from traefik_inventory import read, write
 from unifi_api import (
     MAX_ROWS,
@@ -38,6 +41,10 @@ from unifi_reconcile_plan import (
 )
 from yggflare_config import network
 
+DNS_VERIFICATION_WINDOW = 600
+DNS_VERIFICATION_ATTEMPTS = 3
+DNS_VERIFICATION_RETRY_SECONDS = 5
+
 DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
 NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
@@ -45,6 +52,14 @@ NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
 
 class ApplyError(ValueError):
     """Fixed operator diagnostic without response or credential data."""
+
+
+class DNSVerificationPending(ApplyError):
+    """The policy matches and at least one expected DNS answer is still absent."""
+
+
+def verification_deadline():
+    return int(time.time()) + DNS_VERIFICATION_WINDOW
 
 
 def valid_operation(operation):
@@ -93,10 +108,20 @@ def load_ledger(path, target):
     for entry in entries:
         if (
             not isinstance(entry, dict)
-            or entry.keys() - {"notice"} != {"operation", "policy_id", "manual"}
+            or entry.keys() - {"notice", "verification_deadline"}
+            != {"operation", "policy_id", "manual"}
             or (
                 "notice" in entry
                 and (entry is pending or entry["notice"] not in NOTICE_STATES)
+            )
+            or (
+                "verification_deadline" in entry
+                and (
+                    entry is not pending
+                    or type(entry["verification_deadline"]) is not int
+                    or not 0 < entry["verification_deadline"] <= 2**32
+                    or entry["policy_id"] is None
+                )
             )
             or not valid_operation(entry["operation"])
             or type(entry["manual"]) is not bool
@@ -204,15 +229,13 @@ def deliver_notice(path, ledger):
         break
 
 
-def confirm_pending(path, ledger, live):
-    entry = ledger["pending"]
+def pending_dns_missing(entry, live):
     policy_id = entry["policy_id"]
-    if policy_id is None:
-        raise ApplyError(
-            "Create outcome is uncertain; inspect UniFi and the private journal before any further writes"
-        )
     operation = entry["operation"]
-    policies = all_rows(live.config, live.key, "dns", live.site)
+    try:
+        policies = all_rows(live.config, live.key, "dns", live.site)
+    except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
+        raise ApplyError("UniFi policy lookup failed during verification") from None
     matches = [
         policy
         for policy in policies
@@ -237,10 +260,57 @@ def confirm_pending(path, ledger, live):
         raise ApplyError("New or conflicting policies prevent ownership verification")
     reverse_name = ipaddress.ip_address(address).reverse_pointer + "."
     gateway = live.config[0]
-    if query(gateway, name + ".", "A") != ("answered", [address]) or query(
-        gateway, reverse_name, "PTR"
-    ) != ("answered", [name + "."]):
-        raise ApplyError("Acknowledged policy is awaiting matching A and PTR replies")
+    missing = False
+    for answer, expected in (
+        (query(gateway, name + ".", "A"), address),
+        (query(gateway, reverse_name, "PTR"), name + "."),
+    ):
+        status, values = answer
+        if status == "answered" and values == [expected]:
+            continue
+        if status in {"nxdomain", "nodata"} and not values:
+            missing = True
+            continue
+        if status in {"answered", "unexpected_answer"}:
+            raise ApplyError("Gateway returned conflicting or unexpected DNS answers")
+        raise ApplyError("Gateway DNS verification failed")
+    return missing
+
+
+def confirm_pending(path, ledger, live):
+    entry = ledger["pending"]
+    policy_id = entry["policy_id"]
+    if policy_id is None:
+        raise ApplyError(
+            "Create outcome is uncertain; inspect UniFi and the private journal before any further writes"
+        )
+    if "verification_deadline" not in entry:
+        # Legacy acknowledged entries have no create timestamp to reuse.
+        entry["verification_deadline"] = verification_deadline()
+        write(path, ledger, durable=True)
+    deadline = entry["verification_deadline"]
+    for attempt in range(DNS_VERIFICATION_ATTEMPTS):
+        if time.time() >= deadline:
+            raise ApplyError(
+                "DNS verification deadline expired; pending policy requires review"
+            )
+        missing = pending_dns_missing(entry, live)
+        if time.time() >= deadline:
+            raise ApplyError(
+                "DNS verification deadline expired; pending policy requires review"
+            )
+        if not missing:
+            break
+        if attempt + 1 < DNS_VERIFICATION_ATTEMPTS:
+            time.sleep(
+                min(DNS_VERIFICATION_RETRY_SECONDS, max(0, deadline - time.time()))
+            )
+    else:
+        expires = datetime.fromtimestamp(deadline, UTC).isoformat()
+        raise DNSVerificationPending(
+            f"Acknowledged policy is awaiting matching A and PTR replies (deadline {expires})"
+        )
+    del entry["verification_deadline"]
     if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
         entry["notice"] = "pending"
     ledger["owned"].append(entry)
@@ -377,7 +447,10 @@ def run(data, selected="", approval="", *, automatic=False):
             "manual": not automatic,
         }
         write(ledger_path, ledger, durable=True)
-        ledger["pending"]["policy_id"] = create_policy(live, live.key, operation)
+        ledger["pending"].update(
+            policy_id=create_policy(live, live.key, operation),
+            verification_deadline=verification_deadline(),
+        )
         write(ledger_path, ledger, durable=True)
         confirm_pending(ledger_path, ledger, live)
         deliver_notice(ledger_path, ledger)
@@ -400,6 +473,9 @@ def main():
             )
         )
         return 0
+    except DNSVerificationPending as error:
+        print(str(error))
+        return DNS_VERIFICATION_PENDING_EXIT
     except ApplyError as error:
         print(str(error), file=sys.stderr)
         return 2

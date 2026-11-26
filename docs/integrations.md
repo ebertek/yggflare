@@ -104,14 +104,26 @@ matching live policy and matching A/PTR replies.
 ### Pending operations
 
 The private `/data/unifi-ownership.json` journal records intent before POST.
+After acknowledgement, verification has a ten-minute persisted deadline.
+Each invocation checks up to three times, five seconds apart, before
+resuming at the normal scheduled interval.
 
-- **Acknowledged, DNS pending:** rerun the same apply invocation after
-  DNS settles. Recovery verifies the policy without issuing another POST.
-- **Missing acknowledgement:** stop. Further writes remain blocked.
-  Inspect the actual policy and private journal before any repair.
+| Outcome | Behaviour |
+| --- | --- |
+| Matching policy; A or PTR absent | `pending_dns_verification` (exit 3) |
+| Matching policy and A/PTR | Record ownership; eligible for notification |
+| Conflicting answer or policy, failed read or expired deadline | Fail; retain journal for review |
+| Missing create acknowledgement | Block further writes; operator review required |
 
-Retain the journal with persistent state and backups. Never infer ownership
-from a matching policy alone.
+An unresolved entry blocks new creates. Within the deadline, rerun the
+same manual apply invocation to verify the existing policy without another
+POST. Older acknowledged entries receive a deadline on first verification.
+Never infer ownership from a matching policy alone or discard the journal.
+
+Pending status appears in Operations jobs, `system jobs` and MCP
+`get_job_status`. Prometheus sets
+`yggflare_job_unifi_apply_pending_dns_verification` and omits the latest
+attempt success metric while pending.
 
 ## Opt-in scheduled UniFi creates
 

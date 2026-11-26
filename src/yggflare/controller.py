@@ -16,7 +16,7 @@ from pathlib import Path
 from backup import create_snapshot, prune_snapshots
 from integration_inventory import ADAPTERS, scheduled
 from integration_inventory import INTERVAL as INTEGRATION_INTERVAL
-from job_status import track
+from job_status import DNS_VERIFICATION_PENDING_EXIT, JobPending, track
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
@@ -205,12 +205,18 @@ def run(args, *, env=None):
                 f"{label} interrupted after {time.monotonic() - started:.1f}s",
             )
             raise
+    pending = (
+        Path(args[1]).name == "unifi_apply.py"
+        and exit_code == DNS_VERIFICATION_PENDING_EXIT
+    )
     log(
-        "info" if exit_code == 0 else "error",
+        "info" if exit_code == 0 or pending else "error",
         component,
-        f"{label} finished in {time.monotonic() - started:.1f}s",
+        f"{label} {'pending DNS verification' if pending else 'finished'} in {time.monotonic() - started:.1f}s",
         exit_code=exit_code,
     )
+    if pending:
+        raise JobPending
     if exit_code:
         raise RuntimeError(f"Command exited {exit_code}: {args[1]}")
     return exit_code
