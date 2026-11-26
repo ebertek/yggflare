@@ -168,7 +168,7 @@ class IntegrationTests(unittest.TestCase):
             for echo in (marker, "prefix-" + marker, "Basic " + basic):
                 with self.subTest(echo=echo):
                     payload = (
-                        '# TYPE monitor_status gauge\n'
+                        "# TYPE monitor_status gauge\n"
                         'monitor_status{monitor_name="'
                         + echo
                         + '",monitor_type="group"} 1\n'

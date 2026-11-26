@@ -130,11 +130,7 @@ def names(values):
 
 def endpoint(value):
     """Only origin addresses, never userinfo, paths, headers or query strings."""
-    if (
-        not isinstance(value, str)
-        or len(value) > 2048
-        or not value.isprintable()
-    ):
+    if not isinstance(value, str) or len(value) > 2048 or not value.isprintable():
         return None
     try:
         url = urlsplit(value if "://" in value else "//" + value)
