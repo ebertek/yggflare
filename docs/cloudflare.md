@@ -45,9 +45,22 @@ within `YGGFLARE_DOCKER_CIDR` against the internal Cloudflare zone selected by
 otherwise the existing container-name (or service-name) convention applies.
 No host-mode, shared-network or bridge-only LAN address is invented. Different
 Compose/runtime addresses remain ambiguous; CNAME-only names are reported as
-conflicts rather than accepted as an A record. These findings are review-only:
-missing records never authorize automatic creation, and existing guarded
-Docker update behavior, plan fingerprints and audit exit semantics are unchanged.
+conflicts rather than accepted as an A record. Coverage findings remain review-only. With `CLOUDFLARE_DOCKER_DNS_SYNC=true`,
+a separate guarded creation plan requires one unambiguous Compose declaration
+and agreeing running-container address. Existing DNS names, shared addresses,
+static/alias/retained declarations and wildcard address records are protected.
+Creation uses the existing fingerprint and unattended opt-ins, revalidates
+live Docker, declarations and DNS, and verifies the new DNS-only A record.
+Stopped containers never authorize creation or deletion.
+
+When enabled, the reconciler reads the internal zone's actual record quota and
+usage from Cloudflare `GET /zones/{zone_id}/dns_records/usage`, counting all
+record types. `YGGFLARE_CLOUDFLARE_DNS_RESERVE` (default 10) retains free slots.
+The full plan must fit before writes; capacity is checked again before each
+internal Docker or static A creation. Unknown quota (including account-level
+quota), missing API access or insufficient capacity prevents internal creations.
+The external-zone workflow is unchanged. Quota is reported by the live audit
+and plan; no records are automatically deleted to free capacity.
 
 Inspect `yggflare cloudflare audit`, the saved `yggflare cloudflare status --all
 --json` view, the Cloudflare audit Web UI or MCP `get_cloudflare_audit` with

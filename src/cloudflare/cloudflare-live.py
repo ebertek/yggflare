@@ -18,7 +18,12 @@ from pathlib import Path
 from cloudflare_api import CloudflareClient, CloudflareError, checked_id
 from cloudflare_credentials import api_token
 from cloudflare_desired import compose_inventory, discover
-from cloudflare_docker_dns import audit_docker_dns, print_docker_dns_summary
+from cloudflare_dns_quota import print_quota_summary, quota_status
+from cloudflare_docker_dns import (
+    audit_docker_dns,
+    plan_docker_creates,
+    print_docker_dns_summary,
+)
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
 from cloudflare_orphans import load_registry, print_summary, scope, summarize
 from cloudflare_retained_dns import RETAINED, load_retained_dns
@@ -88,6 +93,40 @@ def hydrate_apps(client, account_id, apps):
             raise CloudflareError("An Access application has no ID")
         result.append(client.get_application(account_id, identifier))
     return result
+
+
+def protected_dns_names(static_hosts, companions, aliases, retained):
+    return (
+        set(static_hosts or {})
+        | set((static_hosts or {}).values())
+        | {address for values in companions.values() for address in values}
+        | set(aliases)
+        | {row["hostname"] for row in retained}
+        | {row["content"] for row in retained if row["type"] == "A"}
+    )
+
+
+def docker_create_candidates(client, root, settings, zone):
+    """Rebuild creation authorization from the input snapshot and live data."""
+    if not settings.get("docker_dns_sync", False):
+        return []
+    if client.zone_id(settings["internal_zone"], settings["account_id"]) != zone:
+        raise ValueError("Configured internal DNS zone identity changed")
+    hosts, companions = load_inventory_details(root / INVENTORY, required=True)
+    protected = protected_dns_names(
+        hosts,
+        companions,
+        load_inventory_aliases(root / INVENTORY),
+        load_retained_dns(root / RETAINED),
+    )
+    return plan_docker_creates(
+        compose_inventory(root),
+        docker_ipv4(),
+        client.list_dns(zone),
+        settings["internal_zone"],
+        DOCKER_NETWORK,
+        protected,
+    )
 
 
 def run_audit(
@@ -181,14 +220,13 @@ def run_audit(
     aliases = (
         load_inventory_aliases(root / INVENTORY) if static_hosts is not None else set()
     )
+    retained = load_retained_dns(root / RETAINED) if static_hosts is not None else []
     declared = declared_dns_names(aliases, compose_services, docker_addresses or {})
     report["unaccounted_ygg_dns"] = audit_unaccounted_dns(
         None if skip_docker else internal_dns,
         static_hosts,
         declared,
-        retained=(
-            load_retained_dns(root / RETAINED) if static_hosts is not None else []
-        ),
+        retained=retained,
     )
     report["counts"]["unaccounted_ygg_dns_records"] = report["unaccounted_ygg_dns"][
         "counts"
@@ -199,10 +237,28 @@ def run_audit(
         if settings.get("static_dns_sync", False) and static_hosts is not None
         else []
     )
-    report["actions"].extend(static_actions)
+    docker_actions = []
+    if settings.get("docker_dns_sync", False) and not skip_docker:
+        if static_hosts is None:
+            raise ValueError("Docker DNS creation requires the active static inventory")
+        if client.zone_id(settings["internal_zone"], account) != ygg:
+            raise ValueError("Configured internal DNS zone identity changed")
+        docker_actions = plan_docker_creates(
+            compose_services,
+            docker_addresses,
+            internal_dns,
+            settings["internal_zone"],
+            DOCKER_NETWORK,
+            protected_dns_names(static_hosts, static_companions, aliases, retained),
+        )
+        report["internal_dns_quota"] = quota_status(
+            client, ygg, settings.get("dns_reserve", 10)
+        )
+    report["actions"].extend(static_actions + docker_actions)
+    report["counts"]["docker_dns_actionable"] = len(docker_actions)
     report["counts"]["static_dns_actionable"] = len(static_actions)
     report["counts"]["proposed_operations"] = len(report["actions"])
-    for action in static_actions:
+    for action in static_actions + docker_actions:
         kind = action["kind"]
         report["proposed_by_kind"][kind] = report["proposed_by_kind"].get(kind, 0) + 1
     report["web_view"]["audit"] = audit_projection(report)
@@ -226,7 +282,7 @@ def run_audit(
         "Unaccounted internal-domain DNS findings are review-only; "
         "never deleted automatically",
         "Retained DNS declarations are read-only exact-type expectations",
-        "Docker DNS coverage findings are review-only, not write authorization",
+        "Docker DNS creation requires opt-in and agreeing Compose/runtime evidence",
     ]
     return report
 
@@ -285,6 +341,7 @@ def main():
         else:
             print("Static DNS: inventory not configured (audit disabled)")
         print_docker_dns_summary(report)
+        print_quota_summary(report)
         print_unaccounted_summary(report)
         print_summary(report)
         print("No changes made to Cloudflare.")

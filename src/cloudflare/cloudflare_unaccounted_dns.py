@@ -5,6 +5,7 @@ Findings are review hints only. Never add them to Cloudflare mutation plans.
 
 import re
 
+from cloudflare_docker_dns import canonical_name
 from cloudflare_retained_dns import matches_retained, retained_summary
 from yggflare_config import domain
 
@@ -19,6 +20,11 @@ def declared_dns_names(static_aliases, compose_services, running):
         name = service.get("Name", "").rsplit("/", 1)[-1]
         if NAME.fullmatch(name):
             owned.add(name + "." + domain("YGGFLARE_INTERNAL_DOMAIN"))
+        hostname = canonical_name(
+            service.get("Hostname"), domain("YGGFLARE_INTERNAL_DOMAIN")
+        )
+        if hostname:
+            owned.add(hostname)
         custom = service.get("ContainerName")
         if isinstance(custom, str) and NAME.fullmatch(custom):
             owned.add(custom + "." + domain("YGGFLARE_INTERNAL_DOMAIN"))

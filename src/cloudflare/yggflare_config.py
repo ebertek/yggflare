@@ -50,6 +50,9 @@ def cloudflare_settings():
         raise ValueError("CLOUDFLARE_ACCOUNT_ID is required")
     if not tunnel_name and not tunnel_id:
         raise ValueError("CLOUDFLARE_TUNNEL_NAME or CLOUDFLARE_TUNNEL_ID is required")
+    reserve = int(os.environ.get("YGGFLARE_CLOUDFLARE_DNS_RESERVE", "10"))
+    if not 0 <= reserve <= 10000:
+        raise ValueError("YGGFLARE_CLOUDFLARE_DNS_RESERVE must be 0–10000")
     return {
         "account_id": account,
         "tunnel_name": tunnel_name,
@@ -60,4 +63,6 @@ def cloudflare_settings():
         "internal_zone_id": os.environ.get("CLOUDFLARE_INTERNAL_ZONE_ID", ""),
         "static_dns_required": boolean("CLOUDFLARE_STATIC_DNS_REQUIRED", True),
         "static_dns_sync": boolean("CLOUDFLARE_STATIC_DNS_SYNC", False),
+        "docker_dns_sync": boolean("CLOUDFLARE_DOCKER_DNS_SYNC", False),
+        "dns_reserve": reserve,
     }

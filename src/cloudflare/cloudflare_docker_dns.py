@@ -1,4 +1,4 @@
-"""Review-only internal A-record coverage from explicit Docker address evidence."""
+"""Internal A-record coverage and strict creation candidates from Docker evidence."""
 
 import ipaddress
 import re
@@ -125,3 +125,76 @@ def print_docker_dns_summary(report):
             f"  ! DOCKER DNS {row['status']}: {row['hostname']} "
             f"-> {address} ({row['category']})"
         )
+
+
+def check_docker_target(hostname, address, zone, network):
+    """Reject noncanonical names or addresses outside the Docker allocation."""
+    if (
+        not isinstance(hostname, str)
+        or canonical_name(hostname, zone) != hostname
+        or address is None
+        or scoped_address(address, network) != address
+    ):
+        raise ValueError("Invalid Docker DNS target")
+
+
+def plan_docker_creates(services, running, records, zone, network, protected=()):
+    """Authorize candidates only from unique, agreeing declarations and runtime."""
+    if running is None or records is None:
+        return []
+    declarations = []
+    for service in services:
+        name = (
+            service.get("ContainerName") or service.get("Name", "").rsplit("/", 1)[-1]
+        )
+        host = canonical_name(service.get("Hostname") or name, zone)
+        addresses = {
+            address
+            for value in service.get("IPv4Addresses", [])
+            if (address := scoped_address(value, network)) is not None
+        }
+        declarations.append((name, host, addresses))
+    by_name = Counter(name for name, _, _ in declarations)
+    by_host = Counter(host for _, host, _ in declarations)
+    by_address = Counter(address for _, _, ips in declarations for address in ips)
+    live_addresses = Counter(running.values())
+    existing = {
+        row["name"].lower().rstrip(".")
+        for row in records
+        if isinstance(row.get("name"), str)
+    }
+    existing_addresses = {
+        row.get("content") for row in records if row.get("type") == "A"
+    }
+    actions = []
+    for name, host, addresses in declarations:
+        if (
+            not host
+            or by_name[name] != 1
+            or by_host[host] != 1
+            or len(addresses) != 1
+            or host in existing
+            or host in protected
+        ):
+            continue
+        address = next(iter(addresses))
+        if (
+            running.get(name) != address
+            or live_addresses[address] != 1
+            or by_address[address] != 1
+            or address in existing_addresses
+            or address in protected
+        ):
+            continue
+        if any(
+            row.get("type") in ("A", "AAAA", "CNAME")
+            and isinstance(row.get("name"), str)
+            and row["name"].startswith("*.")
+            and host.endswith(row["name"].lower().rstrip(".")[1:])
+            for row in records
+        ):
+            continue
+        actions.append(
+            {"kind": "create_docker_dns_a", "hostname": host, "content": address}
+        )
+    return sorted(actions, key=lambda row: row["hostname"])

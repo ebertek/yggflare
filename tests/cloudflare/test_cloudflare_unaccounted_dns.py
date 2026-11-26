@@ -51,6 +51,15 @@ class UnaccountedTests(unittest.TestCase):
             ],
         )
 
+    def test_explicit_compose_hostname_is_accounted_for(self):
+        names = declared_dns_names(
+            set(),
+            [{"Name": "group/service", "Hostname": "canonical.ygg.nu"}],
+            {},
+        )
+        self.assertIn("canonical.ygg.nu", names)
+        self.assertIn("service.ygg.nu", names)
+
     def test_unknown_types_listed_without_sensitive_payload(self):
         """TXT and other records are visible, without logging their values."""
         report = audit_unaccounted_dns(

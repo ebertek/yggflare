@@ -17,8 +17,10 @@ from cloudflare_api import (
     checked_tunnel_id,
 )
 from cloudflare_desired import HOST, UUID
+from cloudflare_docker_dns import check_docker_target
 from cloudflare_live_diff import DOCKER_NETWORK
 from cloudflare_static_dns import check_static_target
+from yggflare_config import domain
 
 TUNNEL_CONFIG_KEYS = frozenset({"ingress", "originRequest", "warp-routing"})
 
@@ -198,6 +200,23 @@ class CloudflareWriter(CloudflareClient):
             "PATCH",
             f"/zones/{checked_id(zone)}/dns_records/{checked_id(record_id)}",
             {"content": address},
+        )
+
+    def create_docker_a(self, zone, hostname, address):
+        """Create only a DNS-only A record in the configured Docker allocation."""
+        check_docker_target(
+            hostname, address, domain("YGGFLARE_INTERNAL_DOMAIN"), DOCKER_NETWORK
+        )
+        return self._write(
+            "POST",
+            f"/zones/{checked_id(zone)}/dns_records",
+            {
+                "name": hostname,
+                "type": "A",
+                "content": address,
+                "ttl": 1,
+                "proxied": False,
+            },
         )
 
     def create_static_a(self, zone, hostname, address):

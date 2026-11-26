@@ -112,6 +112,8 @@ container unless the Compose `environment:` section forwards them.
 | `CLOUDFLARE_API_TOKEN_FILE` | `/run/secrets/cloudflare_api_token` | Mounted token path |
 | `CLOUDFLARE_STATIC_DNS_REQUIRED` | `true` | Require static inventory during audits |
 | `CLOUDFLARE_STATIC_DNS_SYNC` | `false` | Include static DNS changes in writable plans |
+| `CLOUDFLARE_DOCKER_DNS_SYNC` | `false` | Opt into guarded creation of missing Docker A records |
+| `YGGFLARE_CLOUDFLARE_DNS_RESERVE` | `10` | Keep this many internal-zone DNS record slots free when Docker DNS creation is enabled |
 | `YGGFLARE_CLOUDFLARE_AUTO_APPLY` | `false` | Enable guarded automatic reconciliation |
 | `YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE` | `3` | Automatic operations per cycle; `0` means all validated changes |
 | `YGGFLARE_CLOUDFLARE_AUTO_CLEANUP` | `false` | Enable owned-orphan retirement; also requires auto-apply |
