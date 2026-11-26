@@ -13,7 +13,7 @@ from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
 from integration_inventory import ADAPTER_KINDS
 from integration_inventory import saved as saved_integration
-from job_status import JOBS, read_jobs
+from job_status import DNS_VERIFICATION_PENDING, JOBS, read_jobs
 from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
 from unifi_inventory import uplink_counts
@@ -359,7 +359,13 @@ def render(config, data, now=None):
     for job in JOBS:
         row = (job_document or {}).get("jobs", {}).get(job, {})
         status = row.get("status")
-        if status in {"succeeded", "failed", "interrupted", "completion_unknown"}:
+        if status in {
+            "succeeded",
+            "failed",
+            "interrupted",
+            "completion_unknown",
+            DNS_VERIFICATION_PENDING,
+        }:
             values.extend(
                 [
                     (
@@ -374,10 +380,11 @@ def render(config, data, now=None):
                     ),
                     (
                         f"yggflare_job_{job}_last_attempt_success",
-                        "Latest completed attempt succeeded; omitted if incomplete",
+                        "Latest attempt succeeded; omitted if incomplete or pending",
                         (
                             None
-                            if status == "completion_unknown"
+                            if status
+                            in {"completion_unknown", DNS_VERIFICATION_PENDING}
                             else status == "succeeded"
                         ),
                     ),
@@ -388,6 +395,14 @@ def render(config, data, now=None):
                     ),
                 ]
             )
+            if job == "unifi_apply":
+                values.append(
+                    (
+                        "yggflare_job_unifi_apply_pending_dns_verification",
+                        "Latest UniFi apply attempt is awaiting DNS evidence",
+                        status == DNS_VERIFICATION_PENDING,
+                    )
+                )
     delivery = as_object(scan.get("notification_status"))
     values.append(
         (

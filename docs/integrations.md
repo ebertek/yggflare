@@ -153,14 +153,25 @@ a matching current policy ID and values, and matching A and PTR replies.
 
 The private `/data/unifi-ownership.json` journal records intent before
 sending the request. Keep it with persistent state and include it in
-recovery procedures. If the policy was acknowledged but DNS is still
-settling, rerun the same apply invocation after the cache clears. That
-invocation only verifies and records the pending policy. If the response
-was lost before Yggflare could persist its policy ID, future creates stay
-blocked. Compare the journal and actual UniFi policies before deciding
-how to recover. A matching policy without a persisted acknowledgement
-does not establish ownership. Preserve the journal and involve the
-operator for any state repair.
+recovery procedures. Once a create is acknowledged, the journal records
+a ten-minute verification deadline. Each invocation checks up to three
+times with five seconds between checks, then resumes at the normal
+scheduled interval. While the policy still matches and an A or PTR
+answer is absent, apply exits with code 3 and logs the deadline. The
+Operations jobs view, `system jobs` and MCP `get_job_status` report
+`pending_dns_verification`. Prometheus sets
+`yggflare_job_unifi_apply_pending_dns_verification` and omits the latest
+attempt success metric while pending.
+
+A conflicting answer or policy, failed API/DNS read, or expired deadline
+is a failure. The unresolved journal blocks further creates and must be
+preserved for review. An acknowledged entry from an older build gets a
+deadline on its first verification attempt after upgrade. For a manual
+pilot still within the window, rerun the same apply invocation after
+the cache clears. It only verifies the pending policy. If a create
+response was lost before its ID was saved, a matching policy alone
+cannot establish ownership. Compare the journal and actual UniFi
+policies before deciding how to recover.
 
 ## Opt-in scheduled UniFi creates
 

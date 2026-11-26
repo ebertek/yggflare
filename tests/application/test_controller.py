@@ -126,6 +126,21 @@ class ControllerTests(unittest.TestCase):
                 self.assertIn(label + " finished in ", log.call_args_list[-1].args[2])
                 self.assertEqual(log.call_args_list[-1].kwargs["exit_code"], 0)
 
+    def test_unifi_pending_exit_is_an_informational_outcome(self):
+        with (
+            patch.object(controller, "log") as log,
+            patch.object(controller.subprocess, "Popen") as process,
+        ):
+            child = process.return_value.__enter__.return_value
+            child.stdout = []
+            child.wait.return_value = controller.DNS_VERIFICATION_PENDING_EXIT
+            with self.assertRaises(controller.JobPending):
+                controller.run([sys.executable, "/app/unifi_apply.py", "--automatic"])
+            self.assertEqual(log.call_args.args[0], "info")
+            self.assertIn("pending DNS verification", log.call_args.args[2])
+            with self.assertRaises(RuntimeError):
+                controller.run([sys.executable, "/app/other.py"])
+
     def test_sigterm_and_sigint_request_shutdown(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
             with (
