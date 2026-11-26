@@ -150,9 +150,7 @@ def observation_window(sources, now):
         "earliest_observed_at": earliest.isoformat() if earliest else None,
         "latest_observed_at": latest.isoformat() if latest else None,
         "spread_seconds": (
-            round((latest - earliest).total_seconds(), 1)
-            if len(times) >= 2
-            else None
+            round((latest - earliest).total_seconds(), 1) if len(times) >= 2 else None
         ),
         "caveat": (
             "Independent observation times, not an atomic snapshot. "
