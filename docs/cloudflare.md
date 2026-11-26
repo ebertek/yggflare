@@ -34,6 +34,26 @@ New protected hostnames are created in **Access → Tunnel route → DNS** order
 Yggflare adds routes to the configured Tunnel; it does not create new Tunnel
 objects.
 
+### Internal DNS coverage
+
+The active private static-host inventory already reports missing, mismatched
+and conflicting A records. Primary static A creation is separately opt-in.
+Docker DNS coverage additionally compares explicit Compose IPv4 declarations
+(including stopped services) and known unique running-container IPv4 addresses
+within `YGGFLARE_DOCKER_CIDR` against the internal Cloudflare zone selected by
+`YGGFLARE_INTERNAL_DOMAIN`. A literal internal Compose hostname is preferred;
+otherwise the existing container-name (or service-name) convention applies.
+No host-mode, shared-network or bridge-only LAN address is invented. Different
+Compose/runtime addresses remain ambiguous; CNAME-only names are reported as
+conflicts rather than accepted as an A record. These findings are review-only:
+missing records never authorize automatic creation, and existing guarded
+Docker update behavior, plan fingerprints and audit exit semantics are unchanged.
+
+Inspect `yggflare cloudflare audit`, the saved `yggflare cloudflare status --all
+--json` view, the Cloudflare audit Web UI or MCP `get_cloudflare_audit` with
+`section="docker_dns"`. Old snapshots have unknown Docker DNS coverage until
+refreshed. A matching A record does not establish reachability or PTR coverage.
+
 ### Ownership and cleanup
 
 Only proven Yggflare-managed resources are eligible for retirement. Existing resources

@@ -18,6 +18,7 @@ from pathlib import Path
 from cloudflare_api import CloudflareClient, CloudflareError, checked_id
 from cloudflare_credentials import api_token
 from cloudflare_desired import compose_inventory, discover
+from cloudflare_docker_dns import audit_docker_dns, print_docker_dns_summary
 from cloudflare_live_diff import DOCKER_NETWORK, compare_live
 from cloudflare_orphans import load_registry, print_summary, scope, summarize
 from cloudflare_retained_dns import RETAINED, load_retained_dns
@@ -150,6 +151,15 @@ def run_audit(
         docker_addresses=docker_addresses,
         dns_internal=internal_dns,
     )
+    report["docker_dns"] = audit_docker_dns(
+        compose_services,
+        docker_addresses,
+        None if skip_docker else internal_dns,
+        domain("YGGFLARE_INTERNAL_DOMAIN"),
+        DOCKER_NETWORK,
+    )
+    report["counts"]["docker_dns_hosts"] = report["docker_dns"]["counts"]["hosts"]
+    report["counts"]["docker_dns_drift"] = report["docker_dns"]["counts"]["drift"]
     bound = scope(account, ebi, tunnel_id)
     registered = load_registry(Path("/data"), bound)
     report["web_view"] = project(
@@ -216,6 +226,7 @@ def run_audit(
         "Unaccounted internal-domain DNS findings are review-only; "
         "never deleted automatically",
         "Retained DNS declarations are read-only exact-type expectations",
+        "Docker DNS coverage findings are review-only, not write authorization",
     ]
     return report
 
@@ -273,6 +284,7 @@ def main():
                 print(f"  ! STATIC {finding['status']}: {finding['hostname']}")
         else:
             print("Static DNS: inventory not configured (audit disabled)")
+        print_docker_dns_summary(report)
         print_unaccounted_summary(report)
         print_summary(report)
         print("No changes made to Cloudflare.")

@@ -171,6 +171,46 @@ class LiveIntegrationTests(unittest.TestCase):
             self.assertEqual(report["actions"], [])
             self.assertEqual(report["blocked"], [])
             self.assertEqual(report["mode"], "READ_ONLY_LIVE_API")
+            self.assertFalse(report["docker_dns"]["enabled"])
+
+    def test_docker_dns_coverage_projects_stopped_and_running_missing_hosts(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "compose.yaml").write_text(
+                "services:\n"
+                "  example:\n"
+                "    labels:\n"
+                '      traefik.enable: "true"\n'
+                '      traefik.http.routers.example.rule: "Host(`example.ebi.nu`)"\n'
+                '      cf.access: "true"\n'
+                f"      cf.access.policies: '[\"{POLICY}\"]'\n"
+                "  stopped:\n"
+                "    hostname: offline.ygg.nu\n"
+                "    networks:\n"
+                "      lan:\n"
+                "        ipv4_address: 10.4.21.40\n"
+            )
+            settings = {
+                "account_id": ACCOUNT,
+                "external_zone": "ebi.nu",
+                "internal_zone": "ygg.nu",
+                "tunnel_name": "pleiades",
+            }
+            with patch.object(
+                live, "docker_ipv4", return_value={"running": "10.4.21.41"}
+            ):
+                report = live.run_audit(FakeCloudflare(), root, settings)
+            self.assertEqual(report["counts"]["docker_dns_drift"], 2)
+            self.assertEqual(report["actions"], [])
+            self.assertEqual(report["blocked"], [])
+            findings = report["web_view"]["audit"]["findings"]
+            self.assertEqual(
+                [(row["hostname"], row["status"], row["category"]) for row in findings],
+                [
+                    ("offline.ygg.nu", "missing_a", "compose"),
+                    ("running.ygg.nu", "missing_a", "runtime"),
+                ],
+            )
 
     def test_static_inventory_uses_existing_ygg_zone_read(self):
         """Integrate private JSON with the existing live DNS snapshot."""

@@ -62,6 +62,16 @@ def compose_inventory(root):  # pylint: disable=too-many-locals,too-many-branche
             }
             if isinstance(config.get("container_name"), str):
                 entry["ContainerName"] = config["container_name"]
+            if isinstance(config.get("hostname"), str):
+                entry["Hostname"] = config["hostname"]
+            networks = config.get("networks")
+            if isinstance(networks, dict) and not config.get("network_mode"):
+                entry["IPv4Addresses"] = [
+                    value["ipv4_address"]
+                    for value in networks.values()
+                    if isinstance(value, dict)
+                    and isinstance(value.get("ipv4_address"), str)
+                ]
             containers.append(entry)
     return containers
 
