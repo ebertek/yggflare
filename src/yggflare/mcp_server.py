@@ -34,6 +34,7 @@ from probe_inventory import FIELDS as PROBE_FIELDS
 from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
 from unifi_inventory import FIELDS as UNIFI_FIELDS
+from unifi_inventory import UPLINK_FIELDS, uplink_counts
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -349,6 +350,9 @@ class UniFiRow(TypedDict, total=False):
     enabled: bool | None
     management: str | None
     policy_type: str | None
+    uplink_status: str
+    uplink_name: str | None
+    uplink_mac: str | None
 
 
 class ProbeRow(TypedDict, total=False):
@@ -2375,6 +2379,7 @@ class InventoryTools:
         kinds = ADAPTER_KINDS[adapter]
         return {
             **data,
+            **({"uplink_counts": uplink_counts(rows)} if adapter == "unifi" else {}),
             "counts": (
                 {kind: sum(row.get("kind") == kind for row in rows) for kind in kinds}
                 if data["available"]
@@ -2432,6 +2437,8 @@ class InventoryTools:
         fields = (
             ("kind", *UNIFI_FIELDS[kind]) if adapter == "unifi" else INTEGRATION_FIELDS
         )
+        if adapter == "unifi" and kind == "devices":
+            fields = (*fields, *UPLINK_FIELDS)
         search_fields = (
             ("name", "address", "mac")
             if adapter == "unifi"

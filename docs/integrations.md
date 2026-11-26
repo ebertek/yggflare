@@ -107,10 +107,26 @@ Only the scheduler and explicit refresh collect these observations.
 The collector reports device state, clients visible as connected,
 network/VLAN declarations and policy identities, enabled flags and
 IPv4 values where available. API visibility is limited to the selected site
-and credential. DHCP leases, physical links and actual DNS replies are
-outside this projection. A failed endpoint or incomplete page retains the
-last successful snapshot and leaves its latest refresh unverified.
-A verified snapshot expires after 15 minutes.
+and credential. DHCP leases and actual DNS replies are outside this
+projection. A failed list endpoint or incomplete page retains the last
+successful snapshot and leaves its latest refresh unverified. A verified
+snapshot expires after 15 minutes.
+
+After the required lists succeed, the collector reads documented adopted
+device details for up to 32 listed devices. It stops starting detail
+requests after 60 seconds of collection. The Devices view includes
+`uplink_status` and, when the reported parent ID resolves within the same
+adopted-device list, the parent's projected name and MAC. API IDs stay
+internal. A reported parent is controller topology evidence and does not
+establish physical cabling, switch port, or client attachment.
+
+Missing uplinks, parents outside the visible list, malformed links,
+failed requests, and unchecked devices are distinct outcomes. Detail
+failures preserve the successful list observations. CLI and MCP status
+show aggregate `uplink_counts`; Prometheus exports fixed
+`yggflare_unifi_uplink_*` counts from the saved snapshot. Legacy snapshots
+gain these fields on the next refresh. See the
+[adopted device details API](https://developer.ui.com/network/v11.0.97/getadopteddevicedetails).
 
 ## Komodo and Uptime Kuma
 
