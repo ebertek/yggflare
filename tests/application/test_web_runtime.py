@@ -1,6 +1,7 @@
 """Exercise real model construction through HTTP, not a mocked web model."""
 
 import contextlib
+import csv
 import io
 import json
 import tempfile
@@ -39,6 +40,41 @@ class RuntimeWebTests(unittest.TestCase):
 
     def fetch(self, path):
         return urlopen(f"http://127.0.0.1:{self.server.server_port}{path}", timeout=5)
+
+    def test_inventory_csv_neutralizes_formulas_but_json_preserves_evidence(self):
+        values = (
+            "=1+1",
+            " +1",
+            "-1",
+            "@SUM(1)",
+            "\t=1",
+            "\u202e=1",
+            "\uff1d1",
+            'ordinary, "quoted" text',
+            "Bj\u00f6rn",
+        )
+        hosts = [{"hostname": "device", "description": value} for value in values]
+        with patch.object(web, "model", return_value={"hosts": hosts}):
+            with self.fetch("/api/inventory.csv") as response:
+                rows = list(csv.DictReader(io.StringIO(response.read().decode())))
+            with self.fetch("/api/inventory.json") as response:
+                self.assertEqual(json.load(response), hosts)
+        self.assertEqual(len(rows), len(values))
+        for row in rows[:7]:
+            self.assertTrue(row["description"].startswith("'"))
+        self.assertEqual(rows[7]["description"], values[7])
+        self.assertEqual(rows[8]["description"], values[8])
+        self.assertNotIn("\u202e", rows[5]["description"])
+        self.assertNotIn("\t", rows[4]["description"])
+
+    def test_table_escapes_markup_and_invisible_controls(self):
+        value = "<script>alert(1)</script>\u202e\x1b\n"
+        rendered = web.table(["Host"], [[value]])
+        self.assertNotIn("<script>", rendered)
+        self.assertIn("&lt;script&gt;", rendered)
+        for char in ("\u202e", "\x1b", "\n"):
+            self.assertNotIn(char, rendered)
+        self.assertIn(r"\u202e", rendered)
 
     def test_all_pages_with_two_containers_absent_from_compose(self):
         containers = [{"Name": "/runtime-a"}, {"Name": "/runtime-b"}]

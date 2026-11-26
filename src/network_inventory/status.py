@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -91,7 +90,7 @@ def read_status(path=STATE):
 
 def safe_line(value):
     """Keep untrusted discovery strings from injecting terminal control codes."""
-    line = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(value))
+    line = "".join(char if char.isprintable() else " " for char in str(value))
     return line[:300] + ("…" if len(line) > 300 else "")
 
 

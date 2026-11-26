@@ -4,9 +4,9 @@ import ipaddress
 import re
 from collections import defaultdict
 from datetime import UTC, datetime
-from html import escape
 
 from docker_inventory import address_key
+from presentation_text import html_text as escape
 
 
 def _discovery_mac(record):
