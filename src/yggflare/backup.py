@@ -1,5 +1,6 @@
 """Restricted local snapshots of Yggflare unversioned config and state."""
 
+import gzip
 import os
 import tarfile
 import tempfile
@@ -48,37 +49,57 @@ def prune_snapshots(destination: Path, keep: int = RETENTION) -> None:
             archive.unlink()
 
 
+MAX_RESTORE_BYTES = 256 * 1024 * 1024
+MAX_RESTORE_MEMBERS = 10000
+# Also bound tar headers, padding, extended metadata and trailing data.
+MAX_TAR_BYTES = MAX_RESTORE_BYTES + 32 * 1024 * 1024
+
+
 def verify_archive(archive_path: Path) -> dict:
-    """Validate archive members and contents without extracting onto live paths."""
-    present = set()
-    count = 0
+    """Bound decompression and validate the complete gzip stream and tar tree."""
+    expanded = 0
+    with gzip.open(archive_path, "rb") as stream:
+        while block := stream.read(65536):
+            expanded += len(block)
+            if expanded > MAX_TAR_BYTES:
+                raise ValueError("Backup exceeds decompression limit")
+
+    present = {}
+    total = 0
     with tarfile.open(archive_path, "r:gz") as source:
         for member in source:
             path = Path(member.name)
+            canonical = path.as_posix()
             if (
                 path.is_absolute()
                 or ".." in path.parts
                 or not path.parts
                 or path.parts[0] not in {"config", "data", "secrets"}
+                or canonical != member.name
                 or not (member.isfile() or member.isdir())
-                or member.name in present
+                or member.issparse()
+                or canonical in present
+                or (len(path.parts) == 1 and not member.isdir())
             ):
                 raise ValueError("Unsafe or duplicate backup archive member")
-            present.add(member.name)
-            count += 1
+            present[canonical] = member.isdir()
+            total += member.size if member.isfile() else 0
+            if len(present) > MAX_RESTORE_MEMBERS or total > MAX_RESTORE_BYTES:
+                raise ValueError("Backup exceeds safe size limit")
             if member.isfile():
                 stream = source.extractfile(member)
                 if stream is None:
                     raise ValueError("Cannot read backup member")
                 while stream.read(65536):
                     pass
-    if not {"config", "data"}.issubset(present):
+    if not all(present.get(name) is True for name in ("config", "data")):
         raise ValueError("Backup must include config and data directories")
-    return {"members": count, "has_secrets": "secrets" in present}
-
-
-MAX_RESTORE_BYTES = 256 * 1024 * 1024
-MAX_RESTORE_MEMBERS = 10000
+    for name in present:
+        if any(
+            present.get(parent.as_posix()) is False for parent in Path(name).parents
+        ):
+            raise ValueError("Backup contains conflicting file and directory paths")
+    return {"members": len(present), "has_secrets": present.get("secrets") is True}
 
 
 def restore_test(archive_path: Path, scratch: Path) -> dict:
@@ -104,6 +125,9 @@ def restore_test(archive_path: Path, scratch: Path) -> dict:
                     or Path(member.name).is_absolute()
                     or ".." in parts
                     or not (member.isdir() or member.isfile())
+                    or member.issparse()
+                    or Path(member.name).as_posix() != member.name
+                    or (len(parts) == 1 and not member.isdir())
                 ):
                     raise ValueError("Unsafe restoration archive member")
                 members += 1

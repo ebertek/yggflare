@@ -144,6 +144,8 @@ DNS evidence. DNS replies with an unexpected answer owner, class or type,
 a mismatched question/ID or unresolved truncation never prove verification.
 Older acknowledged entries receive a deadline on first verification.
 Never infer ownership from a matching policy alone or discard the journal.
+A create or recreate acknowledgement that reuses an existing policy ID
+leaves the intent unacknowledged and blocks further writes.
 Transient DNS failures log the query type (A or PTR) and failure category,
 without raw replies or exception text. A conflicting reply still blocks
 verification even when the other query fails transiently. Pre-write checks

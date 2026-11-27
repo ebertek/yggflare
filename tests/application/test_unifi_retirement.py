@@ -4,6 +4,7 @@ import ipaddress
 import os
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
@@ -28,6 +29,7 @@ OPERATION = {
 ENTRY = {"operation": OPERATION, "policy_id": POLICY, "manual": False}
 POLICY_ROW = {"id": POLICY, **{k: v for k, v in OPERATION.items() if k != "operation"}}
 PROTECTED = (set(), set(), set())
+REAL_RETIREMENT_PROTECTED = apply.retirement_protected
 NOW = 1_800_000_000
 GRACE = 86400
 
@@ -296,6 +298,17 @@ class UniFiRetirementTests(unittest.TestCase):
             self.assertEqual(saved["pending"]["policy_id"], POLICY)
             self.assertIn("Recovered", apply.run(self.data, automatic=True))
             remove.assert_called_once()
+
+    def test_malformed_desired_record_blocks_retirement(self):
+        # The real validator must fail before touching private files.
+        for record in (
+            None,
+            {"name": NAME, "type": "A", "content": "not-an-address"},
+            {"name": NAME, "type": "CNAME", "content": None},
+        ):
+            with self.subTest(record=record):
+                with self.assertRaisesRegex(apply.ApplyError, "Invalid Cloudflare"):
+                    REAL_RETIREMENT_PROTECTED(replace(self.before, records=(record,)))
 
     def test_missing_source_and_invalid_grace_fail_closed(self):
         with (

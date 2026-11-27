@@ -113,6 +113,37 @@ class UniFiApplyTests(unittest.TestCase):
             apply.run(self.data, NAME, FINGERPRINT)
         self.post.assert_called_once()
 
+    def test_reused_policy_id_leaves_unacknowledged_intent(self):
+        ledger = apply.load_ledger(self.path, LIVE.target)
+        ledger["owned"] = [
+            {
+                "operation": {
+                    **OPERATION,
+                    "domain": "previous.example.invalid",
+                    "ipv4Address": "192.168.10.19",
+                },
+                "policy_id": POLICY,
+                "manual": True,
+            }
+        ]
+        ledger["pilot_verified"] = True
+        apply.write(self.path, ledger)
+        self.post.side_effect = None
+        self.post.return_value = POLICY
+        with self.assertRaisesRegex(apply.ApplyError, "reused policy identity"):
+            apply.run(self.data, NAME, FINGERPRINT)
+        saved = apply.load_ledger(self.path, LIVE.target)
+        self.assertEqual(saved["owned"], ledger["owned"])
+        self.assertIsNone(saved["pending"]["policy_id"])
+        with self.assertRaisesRegex(apply.ApplyError, "outcome is uncertain"):
+            apply.run(self.data, NAME, FINGERPRINT)
+        self.post.assert_called_once()
+        self.query.assert_not_called()
+
+    def test_new_id_cannot_reuse_unmanaged_policy(self):
+        with self.assertRaisesRegex(apply.ApplyError, "reused policy identity"):
+            apply.check_new_policy_id(POLICY, {"owned": []}, [RESPONSE])
+
     def test_recovery_requires_saved_policy_id_and_current_dns(self):
         self.query.side_effect = [
             ("answered", [ADDRESS]),
