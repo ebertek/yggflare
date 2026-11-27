@@ -108,14 +108,15 @@ def load_registry(data, bound=None):
         document = json.loads(path.read_text(encoding="utf-8"))
         return validate_registry(document, bound)
     except (ValueError, TypeError, KeyError, RecursionError, UnicodeError):
-        raise ValueError("Invalid or incompatible internal DNS ownership registry") from None
+        raise ValueError(
+            "Invalid or incompatible internal DNS ownership registry"
+        ) from None
 
 
 def assert_available(document, action):
     """Never overwrite a prior identity even when its DNS record is missing."""
     if any(
-        entry["hostname"] == action["hostname"]
-        or entry["address"] == action["content"]
+        entry["hostname"] == action["hostname"] or entry["address"] == action["content"]
         for entry in document["records"].values()
     ):
         raise ValueError("Docker DNS target conflicts with recorded ownership")

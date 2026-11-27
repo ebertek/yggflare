@@ -17,8 +17,10 @@ from cloudflare_docker_dns import check_docker_target
 from cloudflare_internal_ownership import (
     assert_available,
     internal_scope,
-    load_registry as load_internal_registry,
     record_creation,
+)
+from cloudflare_internal_ownership import (
+    load_registry as load_internal_registry,
 )
 from cloudflare_live_diff import (
     DOCKER_NETWORK,
