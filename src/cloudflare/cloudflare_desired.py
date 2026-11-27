@@ -74,7 +74,9 @@ def compose_inventory(root):  # pylint: disable=too-many-locals,too-many-branche
                 if not all(
                     isinstance(address, str) for address in entry["IPv4Addresses"]
                 ):
-                    raise ValueError(f"Invalid static IPv4 declaration in {path}: {service}")
+                    raise ValueError(
+                        f"Invalid static IPv4 declaration in {path}: {service}"
+                    )
             containers.append(entry)
     return containers
 
