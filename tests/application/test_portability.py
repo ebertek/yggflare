@@ -7,13 +7,17 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# Mirror the image: shared application helpers and the Cloudflare modules.
+PYTHONPATH = os.pathsep.join(
+    str(ROOT / "src" / name) for name in ("yggflare", "cloudflare")
+)
 
 
 class PortableConfigurationTests(unittest.TestCase):
     def test_custom_domains_and_networks(self):
         env = {
             **os.environ,
-            "PYTHONPATH": str(ROOT / "src" / "cloudflare"),
+            "PYTHONPATH": PYTHONPATH,
             "YGGFLARE_LAN_CIDR": "192.168.10.0/23",
             "YGGFLARE_DEVICES_CIDR": "192.168.10.0/24",
             "YGGFLARE_DOCKER_CIDR": "192.168.11.0/24",
@@ -36,22 +40,23 @@ assert domain('YGGFLARE_INTERNAL_DOMAIN') == 'home.example.net'
         subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=20)
 
     def test_missing_domain_fails_closed(self):
-        env = {
-            **os.environ,
-            "PYTHONPATH": str(ROOT / "src" / "cloudflare"),
-            "YGGFLARE_EXTERNAL_DOMAIN": "",
-        }
-        code = "from cloudflare_desired import HOST"
-        completed = subprocess.run(
-            [sys.executable, "-c", code],
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=20,
-        )
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("YGGFLARE_EXTERNAL_DOMAIN", completed.stderr)
+        for value in (None, ""):
+            with self.subTest(value=value):
+                env = {**os.environ, "PYTHONPATH": PYTHONPATH}
+                env.pop("YGGFLARE_EXTERNAL_DOMAIN", None)
+                if value is not None:
+                    env["YGGFLARE_EXTERNAL_DOMAIN"] = value
+                completed = subprocess.run(
+                    [sys.executable, "-c", "from cloudflare_desired import HOST"],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=20,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("YGGFLARE_EXTERNAL_DOMAIN", completed.stderr)
+                self.assertNotIn("ModuleNotFoundError", completed.stderr)
 
 
 if __name__ == "__main__":
