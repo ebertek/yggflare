@@ -245,3 +245,18 @@ Access app**, with live revalidation at each step.
 Unmanaged hostnames are never deleted. Leave the cleanup batch size at `1` unless
 you've independently verified desired-state accuracy and recovery. Setting it to `0`
 permits bulk retirement.
+
+### Retirement diagnostics
+
+Explicit legacy Cloudflare plan/apply commands report elapsed-time progress
+on stderr, leaving stdout unchanged. External reviews fetch all self-hosted
+Access application details using at most four concurrent GETs per independent
+round. No details are cached across rounds or across approval/deletion; an
+incomplete or failed read blocks review. Target detail and dependency checks
+remain mandatory.
+
+A hostname-specific internal retirement review includes bounded
+`private_blockers` and `private_blocker_count` for `private_protected` rows.
+These identify static primary, alias, companion or retained DNS hostnames and
+whether the hostname or address matched. No descriptions, arbitrary config
+values or credentials are included. Shared address protections are unchanged.

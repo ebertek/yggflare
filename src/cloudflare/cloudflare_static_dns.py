@@ -263,14 +263,22 @@ def load_inventory_details(path, required=False):
     return wanted, companions
 
 
-def load_inventory_aliases(path):
-    """Read declared aliases after the main inventory has been validated."""
+def load_inventory_alias_owners(path):
+    """Read validated alias-to-primary provenance without exporting metadata."""
     if not path.is_file():
-        return set()
-    # Reject malformed or colliding aliases instead of accidentally hiding drift.
+        return {}
     load_inventory_details(path, required=True)
     entries = json.loads(path.read_text(encoding="utf-8"))["hosts"]
-    return {alias for entry in entries for alias in entry.get("aliases", [])}
+    return {
+        alias: entry["hostname"]
+        for entry in entries
+        for alias in entry.get("aliases", [])
+    }
+
+
+def load_inventory_aliases(path):
+    """Read declared aliases after the main inventory has been validated."""
+    return set(load_inventory_alias_owners(path))
 
 
 def load_inventory(path, required=False):

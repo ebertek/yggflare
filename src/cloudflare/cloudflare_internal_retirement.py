@@ -25,7 +25,7 @@ from cloudflare_retained_dns import RETAINED, load_retained_dns
 from cloudflare_static_dns import (
     INVENTORY,
     STATIC_NETWORK,
-    load_inventory_aliases,
+    load_inventory_alias_owners,
     load_inventory_details,
 )
 from yggflare_config import cloudflare_settings
@@ -234,6 +234,26 @@ def protected(name, address, evidence, records, identifier):
     return None
 
 
+def private_blockers(name, address, evidence):
+    """Explain exact private protections using only validated DNS identities."""
+    matches = []
+    for source, declared, value in evidence.get("private_sources", []):
+        if name == declared or address == value:
+            matches.append({
+                "source": source, "hostname": declared,
+                "match": "hostname" if name == declared else "address",
+            })
+    # Deduplicate and bound projected diagnostics, not the underlying protection.
+    unique = sorted({(row["source"], row["hostname"], row["match"]) for row in matches})
+    return {
+        "private_blocker_count": len(unique),
+        "private_blockers": [
+            {"source": source, "hostname": declared, "match": match}
+            for source, declared, match in unique[:32]
+        ],
+    }
+
+
 def review(client, bound, owned, records, external, evidence, hostname=None):
     """Classify owned identities and unmanaged leftovers without granting approval."""
     records = checked_records(records)
@@ -315,6 +335,10 @@ def review(client, bound, owned, records, external, evidence, hostname=None):
                 "status": status or "unmanaged",
             }
         )
+    if hostname is not None:
+        for row in rows:
+            if row["status"] == "private_protected":
+                row.update(private_blockers(row["hostname"], row["address"], evidence))
     rows.sort(key=lambda row: (row["hostname"], row["record_id"]))
     return {
         "mode": "read_only_retirement_review",
@@ -367,6 +391,7 @@ def collect_context(client, root, data, settings, hostname=None):
         raise ValueError("Conflicting internal DNS ownership registries")
     hosts, companions = load_inventory_details(root / INVENTORY, required=True)
     retained = load_retained_dns(root / RETAINED)
+    aliases = load_inventory_alias_owners(root / INVENTORY)
     containers = docker_containers()
     evidence = {
         "compose": compose_evidence(root, domain),
@@ -381,10 +406,16 @@ def collect_context(client, root, data, settings, hostname=None):
         "private": (
             set(hosts)
             | set(hosts.values())
-            | set(load_inventory_aliases(root / INVENTORY))
+            | set(aliases)
             | {address for values in companions.values() for address in values}
         ),
         "retained": retained,
+        "private_sources": (
+            [("static_primary", name, address) for name, address in hosts.items()]
+            + [("static_alias", alias, None) for alias in aliases]
+            + [("static_companion", name, address) for name, values in companions.items() for address in values]
+            + [("retained_dns", row["hostname"], row.get("content") if row["type"] == "A" else None) for row in retained]
+        ),
     }
     # Keep retained exact names/addresses protected independently of content.
     evidence["private"].update(row["hostname"] for row in retained)
