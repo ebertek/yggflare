@@ -20,6 +20,7 @@ from job_status import DNS_VERIFICATION_PENDING_EXIT, JobPending, track
 from mcp_http import HTTPListener
 from mcp_http import enabled as mcp_enabled
 from mcp_http import settings as mcp_settings
+from mcp_logging import http_logging
 from probe_inventory import INTERVAL as PROBE_INTERVAL
 from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
 from watchers import start as start_watchers
@@ -324,14 +325,16 @@ def main():
     signal.signal(signal.SIGINT, on_shutdown)
     log_startup()
     DATA.mkdir(parents=True, exist_ok=True)
-    listener = HTTPListener(mcp_settings()) if mcp_enabled() else None
-    try:
-        if listener is not None:
+    if not mcp_enabled():
+        run_scheduler(None)
+        return
+    listener = HTTPListener(mcp_settings(), audit_log=log)
+    with http_logging(log):
+        try:
             listener.start()
             log("info", "mcp", "Authenticated Streamable HTTP interface enabled")
-        run_scheduler(listener)
-    finally:
-        if listener is not None:
+            run_scheduler(listener)
+        finally:
             listener.stop()
 
 
