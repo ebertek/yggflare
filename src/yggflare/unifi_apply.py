@@ -131,6 +131,8 @@ def load_ledger(path, target):
         or type(ledger["pilot_verified"]) is not bool
         or not isinstance(owned, list)
         or len(owned) > MAX_ROWS
+        or (pending is not None and not isinstance(pending, dict))
+        or (len(owned) == MAX_ROWS and pending is not None and "repair" not in pending)
     ):
         raise ApplyError("Ownership ledger is invalid or belongs to another target")
     seen_ids, seen_names, seen_ips = set(), set(), set()
@@ -234,6 +236,16 @@ def load_ledger(path, target):
     if ledger["pilot_verified"] != any(entry["manual"] for entry in owned):
         raise ApplyError("Ownership ledger has inconsistent pilot evidence")
     return ledger
+
+
+def check_new_policy_id(identifier, ledger, policies):
+    """Never claim an acknowledgement that reuses a known policy identity."""
+    if (
+        row_id(identifier) != identifier
+        or any(entry["policy_id"] == identifier for entry in ledger["owned"])
+        or any(row_id(policy["id"]) == identifier for policy in policies)
+    ):
+        raise ApplyError("Unexpected reused policy identity; write outcome uncertain")
 
 
 def policy_matches(policy, operation):
@@ -643,9 +655,10 @@ def run(data, selected="", approval="", *, automatic=False):
             "manual": not automatic,
         }
         write(ledger_path, ledger, durable=True)
+        identifier = create_policy(live, live.key, operation)
+        check_new_policy_id(identifier, ledger, policies)
         ledger["pending"].update(
-            policy_id=create_policy(live, live.key, operation),
-            verification_deadline=verification_deadline(),
+            policy_id=identifier, verification_deadline=verification_deadline()
         )
         write(ledger_path, ledger, durable=True)
         confirm_pending(ledger_path, ledger, live)
@@ -875,6 +888,7 @@ def run_repair(data, selected, approval=None):
             identifier = create_policy(refreshed, refreshed.key, operation)
             if identifier == old["policy_id"]:
                 raise ApplyError("Recreated policy unexpectedly reused the previous ID")
+            check_new_policy_id(identifier, ledger, policies)
         pending.update(
             policy_id=identifier, verification_deadline=verification_deadline()
         )
@@ -905,18 +919,30 @@ def retirement_protected(live):
     zone = live.comparison["source_zone"]
     names, addresses, wildcards = set(), set(), set()
     for record in live.records:
+        if not isinstance(record, dict):
+            raise ApplyError("Invalid Cloudflare record in retirement evidence")
         name = record.get("name")
         kind = record.get("type")
-        if not isinstance(name, str) or not isinstance(kind, str):
+        if (
+            not isinstance(name, str)
+            or not name.strip(".")
+            or not isinstance(kind, str)
+            or not kind
+        ):
             raise ApplyError("Invalid Cloudflare record in retirement evidence")
         name = name.lower().rstrip(".")
         names.add(name)
         if name.startswith("*."):
             wildcards.add(name[2:])
         content = record.get("content")
-        if kind == "A" and ipv4(content) is not None:
-            addresses.add(str(ipv4(content)))
-        if kind in {"CNAME", "PTR", "NS"} and isinstance(content, str):
+        if kind == "A":
+            address = ipv4(content)
+            if address is None:
+                raise ApplyError("Invalid Cloudflare A record in retirement evidence")
+            addresses.add(str(address))
+        if kind in {"CNAME", "PTR", "NS"}:
+            if not isinstance(content, str) or not content.strip("."):
+                raise ApplyError("Invalid Cloudflare target in retirement evidence")
             names.add(content.lower().rstrip("."))
     try:
         from cloudflare_desired import compose_inventory
@@ -952,7 +978,9 @@ def retirement_protected(live):
             names.update(
                 name for value in labels if (name := canonical_name(value, zone))
             )
-            addresses.update(str(ipv4(value)) for value in values if ipv4(value))
+            if any(ipv4(value) is None for value in values):
+                raise ValueError("Invalid Compose IPv4 declaration")
+            addresses.update(str(ipv4(value)) for value in values)
     except Exception:
         raise ApplyError("Cannot validate private retirement declarations") from None
     return names, addresses, wildcards

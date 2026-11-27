@@ -104,7 +104,11 @@ reverse proxy, external network reachability or client-specific proxy rules.
 Verify the latest saved archive and rehearse an isolated restore. Restored
 UniFi ownership and retirement records are validated offline; a pending write
 is reported, not replayed. The journal's target is checked for internal
-consistency, not against a live gateway.
+consistency, not against a live gateway. Both archive checks enforce member
+and decompression limits, validate the gzip trailer, and reject conflicting
+or noncanonical paths. An older archive does not establish current ownership;
+keep DNS writes disabled during real recovery until the journal is reviewed
+against the live gateway.
 
 For off-host acceptance:
 

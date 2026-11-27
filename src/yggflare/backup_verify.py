@@ -3,6 +3,8 @@
 import argparse
 import json
 import sys
+import tarfile
+import zlib
 from pathlib import Path
 
 import controller
@@ -47,6 +49,6 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, ValueError) as error:
-        print(f"ERROR: {error}", file=sys.stderr)
+    except (OSError, ValueError, EOFError, tarfile.TarError, zlib.error):
+        print("ERROR: Backup check failed; inspect archive integrity and access.", file=sys.stderr)
         sys.exit(2)

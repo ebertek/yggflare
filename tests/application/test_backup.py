@@ -1,12 +1,15 @@
 """Backups must be complete, private, and retain only recent snapshots."""
 
+import gzip
+import io
 import json
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from backup import create_snapshot, prune_snapshots, restore_test
+from backup import create_snapshot, prune_snapshots, restore_test, verify_archive
 from job_status import archive_identity, backup_checks, record_backup_check
 
 
@@ -83,6 +86,51 @@ class BackupTests(unittest.TestCase):
             archive = create_snapshot(config, data, root / "backup")
             with self.assertRaisesRegex(ValueError, "Restored UniFi"):
                 restore_test(archive, root / "scratch")
+
+    def test_verification_bounds_and_checks_gzip_trailer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config, data = root / "config", root / "data"
+            config.mkdir()
+            data.mkdir()
+            (data / "state.json").write_text("{}")
+            archive = create_snapshot(config, data, root / "backup")
+            self.assertEqual(verify_archive(archive)["members"], 3)
+            for name, value in (
+                ("MAX_RESTORE_MEMBERS", 2),
+                ("MAX_RESTORE_BYTES", 1),
+                ("MAX_TAR_BYTES", 1),
+            ):
+                with self.subTest(limit=name), patch(f"backup.{name}", value):
+                    with self.assertRaisesRegex(ValueError, "limit"):
+                        verify_archive(archive)
+            # Tar can end before gzip's CRC/trailer. Verify the whole stream.
+            archive.write_bytes(archive.read_bytes()[:-4])
+            with self.assertRaises((EOFError, gzip.BadGzipFile)):
+                verify_archive(archive)
+
+    def test_verification_rejects_noncanonical_and_conflicting_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "backup.tar.gz"
+            for names in (
+                ["data", "data//state.json"],
+                ["data", "data/state", "data/state/child"],
+                ["data", "data/state", "data/state"],
+            ):
+                with self.subTest(names=names):
+                    with tarfile.open(archive, "w:gz") as target:
+                        config = tarfile.TarInfo("config")
+                        config.type = tarfile.DIRTYPE
+                        target.addfile(config)
+                        data = tarfile.TarInfo(names[0])
+                        data.type = tarfile.DIRTYPE
+                        target.addfile(data)
+                        for name in names[1:]:
+                            member = tarfile.TarInfo(name)
+                            member.size = 1
+                            target.addfile(member, io.BytesIO(b"x"))
+                    with self.assertRaises(ValueError):
+                        verify_archive(archive)
 
     def test_prune_removes_only_matching_old_archives(self):
         with tempfile.TemporaryDirectory() as directory:
