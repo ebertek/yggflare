@@ -642,6 +642,22 @@ def render(config, data, now=None):
                     sum(row.get("status") == status for row in probes["items"]),
                 )
             )
+    from service_retirement_view import saved as saved_retirement
+
+    retirement = saved_retirement(Path(data), now=now)
+    values.extend(
+        [
+            ("yggflare_retirement_review_available", "Selected retirement review available", retirement["available"]),
+            ("yggflare_retirement_review_fresh", "Selected retirement review is fresh", retirement["fresh"]),
+            ("yggflare_retirement_review_complete", "All selected review sources collected", retirement["complete"]),
+        ]
+    )
+    if retirement["available"]:
+        values.append(
+            ("yggflare_retirement_review_unavailable_sources",
+             "Unavailable layers in the selected retirement review",
+             sum(row["status"] == "unavailable" for row in retirement["items"]))
+        )
     output = "".join(
         metric(name, description, value) for name, description, value in values
     )

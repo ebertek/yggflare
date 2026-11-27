@@ -49,6 +49,7 @@ def main(argv=None):
             "repair-plan",
             "repair-apply",
             "retirement-plan",
+            "retirement-refresh",
             "apply",
             "preflight",
             "audit",
@@ -151,6 +152,16 @@ def main(argv=None):
         or args.all
     ):
         parser.error("Pagination and project options require a read-only operator view")
+    if args.component == "services" and args.operation == "retirement-refresh":
+        if (
+            not args.argument or args.approval is not None
+            or args.max_operations or args.details or args.json
+        ):
+            parser.error("services retirement-refresh requires one service label or hostname")
+        return subprocess.run(
+            [sys.executable, "/app/service_retirement_collect.py", "--", args.argument],
+            check=False,
+        ).returncode
     if (
         args.component in {"traefik", "komodo", "kuma", "probes", "unifi"}
         and args.operation == "refresh"
