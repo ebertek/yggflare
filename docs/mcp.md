@@ -58,6 +58,7 @@ in the repository.
 | `get_inventory_drift`          | Declared versus observed differences                                                     |
 | `get_discovery_changes`        | Recent saved discovery events                                                            |
 | `get_cloudflare_lifecycle`     | Saved DNS, Access and Tunnel resource presence                                           |
+| `get_service_retirement`       | Saved selected-service retirement evidence; no refresh or approval                       |
 | `get_service_exposure`         | Correlate Docker aliases with saved Cloudflare lifecycle                                 |
 | `get_cloudflare_audit`         | Saved proposed, blocked, static DNS and review-only DNS findings                         |
 | `get_cloudflare_access`        | Ordered decisions and expected assignment match, not selectors                           |

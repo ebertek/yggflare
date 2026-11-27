@@ -12,6 +12,11 @@ VIEWS = {
         "list": ("Docker services", "list_docker_services", "query"),
         "show": ("Exact service", "get_docker_service", "identifier"),
         "drift": ("Compose review findings", "get_compose_drift", ""),
+        "retirement-plan": (
+            "Saved retirement review",
+            "get_service_retirement",
+            "service",
+        ),
         "dependencies": (
             "Declared dependencies",
             "get_service_dependencies",
@@ -101,6 +106,7 @@ UNPAGED = {
     "get_komodo_status",
     "get_kuma_status",
     "get_probe_status",
+    "get_service_retirement",
 }
 REQUIRED = {"identifier", "hostname"}
 CLI_VIEWS = {
@@ -158,7 +164,7 @@ def query(
         and (area, view) != ("kuma", "coverage")
     ):
         raise ValueError("Project filter is not supported for this view")
-    if project and view in {"ingress", "assurance"}:
+    if project and view in {"ingress", "assurance", "retirement-plan"}:
         raise ValueError("Project filter is not supported for ingress")
     kwargs = {field: value} if field else {}
     if (area, view) == ("kuma", "devices"):
@@ -299,6 +305,15 @@ def render(area, tools, table, params):
         )
     context, groups = sections(result)
     content = nav + f"<h2>{escape(views[view][0])}</h2>"
+    if area == "services" and view == "retirement-plan":
+        content += (
+            "<p>Saved evidence only. Refresh explicitly using the operator CLI.</p>"
+            '<form method="get" action="/services">'
+            '<input type="hidden" name="view" value="retirement-plan">'
+            "<label>Service label or hostname "
+            f'<input name="q" value="{escape(value, quote=True)}"></label>'
+            '<button type="submit">Show saved review</button></form>'
+        )
     content += '<div class="toolbar"><input id="filter" type="search" aria-label="Filter this page" placeholder="Filter this page…"></div>'
     content += (
         '<div class="card">'

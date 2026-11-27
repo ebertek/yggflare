@@ -128,3 +128,34 @@ Do not start a restored writer against production as part of this test.
 Compare observations against current configuration, not historical counts.
 Do not trigger mutations or notifications merely to validate a release.
 Keep private acceptance output out of the public repository.
+
+## Unified service retirement review
+
+Collect one service explicitly, then read the saved evidence:
+
+```sh
+docker exec yggflare yggflare services retirement-refresh SERVICE
+docker exec yggflare yggflare services retirement-plan SERVICE --json
+```
+
+SERVICE is a single DNS label or an exact hostname under either configured
+zone. The collector reviews the same-label internal and external names;
+this is a correlation convention, not proof of a shared service identity.
+Only the latest selected service is retained. Web: Docker services → Saved
+retirement review. MCP: `get_service_retirement` (inventory, cloudflare and
+unifi groups). All three read the same sanitized snapshot. They do not
+collect live evidence, access credentials, write ownership or authorize
+mutations. The refresh is a separate operator CLI action; it is not scheduled.
+
+Each layer has an independent observation timestamp and explicitly reports
+unavailable evidence. A review is fresh for 15 minutes; refresh after any
+changes. Grace ages are saved observations, not continuous absence or a
+promise of eligibility. Pending state and blockers are review evidence;
+use the existing hostname-specific approval commands for adoption and the
+existing retirement workflow for deletion. External DNS → Tunnel → Access,
+then internal DNS before UniFi, is the recommended review order; no unified
+mutation command is provided. A missing resource is not proof of historical
+retirement, cache expiry, or absence on other hosts. If the policy and
+internal record no longer provide a known IPv4 address, PTR evidence is
+unavailable; independently check the previously known address. Aggregate metrics cover
+only the selected saved review and expose no resource labels.

@@ -1405,6 +1405,12 @@ class InventoryTools:
             "identity_conflicts": len(state.get("identity_conflicts", [])),
         }
 
+    def get_service_retirement(self, service: str = "") -> dict[str, Any]:
+        """Read the saved single-service retirement review; never refresh or mutate."""
+        from service_retirement_view import saved
+
+        return saved(Path("/data"), service)
+
     def get_cloudflare_lifecycle(
         self,
         hostname: str = "",
@@ -2876,6 +2882,7 @@ TOOL_NAMES = (
     "get_discovery_changes",
     "get_cloudflare_lifecycle",
     "get_service_exposure",
+    "get_service_retirement",
     "get_cloudflare_audit",
     "get_cloudflare_access",
     "get_cloudflare_dns",
@@ -2990,6 +2997,7 @@ REQUIRED_GROUPS.update(
         "get_evidence_overview": set(GROUPS),
         "get_yggflare_health": {"inventory", "cloudflare", "operations"},
         "get_service_exposure": {"inventory", "cloudflare"},
+        "get_service_retirement": {"inventory", "cloudflare", "unifi"},
         "get_ingress_path": {"inventory", "cloudflare", "traefik"},
         "get_ingress_evidence": {
             "inventory",
