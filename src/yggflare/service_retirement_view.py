@@ -143,11 +143,20 @@ def valid_snapshot(document):
                 if (
                     not isinstance(blocker, dict)
                     or set(blocker) != {"source", "hostname", "match"}
-                    or blocker["source"] not in {"static_primary", "static_alias", "static_companion", "retained_dns"}
+                    or blocker["source"]
+                    not in {
+                        "static_primary",
+                        "static_alias",
+                        "static_companion",
+                        "retained_dns",
+                    }
                     or blocker["match"] not in {"hostname", "address"}
                     or not isinstance(blocker["hostname"], str)
                     or not 0 < len(blocker["hostname"]) <= 253
-                    or not all(re.fullmatch(r"[a-z0-9_][a-z0-9_-]{0,62}", label) for label in blocker["hostname"].split("."))
+                    or not all(
+                        re.fullmatch(r"[a-z0-9_][a-z0-9_-]{0,62}", label)
+                        for label in blocker["hostname"].split(".")
+                    )
                 ):
                     return False
         if row.get("address") is not None:

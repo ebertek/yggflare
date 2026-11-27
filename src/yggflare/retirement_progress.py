@@ -20,4 +20,8 @@ def reporting():
 def emit(message):
     start = START.get()
     if start is not None:
-        print(f"[retirement +{time.monotonic() - start:.1f}s] {message}", file=sys.stderr, flush=True)
+        print(
+            f"[retirement +{time.monotonic() - start:.1f}s] {message}",
+            file=sys.stderr,
+            flush=True,
+        )

@@ -239,10 +239,13 @@ def private_blockers(name, address, evidence):
     matches = []
     for source, declared, value in evidence.get("private_sources", []):
         if name == declared or address == value:
-            matches.append({
-                "source": source, "hostname": declared,
-                "match": "hostname" if name == declared else "address",
-            })
+            matches.append(
+                {
+                    "source": source,
+                    "hostname": declared,
+                    "match": "hostname" if name == declared else "address",
+                }
+            )
     # Deduplicate and bound projected diagnostics, not the underlying protection.
     unique = sorted({(row["source"], row["hostname"], row["match"]) for row in matches})
     return {
@@ -413,8 +416,19 @@ def collect_context(client, root, data, settings, hostname=None):
         "private_sources": (
             [("static_primary", name, address) for name, address in hosts.items()]
             + [("static_alias", alias, None) for alias in aliases]
-            + [("static_companion", name, address) for name, values in companions.items() for address in values]
-            + [("retained_dns", row["hostname"], row.get("content") if row["type"] == "A" else None) for row in retained]
+            + [
+                ("static_companion", name, address)
+                for name, values in companions.items()
+                for address in values
+            ]
+            + [
+                (
+                    "retained_dns",
+                    row["hostname"],
+                    row.get("content") if row["type"] == "A" else None,
+                )
+                for row in retained
+            ]
         ),
     }
     # Keep retained exact names/addresses protected independently of content.
