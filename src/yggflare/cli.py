@@ -47,6 +47,7 @@ def main(argv=None):
             "canonical-review",
             "repair-plan",
             "repair-apply",
+            "retirement-plan",
             "apply",
             "preflight",
             "audit",
@@ -162,6 +163,13 @@ def main(argv=None):
         else:
             command = [sys.executable, "/app/integration_inventory.py", args.component]
         return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation == "retirement-plan":
+        if args.argument or args.approval or args.max_operations or args.details:
+            parser.error("unifi retirement-plan accepts only --json")
+        return subprocess.run(
+            [sys.executable, "/app/unifi_apply.py", "--retirement-plan"],
+            check=False,
+        ).returncode
     if args.component == "unifi" and args.operation in {"repair-plan", "repair-apply"}:
         applying = args.operation == "repair-apply"
         if (

@@ -84,7 +84,10 @@ production acceptance are distinct. Never move a published version tag.
   longer failure backoff. Owned repair requires a fresh hostname-specific
   fingerprint and exact declaration; preserve the previous ownership until
   verification. Do not update unmanaged policies, automatically repair
-  owned policies or delete policies.
+  owned policies. Retirement requires separate opt-in and observed grace,
+  complete desired-name/address absence, exact unchanged automatic ownership,
+  fresh policy revalidation and journaled DELETE acknowledgement. Protect
+  manual pilots and unmanaged policies; verify policy and A/PTR absence.
 - Notify Discord only after verification; preserve journaled delivery
   outcomes and duplicate protection.
 
