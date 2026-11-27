@@ -164,12 +164,13 @@ def plan(records, policies, zone, lan):
         if name not in eligible:
             rows.append(row)
             continue
-        if len(aliases[address]) != 1 or local_ips[address] - {name}:
-            row["status"] = "ambiguous_reverse"
+        local_status = "absent"
+        if local_ips[address] - {name}:
+            local_status = "shared_local_address"
         elif any(
             name == suffix or name.endswith("." + suffix) for suffix in forwarders
         ):
-            row["status"] = "forwarding_or_wildcard_conflict"
+            local_status = "forwarding_or_wildcard_conflict"
         elif local[name]:
             matches = local[name]
             exact = (
@@ -178,7 +179,12 @@ def plan(records, policies, zone, lan):
                 and matches[0]["enabled"]
                 and ipv4(matches[0].get("ipv4Address")) == address
             )
-            row["status"] = "matched" if exact else "local_conflict"
+            local_status = "matched" if exact else "local_conflict"
+        row["local_policy_status"] = local_status
+        if len(aliases[address]) != 1 or local_status == "shared_local_address":
+            row["status"] = "ambiguous_reverse"
+        elif local_status != "absent":
+            row["status"] = local_status
         rows.append(row)
     return {
         "mode": "read_only_preflight",

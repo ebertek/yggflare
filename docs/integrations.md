@@ -56,6 +56,25 @@ and local conflicts require review. Existing matching policies are not claimed.
 
 See the [UniFi DNS policy API](https://altered-tech.github.io/unifi-openapi-specs/network/v10.3.58/openapi.html#tag/DNS-Policies).
 
+## Review shared-address PTR names
+
+```sh
+docker exec yggflare yggflare unifi canonical-review --json
+```
+
+For each shared RFC1918 address, the report lists Cloudflare names, the
+explicit canonical tag (if present), exact Compose/static-inventory
+declarations, local policy conflicts and direct gateway A/PTR observations.
+A single unambiguous declared name is a candidate for the
+`yggflare:canonical` tag; conflicting tags, ineligible aliases and
+out-of-LAN groups require review. The report never selects a name based
+on an existing PTR alone.
+
+Review the reported DNS answers before tagging the chosen Cloudflare
+record. A suggestion is not a DNS write plan. This command makes no
+changes; shared-address creates remain excluded from automatic and
+manual apply pending validation of gateway behaviour.
+
 ## Verify gateway DNS replies
 
 ```sh
