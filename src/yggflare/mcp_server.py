@@ -1429,10 +1429,7 @@ class InventoryTools:
             row["dns_record_count"] = len(item.get("dns_record_ids", []))
             rows.append(row)
         counts = {
-            key: sum(
-                item.get("lifecycle") == key
-                for item in hosts
-            )
+            key: sum(item.get("lifecycle") == key for item in hosts)
             for key in ("managed", "orphaned", "declared / unclaimed", "unmanaged")
         }
         return {

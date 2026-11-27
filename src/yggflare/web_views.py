@@ -470,7 +470,9 @@ def cloudflare_view(data, table):
     if not evidence["last_refresh_verified"]:
         content += "<p>Latest refresh failed, is incomplete, or has no matching completion marker. Showing the last complete snapshot.</p>"
     if not evidence["fresh"]:
-        content += "<p>Snapshot is stale (older than eight hours or refresh unverified).</p>"
+        content += (
+            "<p>Snapshot is stale (older than eight hours or refresh unverified).</p>"
+        )
     timers = data.get("orphan_observations", {})
     missing = (
         timers.get("missing", {}) if timers.get("scope") == view.get("scope") else {}

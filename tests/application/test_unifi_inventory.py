@@ -287,7 +287,9 @@ class UniFiInventoryTests(unittest.TestCase):
             if line.startswith("yggflare_")
         }
         dashboard = json.loads(
-            (Path(__file__).resolve().parents[2] / "dashboards/yggflare.json").read_text()
+            (
+                Path(__file__).resolve().parents[2] / "dashboards/yggflare.json"
+            ).read_text()
         )
         queries = [
             target["expr"]

@@ -166,29 +166,47 @@ def render(config, data, now=None):
         (
             "yggflare_network_dns_sd_services",
             "DNS SD service identities from the most recent available browse",
-            len(advertisements) if dns_sd_at is not None and "advertisements" in scan else None,
+            (
+                len(advertisements)
+                if dns_sd_at is not None and "advertisements" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_observed_identities",
             "Evidence-based identity keys observed in the latest scan",
-            len(observed_identities) if seen_at is not None and "identity_history" in scan else None,
+            (
+                len(observed_identities)
+                if seen_at is not None and "identity_history" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_high_confidence_identities",
             "Observed identities corroborated by declared and direct MAC evidence",
-            sum(entry.get("confidence") == "high" for entry in observed_identities)
-            if seen_at is not None and "identity_history" in scan
-            else None,
+            (
+                sum(entry.get("confidence") == "high" for entry in observed_identities)
+                if seen_at is not None and "identity_history" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_identity_conflicts",
             "Addresses with unresolved competing identity evidence",
-            len(identity_conflicts) if seen_at is not None and "identity_conflicts" in scan else None,
+            (
+                len(identity_conflicts)
+                if seen_at is not None and "identity_conflicts" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_supplemental_warnings",
             "Supplemental discovery warnings in the most recent scan",
-            len(warnings) if seen_at is not None and "warnings" in supplementary else None,
+            (
+                len(warnings)
+                if seen_at is not None and "warnings" in supplementary
+                else None
+            ),
         ),
         (
             "yggflare_network_pending_discord_events",
