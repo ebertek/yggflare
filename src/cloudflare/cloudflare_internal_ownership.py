@@ -128,8 +128,7 @@ def load_registry(data, bound=None):
 def assert_available(document, action):
     """Never overwrite a prior identity even when its DNS record is missing."""
     if any(
-        entry["hostname"] == action["hostname"]
-        or entry["address"] == action["content"]
+        entry["hostname"] == action["hostname"] or entry["address"] == action["content"]
         for entry in document["records"].values()
     ):
         raise ValueError("Docker DNS target conflicts with recorded ownership")
