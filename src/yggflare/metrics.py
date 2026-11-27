@@ -461,6 +461,21 @@ def render(config, data, now=None):
                 ),
             ]
         )
+        if adapter == "unifi":
+            values.extend(
+                [
+                    (
+                        "yggflare_unifi_configured",
+                        "UniFi API origin configured",
+                        source["configured"],
+                    ),
+                    (
+                        "yggflare_unifi_last_refresh_verified",
+                        "Latest refresh verified against the saved UniFi snapshot",
+                        source["last_refresh_verified"],
+                    ),
+                ]
+            )
         if adapter == "kuma":
             selection = monitor_port_summary(
                 source["items"], scan, available=source["available"]

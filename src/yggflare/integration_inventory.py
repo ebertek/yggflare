@@ -486,6 +486,7 @@ def refresh(
             "version": 1,
             "source_id": source_id(origin),
             "observed_at": timestamp(),
+            "item_count": len(rows),
             "items": rows,
         }
         write(data / (adapter + "-view.json"), view)

@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
@@ -76,6 +77,7 @@ class UniFiInventoryTests(unittest.TestCase):
     def test_complete_snapshot_projects_only_allowlisted_fields(self):
         view = self.refresh()
         self.assertEqual(len(view["items"]), 5)
+        self.assertEqual(view["item_count"], len(view["items"]))
         self.assertNotIn(KEY, json.dumps(view))
         self.assertNotIn(SITE, json.dumps(view))
         self.assertTrue(saved("unifi", self.root, ENV)["fresh"])
@@ -151,6 +153,102 @@ class UniFiInventoryTests(unittest.TestCase):
             "list_unifi_devices",
             enabled_tools({"YGGFLARE_MCP_TOOL_GROUPS": "inventory"}),
         )
+
+    def test_status_parity_for_fresh_stale_and_unavailable_snapshots(self):
+        self.refresh()
+        view_path = self.root / "unifi-view.json"
+        status_path = self.root / "unifi-view-status.json"
+        initial_view = json.loads(view_path.read_text())
+        initial_status = json.loads(status_path.read_text())
+        for scenario in (
+            "fresh",
+            "failed_refresh",
+            "aged",
+            "missing_count",
+            "bad_count",
+        ):
+            with self.subTest(scenario=scenario):
+                view = {**initial_view}
+                status = {**initial_status}
+                if scenario == "failed_refresh":
+                    status["ok"] = False
+                elif scenario == "aged":
+                    view["observed_at"] = "2020-01-01T00:00:00+00:00"
+                    status["observed_at"] = view["observed_at"]
+                elif scenario == "missing_count":
+                    del view["item_count"]
+                elif scenario == "bad_count":
+                    view["item_count"] += 1
+                view_path.write_text(json.dumps(view))
+                status_path.write_text(json.dumps(status))
+                available = scenario not in ("missing_count", "bad_count")
+                fresh = scenario == "fresh"
+                verified = scenario in ("fresh", "aged")
+                with (
+                    patch.dict(os.environ, ENV),
+                    patch(
+                        "mcp_server.saved_integration",
+                        side_effect=lambda adapter, _: saved(adapter, self.root),
+                    ),
+                    patch(
+                        "unifi_api.get_page",
+                        side_effect=AssertionError("unexpected live read"),
+                    ),
+                ):
+                    tools = InventoryTools()
+                    state = tools.get_unifi_status()
+                    self.assertEqual(state["available"], available)
+                    self.assertEqual(state["fresh"], fresh)
+                    self.assertEqual(state["last_refresh_verified"], verified)
+                    with redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(cli.main(["unifi", "status", "--json"]), 0)
+                    self.assertEqual(json.loads(output.getvalue()), state)
+                    html = web.render("unifi", {}, {"view": ["status"]})
+                    for key in (
+                        "configured",
+                        "available",
+                        "fresh",
+                        "last_refresh_verified",
+                    ):
+                        expected = "Yes" if state[key] else "No"
+                        self.assertIn(
+                            f'data-label="Evidence"><span>{key}</span></td>'
+                            f'<td data-label="Value"><span>{expected}</span></td>',
+                            html,
+                        )
+                    sample = metrics.render(self.root, self.root).decode()
+                    gauges = {
+                        line.split()[0]: float(line.split()[1])
+                        for line in sample.splitlines()
+                        if line.startswith("yggflare_unifi_")
+                    }
+                    self.assertEqual(gauges["yggflare_unifi_configured"], 1)
+                    self.assertEqual(
+                        gauges["yggflare_unifi_snapshot_available"], available
+                    )
+                    self.assertEqual(gauges["yggflare_unifi_snapshot_fresh"], fresh)
+                    self.assertEqual(
+                        gauges["yggflare_unifi_last_refresh_verified"], verified
+                    )
+                    if available:
+                        counts = {"devices": 2, "clients": 1, "networks": 1, "dns": 1}
+                        self.assertEqual(state["counts"], counts)
+                        for kind, count in counts.items():
+                            self.assertEqual(gauges["yggflare_unifi_" + kind], count)
+                        self.assertEqual(
+                            gauges["yggflare_unifi_last_success_timestamp_seconds"],
+                            datetime.fromisoformat(state["observed_at"]).timestamp(),
+                        )
+                    else:
+                        self.assertIsNone(state["counts"])
+                        for kind in ("devices", "clients", "networks", "dns"):
+                            self.assertNotIn("yggflare_unifi_" + kind, gauges)
+                        self.assertNotIn(
+                            "yggflare_unifi_last_success_timestamp_seconds", gauges
+                        )
+                    self.assertNotIn(KEY, sample)
+                    self.assertNotIn("192.168.12.", sample)
+                    self.assertNotIn("<gateway>", sample)
 
     def test_device_uplink_projection_and_partial_failure(self):
         child, parent = (row["id"] for row in ROWS["devices"])
