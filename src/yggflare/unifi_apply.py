@@ -131,7 +131,8 @@ def load_ledger(path, target):
     for entry in entries:
         if (
             not isinstance(entry, dict)
-            or entry.keys() - {"notice", "verification_deadline", "repair", "notice_kind"}
+            or entry.keys()
+            - {"notice", "verification_deadline", "repair", "notice_kind"}
             != {"operation", "policy_id", "manual"}
             or ("repair" in entry and (entry is not pending or repair is None))
             or (
@@ -394,9 +395,7 @@ def confirm_pending(path, ledger, live):
     repair = entry.pop("repair", None)
     if repair:
         ledger["owned"] = [
-            old
-            for old in ledger["owned"]
-            if old["policy_id"] != repair["previous_id"]
+            old for old in ledger["owned"] if old["policy_id"] != repair["previous_id"]
         ]
     if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
         entry["notice"] = "pending"
@@ -577,9 +576,7 @@ def repair_review(live, ledger, selected, policies, targets):
         raise ApplyError("Repair requires a previously verified owned policy")
     old = owned[0]
     old_op = old["operation"]
-    candidates = [
-        row for row in live.comparison["rows"] if row["hostname"] == selected
-    ]
+    candidates = [row for row in live.comparison["rows"] if row["hostname"] == selected]
     address = candidates[0]["address"] if len(candidates) == 1 else None
     if (
         not address
@@ -590,7 +587,9 @@ def repair_review(live, ledger, selected, policies, targets):
             for entry in ledger["owned"]
         )
     ):
-        raise ApplyError("Repair desired address is ambiguous, undeclared or out of scope")
+        raise ApplyError(
+            "Repair desired address is ambiguous, undeclared or out of scope"
+        )
     if policy_fingerprint(policies) != live.policies_id:
         raise ApplyError("UniFi policies changed during repair preview")
     matching_id = [
@@ -621,7 +620,9 @@ def repair_review(live, ledger, selected, policies, targets):
         raise ApplyError("Existing DNS policy or address conflict prevents repair")
     gateway = live.config[0]
     forward = query(gateway, selected + ".", "A")
-    reverse = query(gateway, ipaddress.IPv4Address(address).reverse_pointer + ".", "PTR")
+    reverse = query(
+        gateway, ipaddress.IPv4Address(address).reverse_pointer + ".", "PTR"
+    )
     allowed_forward = [address]
     if action == "update":
         allowed_forward.append(old_op["ipv4Address"])
@@ -688,7 +689,10 @@ def update_policy(live, key, identifier, operation):
         updated = response_json(conn.getresponse(), 200)
     finally:
         conn.close()
-    if not policy_matches(updated, operation) or row_id(updated.get("id")) != identifier:
+    if (
+        not policy_matches(updated, operation)
+        or row_id(updated.get("id")) != identifier
+    ):
         raise ApplyError("Update acknowledgement does not match the reviewed policy")
     return identifier
 

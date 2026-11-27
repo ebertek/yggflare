@@ -104,7 +104,9 @@ class UniFiRepairTests(unittest.TestCase):
         self.assertEqual(report["operation"]["ipv4Address"], NEW)
         self.assertEqual(report["previous_policy_id"], POLICY)
         with self.assertRaisesRegex(apply.ApplyError, "previously verified"):
-            apply.repair_review(self.before, {"owned": [], "pending": None}, NAME, [], set())
+            apply.repair_review(
+                self.before, {"owned": [], "pending": None}, NAME, [], set()
+            )
         modified = [{**policy(OLD), "enabled": False}]
         with self.assertRaisesRegex(apply.ApplyError, "modified externally"):
             self.preview(live(NEW, modified), modified)
@@ -128,12 +130,18 @@ class UniFiRepairTests(unittest.TestCase):
             return POLICY
 
         with (
-            patch.object(apply, "load_live", side_effect=[self.before, self.before, self.after]),
-            patch.object(apply, "all_rows", side_effect=[[policy(OLD)]] * 3 + [[policy(NEW)]]),
+            patch.object(
+                apply, "load_live", side_effect=[self.before, self.before, self.after]
+            ),
+            patch.object(
+                apply, "all_rows", side_effect=[[policy(OLD)]] * 3 + [[policy(NEW)]]
+            ),
             patch.object(apply, "update_policy", side_effect=acknowledge) as put,
             patch.object(apply, "create_policy") as post,
         ):
-            self.assertIn("Repaired", apply.run_repair(self.data, NAME, report["fingerprint"]))
+            self.assertIn(
+                "Repaired", apply.run_repair(self.data, NAME, report["fingerprint"])
+            )
             put.assert_called_once()
             post.assert_not_called()
         journal = apply.load_ledger(self.path, self.before.target)
@@ -148,7 +156,9 @@ class UniFiRepairTests(unittest.TestCase):
         self.assertEqual(report["action"], "recreate")
         with (
             patch.object(apply, "load_live", side_effect=[before, before, after]),
-            patch.object(apply, "all_rows", side_effect=[[], [], [], [policy(NEW, RESTORED)]]),
+            patch.object(
+                apply, "all_rows", side_effect=[[], [], [], [policy(NEW, RESTORED)]]
+            ),
             patch.object(apply, "create_policy", return_value=RESTORED) as post,
             patch.object(apply, "update_policy") as put,
         ):
@@ -175,7 +185,8 @@ class UniFiRepairTests(unittest.TestCase):
             put.assert_called_once()
             post.assert_not_called()
         self.assertEqual(
-            apply.load_ledger(self.path, self.before.target)["owned"], self.ledger["owned"]
+            apply.load_ledger(self.path, self.before.target)["owned"],
+            self.ledger["owned"],
         )
 
     def test_cached_old_a_recovers_without_second_put(self):
@@ -190,8 +201,14 @@ class UniFiRepairTests(unittest.TestCase):
             ("answered", [NAME + "."]),
         ]
         with (
-            patch.object(apply, "load_live", side_effect=[self.before, self.before, self.after, self.after]),
-            patch.object(apply, "all_rows", side_effect=[[policy(OLD)]] * 3 + [[policy(NEW)]] * 2),
+            patch.object(
+                apply,
+                "load_live",
+                side_effect=[self.before, self.before, self.after, self.after],
+            ),
+            patch.object(
+                apply, "all_rows", side_effect=[[policy(OLD)]] * 3 + [[policy(NEW)]] * 2
+            ),
             patch.object(apply, "update_policy", return_value=POLICY) as put,
             patch.object(apply, "create_policy") as post,
         ):
@@ -212,12 +229,18 @@ class UniFiRepairTests(unittest.TestCase):
             response = conn.getresponse.return_value
             response.status = 200
             response.read.return_value = json.dumps(policy(NEW)).encode()
-            self.assertEqual(apply.update_policy(self.before, self.before.key, POLICY, operation), POLICY)
+            self.assertEqual(
+                apply.update_policy(self.before, self.before.key, POLICY, operation),
+                POLICY,
+            )
             args, kwargs = conn.request.call_args
             self.assertEqual(
                 args, ("PUT", f"{apply.PREFIX}/sites/{SITE}/dns/policies/{POLICY}")
             )
-            self.assertEqual(json.loads(kwargs["body"]), {k: v for k, v in operation.items() if k != "operation"})
+            self.assertEqual(
+                json.loads(kwargs["body"]),
+                {k: v for k, v in operation.items() if k != "operation"},
+            )
             response.read.return_value = json.dumps(policy(NEW, RESTORED)).encode()
             with self.assertRaises(apply.ApplyError):
                 apply.update_policy(self.before, self.before.key, POLICY, operation)
