@@ -99,7 +99,9 @@ def get_device(config, key, site, device):
 
 def get_network(config, key, site, network):
     """Read one network's configuration through its fixed Integration API path."""
-    return _get_json(config, key, f"{PREFIX}/sites/{UUID(site)}/networks/{UUID(network)}")
+    return _get_json(
+        config, key, f"{PREFIX}/sites/{UUID(site)}/networks/{UUID(network)}"
+    )
 
 
 def connection(config):

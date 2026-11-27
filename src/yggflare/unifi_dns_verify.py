@@ -45,9 +45,11 @@ def query(gateway, name, kind):
             continue
         if rrset.rdtype == question.rdtype:
             records.update(
-                record.address
-                if kind in {"A", "AAAA"}
-                else record.target.to_text().lower()
+                (
+                    record.address
+                    if kind in {"A", "AAAA"}
+                    else record.target.to_text().lower()
+                )
                 for record in rrset
             )
         else:

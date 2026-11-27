@@ -48,7 +48,8 @@ def scopes(environ):
         raise ValueError("Too many IPv6 prefixes")
     result = [ipaddress.IPv6Network(part.strip()) for part in parts]
     if any(
-        scope.prefixlen < 64 or ipv6(str(scope.network_address)) is None
+        scope.prefixlen < 64
+        or ipv6(str(scope.network_address)) is None
         or scope.is_link_local
         for scope in result
     ):
@@ -143,7 +144,11 @@ def compare(records, policies, zone, prefixes, gateway, request=query):
             elif len(tagged[address]) == 1:
                 canonical = next(iter(tagged[address]))
         checks.append(
-            ("PTR", address.reverse_pointer + ".", [canonical + "."] if canonical else None)
+            (
+                "PTR",
+                address.reverse_pointer + ".",
+                [canonical + "."] if canonical else None,
+            )
         )
     if len(checks) > MAX_QUERIES:
         raise ValueError("IPv6 DNS query limit exceeded")
@@ -156,8 +161,13 @@ def compare(records, policies, zone, prefixes, gateway, request=query):
                 status = "ambiguous_expectation"
             else:
                 status = "matched" if sorted(answers) == expected else "mismatch"
-        return {"type": kind, "name": name, "expected": expected,
-                "answers": answers, "status": status}
+        return {
+            "type": kind,
+            "name": name,
+            "expected": expected,
+            "answers": answers,
+            "status": status,
+        }
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         replies = list(pool.map(observe, checks))
@@ -222,8 +232,10 @@ def networks(live, fetch=get_network):
     for row in rows:
         identifier = row_id(row["id"])
         vlan = row.get("vlanId")
-        result = {"network_id": identifier,
-                  "vlan_id": vlan if type(vlan) is int and 0 <= vlan <= 4094 else None}
+        result = {
+            "network_id": identifier,
+            "vlan_id": vlan if type(vlan) is int and 0 <= vlan <= 4094 else None,
+        }
         try:
             detail = fetch(live.config, live.key, live.site, identifier)
             if not isinstance(detail, dict) or row_id(detail.get("id")) != identifier:
@@ -250,8 +262,14 @@ def parse_ra(raw, prefixes):
             if router and router.is_link_local:
                 if len(rows) >= MAX_ROUTERS:
                     raise ValueError("Too many RA samples")
-                rows.append({"router": str(router), "managed": flags.get("managed"),
-                             "other": flags.get("other"), "rdnss": servers + pending})
+                rows.append(
+                    {
+                        "router": str(router),
+                        "managed": flags.get("managed"),
+                        "other": flags.get("other"),
+                        "rdnss": servers + pending,
+                    }
+                )
             flags, pending, servers = {}, [], []
             continue
         if ":" not in line:
@@ -264,11 +282,17 @@ def parse_ra(raw, prefixes):
                 if len(servers) + len(pending) >= MAX_RESOLVERS:
                     raise ValueError("Too many advertised resolvers")
                 scope = (
-                    "link_local" if address.is_link_local else
-                    "configured" if any(address in prefix for prefix in prefixes) else
-                    "outside_scope"
+                    "link_local"
+                    if address.is_link_local
+                    else (
+                        "configured"
+                        if any(address in prefix for prefix in prefixes)
+                        else "outside_scope"
+                    )
                 )
-                pending.append({"address": str(address), "scope": scope, "lifetime_seconds": None})
+                pending.append(
+                    {"address": str(address), "scope": scope, "lifetime_seconds": None}
+                )
         elif key in ("dns server lifetime", "dns servers lifetime"):
             match = re.match(r"^([0-9]{1,10})\b", value)
             if match and int(match.group(1)) <= 2**32 - 1:
@@ -286,11 +310,18 @@ def parse_ra(raw, prefixes):
 def sample_ra(environ, prefixes, execute=subprocess.run):
     if environ.get("YGGFLARE_DISCOVERY_RA", "false") != "true":
         return {"status": "disabled", "interfaces": []}
-    interfaces = [item.strip() for item in environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").split(",")]
+    interfaces = [
+        item.strip()
+        for item in environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").split(",")
+    ]
     if (
-        not prefixes or not 1 <= len(interfaces) <= 4
+        not prefixes
+        or not 1 <= len(interfaces) <= 4
         or len(set(interfaces)) != len(interfaces)
-        or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,14}", item) for item in interfaces)
+        or any(
+            not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,14}", item)
+            for item in interfaces
+        )
     ):
         raise ValueError("RA requires configured discovery interfaces and IPv6 scope")
     results = []
@@ -300,7 +331,10 @@ def sample_ra(environ, prefixes, execute=subprocess.run):
             with tempfile.TemporaryFile() as output:
                 process = execute(
                     ["rdisc6", "-n", "-r", "1", "-w", "750", "ff02::2", interface],
-                    stdout=output, stderr=subprocess.DEVNULL, timeout=5, check=False,
+                    stdout=output,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                    check=False,
                     env={**environ, "LC_ALL": "C"},
                 )
                 output.seek(0)
@@ -327,8 +361,13 @@ def run():
         "source_zone": live.comparison["source_zone"],
         "scopes": [str(prefix) for prefix in prefixes],
         "dns_transport": live.config[0],
-        "dns": compare(live.records, policies, live.comparison["source_zone"],
-                       prefixes, live.config[0]),
+        "dns": compare(
+            live.records,
+            policies,
+            live.comparison["source_zone"],
+            prefixes,
+            live.config[0],
+        ),
         "networks": networks(live),
         "router_advertisements": sample_ra(os.environ, prefixes),
         "dhcpv6_dns_delivery": "not_observed",
@@ -347,8 +386,18 @@ def main():
     try:
         print(json.dumps(run(), indent=2, sort_keys=True))
         return 0
-    except (OSError, ValueError, TypeError, KeyError, CloudflareError, http.client.HTTPException):
-        print("IPv6 review unavailable; check configured scope and API access.", file=sys.stderr)
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        CloudflareError,
+        http.client.HTTPException,
+    ):
+        print(
+            "IPv6 review unavailable; check configured scope and API access.",
+            file=sys.stderr,
+        )
         return 2
     finally:
         signal.alarm(0)

@@ -27,8 +27,18 @@ class IPv6ReviewTests(unittest.TestCase):
 
         report = compare(
             [record(), {"name": NAME, "type": "A", "content": "192.168.10.20"}],
-            [{"type": "AAAA_RECORD", "domain": NAME, "enabled": True, "ipv6Address": IP}],
-            ZONE, [PREFIX], "192.168.10.1", request,
+            [
+                {
+                    "type": "AAAA_RECORD",
+                    "domain": NAME,
+                    "enabled": True,
+                    "ipv6Address": IP,
+                }
+            ],
+            ZONE,
+            [PREFIX],
+            "192.168.10.1",
+            request,
         )
         self.assertEqual(report["counts"], {"matched": 2})
         self.assertEqual(report["records"][0]["policy_status"], "matched")
@@ -37,8 +47,15 @@ class IPv6ReviewTests(unittest.TestCase):
         alias = f"alias.{ZONE}"
         for tags, expected in (([], None), (["yggflare:canonical"], [NAME + "."])):
             result = compare(
-                [record(tags=tags), record(alias)], [], ZONE, [PREFIX], "192.168.10.1",
-                lambda gateway, name, kind: ("answered", [IP] if kind == "AAAA" else [NAME + "."]),
+                [record(tags=tags), record(alias)],
+                [],
+                ZONE,
+                [PREFIX],
+                "192.168.10.1",
+                lambda gateway, name, kind: (
+                    "answered",
+                    [IP] if kind == "AAAA" else [NAME + "."],
+                ),
             )
             ptr = next(row for row in result["replies"] if row["type"] == "PTR")
             self.assertEqual(ptr["expected"], expected)
@@ -47,11 +64,18 @@ class IPv6ReviewTests(unittest.TestCase):
         with patch("unifi_ipv6_review.query") as request:
             report = compare(
                 [record(address="fd00:9999::1"), record(f"proxy.{ZONE}", proxied=True)],
-                [], ZONE, [PREFIX], "192.168.10.1", request,
+                [],
+                ZONE,
+                [PREFIX],
+                "192.168.10.1",
+                request,
             )
             request.assert_not_called()
         self.assertEqual(report["replies"], [])
-        self.assertEqual(report["record_counts"], {"ambiguous_or_ineligible": 1, "outside_configured_scope": 1})
+        self.assertEqual(
+            report["record_counts"],
+            {"ambiguous_or_ineligible": 1, "outside_configured_scope": 1},
+        )
 
     def test_aaaa_wire_reply_parser(self):
         def answer(request, gateway, **kwargs):
@@ -60,21 +84,32 @@ class IPv6ReviewTests(unittest.TestCase):
             return reply, False
 
         with patch("dns.query.udp_with_fallback", side_effect=answer):
-            self.assertEqual(query("192.168.10.1", NAME + ".", "AAAA"), ("answered", [IP]))
+            self.assertEqual(
+                query("192.168.10.1", NAME + ".", "AAAA"), ("answered", [IP])
+            )
 
     def test_network_config_is_not_dhcpv6_delivery(self):
-        result = network_settings({"ipv6Configuration": {
-            "interfaceType": "STATIC",
-            "clientAddressAssignment": {"slaacEnabled": True, "dhcpConfiguration": {}},
-            "routerAdvertisement": {"priority": "HIGH"},
-            "dnsServerIpAddressesOverride": [IP],
-        }})
+        result = network_settings(
+            {
+                "ipv6Configuration": {
+                    "interfaceType": "STATIC",
+                    "clientAddressAssignment": {
+                        "slaacEnabled": True,
+                        "dhcpConfiguration": {},
+                    },
+                    "routerAdvertisement": {"priority": "HIGH"},
+                    "dnsServerIpAddressesOverride": [IP],
+                }
+            }
+        )
         self.assertEqual(result["dns_selection"], "explicit")
         self.assertEqual(result["dns_overrides"], [IP])
         self.assertTrue(result["dhcpv6_configured"])
         self.assertEqual(result["dhcpv6_dns_delivery"], "not_observed")
         self.assertEqual(network_settings({})["status"], "not_reported")
-        self.assertEqual(network_settings({"ipv6Configuration": {}})["dns_selection"], "unknown")
+        self.assertEqual(
+            network_settings({"ipv6Configuration": {}})["dns_selection"], "unknown"
+        )
 
     def test_ra_reports_external_and_link_local_without_probing(self):
         raw = (
@@ -85,7 +120,9 @@ class IPv6ReviewTests(unittest.TestCase):
         row = parse_ra(raw, [PREFIX])[0]
         self.assertFalse(row["managed"])
         self.assertTrue(row["other"])
-        self.assertEqual([item["scope"] for item in row["rdnss"]], ["link_local", "outside_scope"])
+        self.assertEqual(
+            [item["scope"] for item in row["rdnss"]], ["link_local", "outside_scope"]
+        )
         self.assertEqual(row["rdnss"][0]["lifetime_seconds"], 600)
         self.assertEqual(parse_ra(raw.split("from ")[0], [PREFIX]), [])
 
@@ -93,8 +130,12 @@ class IPv6ReviewTests(unittest.TestCase):
         with patch("subprocess.run") as execute:
             execute.return_value.returncode = 2
             result = sample_ra(
-                {"YGGFLARE_DISCOVERY_RA": "true", "YGGFLARE_DISCOVERY_INTERFACES": "eth0"},
-                [PREFIX], execute,
+                {
+                    "YGGFLARE_DISCOVERY_RA": "true",
+                    "YGGFLARE_DISCOVERY_INTERFACES": "eth0",
+                },
+                [PREFIX],
+                execute,
             )
             self.assertEqual(result["interfaces"][0]["status"], "no_reply")
             self.assertEqual(sample_ra({}, [], execute)["status"], "disabled")
