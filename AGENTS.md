@@ -66,7 +66,10 @@ production acceptance are distinct. Never move a published version tag.
   continuous observed grace, complete fresh retirement evidence, exact-ID
   DELETE intent and acknowledgement, and verified absence before releasing
   ownership. Never replay an ambiguous DELETE. Static and unmanaged records
-  remain review-only. Recover safely from partial writes.
+  remain review-only unless an operator explicitly approves a fresh,
+  single-host legacy Docker A adoption fingerprint. Legacy adoption writes
+  ownership only, never deletes or backdates grace. Static records remain
+  review-only. Recover safely from partial writes.
 - Internal DNS creation must obey the configured allocation and opt-ins.
   Docker creates require unique, agreeing Compose/runtime evidence.
   Static, alias, retained and conflicting records are protected.

@@ -54,6 +54,8 @@ def main(argv=None):
             "audit",
             "claim",
             "claim-all",
+            "legacy-claim-plan",
+            "legacy-claim-apply",
             "orphan-plan",
             "orphan-apply",
             "verify",
@@ -311,6 +313,30 @@ def main(argv=None):
                 command = [sys.executable, "/app/network-inventory/discord_test.py"]
             return subprocess.run(command, check=False).returncode
         parser.error("Unsupported command for this component")
+
+    if args.operation in ("legacy-claim-plan", "legacy-claim-apply"):
+        applying = args.operation == "legacy-claim-apply"
+        if (
+            not args.argument
+            or applying != (args.approval is not None)
+            or (applying and not FINGERPRINT.fullmatch(args.approval))
+            or args.max_operations
+            or args.details
+            or args.json
+        ):
+            parser.error(
+                "legacy-claim-plan requires HOSTNAME; "
+                "legacy-claim-apply also requires FINGERPRINT"
+            )
+        command = [
+            sys.executable,
+            "/app/cloudflare/cloudflare_legacy_internal_claim.py",
+            "--hostname",
+            args.argument,
+        ]
+        if applying:
+            command.extend(["--approval", args.approval])
+        return subprocess.run(command, check=False).returncode
 
     if args.operation == "retirement-plan":
         if args.approval is not None or args.max_operations or args.details:
