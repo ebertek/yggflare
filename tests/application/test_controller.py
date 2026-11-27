@@ -290,6 +290,9 @@ class ControllerTests(unittest.TestCase):
         ):
             with self.assertRaises(RuntimeError):
                 controller.main()
+            listener.assert_called_once_with(
+                controller.mcp_settings.return_value, audit_log=controller.log
+            )
             listener.return_value.start.assert_called_once()
             listener.return_value.stop.assert_called_once()
 

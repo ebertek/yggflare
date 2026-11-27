@@ -3060,7 +3060,7 @@ def enabled_tools(env):
     return tuple(name for name in TOOL_NAMES if REQUIRED_GROUPS[name] <= groups)
 
 
-def guarded(method, name, slots, audit):
+def guarded(method, name, slots, audit, *, audit_log=None):
     """Bound concurrent queries and serialized output without logging arguments."""
 
     @wraps(method)
@@ -3097,11 +3097,20 @@ def guarded(method, name, slots, audit):
         finally:
             slots.release()
             if audit:
-                print(
-                    f"[mcp] {name} {outcome} duration_ms={round((time.monotonic() - started) * 1000)}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+                duration_ms = round((time.monotonic() - started) * 1000)
+                message = f"{name} {outcome} duration_ms={duration_ms}"
+                if audit_log is None:
+                    # Stdio must never write diagnostics to protocol stdout.
+                    print(f"[mcp] {message}", file=sys.stderr, flush=True)
+                else:
+                    audit_log(
+                        "info" if outcome == "succeeded" else "warning",
+                        "mcp",
+                        message,
+                        tool=name,
+                        outcome=outcome,
+                        duration_ms=duration_ms,
+                    )
 
     return call
 
@@ -3123,7 +3132,9 @@ def prompt_reader(text):
     return prompt
 
 
-def build_server(loader: Callable = load_model, *, env=None, slots=None):
+def build_server(
+    loader: Callable = load_model, *, env=None, slots=None, audit_log=None
+):
     """Register only the explicit read-only tool allowlist."""
     server = MCPServer(
         "Yggflare",
@@ -3142,7 +3153,9 @@ def build_server(loader: Callable = load_model, *, env=None, slots=None):
     if audit not in {"true", "false"}:
         raise ValueError("Invalid MCP audit log setting")
     calls = {
-        name: guarded(getattr(tools, name), name, slots, audit == "true")
+        name: guarded(
+            getattr(tools, name), name, slots, audit == "true", audit_log=audit_log
+        )
         for name in enabled
     }
     for name in enabled:

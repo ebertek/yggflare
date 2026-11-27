@@ -11,6 +11,10 @@
 Watchers trigger Cloudflare audits, not LAN scans. Optional integrations
 refresh every five minutes; UniFi automatic creation is separately opt-in.
 The controller logs job durations and outcomes and handles shutdown signals.
+MCP HTTP lifecycle and optional tool audit records use the same UTC text/JSON
+formatter. SDK and Uvicorn warnings/errors retain severity but omit arbitrary
+message and exception text; known fixed lifecycle messages are preserved.
+Access logging stays disabled. Standalone MCP stdio diagnostics remain on stderr.
 
 ```sh
 docker logs --tail 100 yggflare

@@ -180,7 +180,7 @@ def read_principals(path, env=None):
 class PrincipalApp:
     """Authenticate each stateless request and dispatch to a scoped MCP server."""
 
-    def __init__(self, config, principals, loader=None, env=None):
+    def __init__(self, config, principals, loader=None, env=None, *, audit_log=None):
         self.hosts = {host.encode("ascii") for host in config.hosts}
         self.routes = []
         env = dict(os.environ if env is None else env)
@@ -188,9 +188,9 @@ class PrincipalApp:
         for principal in principals:
             scoped = {**env, "YGGFLARE_MCP_TOOL_GROUPS": ",".join(principal.groups)}
             server = (
-                build_server(env=scoped, slots=slots)
+                build_server(env=scoped, slots=slots, audit_log=audit_log)
                 if loader is None
-                else build_server(loader, env=scoped, slots=slots)
+                else build_server(loader, env=scoped, slots=slots, audit_log=audit_log)
             )
             self.routes.append(
                 (
@@ -288,27 +288,37 @@ def http_options(config):
     }
 
 
-def build_http_app(config, token, loader=None):
-    server = build_server() if loader is None else build_server(loader)
+def build_http_app(config, token, loader=None, *, audit_log=None):
+    server = (
+        build_server(audit_log=audit_log)
+        if loader is None
+        else build_server(loader, audit_log=audit_log)
+    )
     return ProtectedApp(
         server.streamable_http_app(**http_options(config)), config, token
     )
 
 
-def configured_app(config, loader=None, env=None):
+def configured_app(config, loader=None, env=None, *, audit_log=None):
     if config.principals_file is not None:
         return PrincipalApp(
-            config, read_principals(config.principals_file, env), loader, env
+            config,
+            read_principals(config.principals_file, env),
+            loader,
+            env,
+            audit_log=audit_log,
         )
-    return build_http_app(config, read_token(config.token_file), loader)
+    return build_http_app(
+        config, read_token(config.token_file), loader, audit_log=audit_log
+    )
 
 
 class HTTPListener:
     """Run one bounded ASGI listener in the controller's background thread."""
 
-    def __init__(self, config):
+    def __init__(self, config, *, audit_log=None):
         self.config = config
-        app = configured_app(config)
+        app = configured_app(config, audit_log=audit_log)
         self.server = uvicorn.Server(
             uvicorn.Config(
                 app,
@@ -318,6 +328,7 @@ class HTTPListener:
                 proxy_headers=False,
                 access_log=False,
                 log_level="warning",
+                log_config=None,
                 limit_concurrency=16,
                 timeout_keep_alive=5,
                 timeout_graceful_shutdown=2,
