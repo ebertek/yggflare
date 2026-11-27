@@ -262,8 +262,11 @@ def main(argv=None):
             [sys.executable, f"/app/{script}"], check=False
         ).returncode
     network_status = args.component == "network" and args.operation == "status"
-    if (args.details or args.json) and not network_status:
-        parser.error("--details and --json require network status")
+    cloudflare_retirement = (
+        args.component == "cloudflare" and args.operation == "retirement-plan"
+    )
+    if (args.details or args.json) and not (network_status or cloudflare_retirement):
+        parser.error("--details and --json require a supported review command")
     if args.operation == "serve" and args.component != "mcp":
         parser.error("serve requires mcp")
     if network_status:
@@ -308,6 +311,26 @@ def main(argv=None):
                 command = [sys.executable, "/app/network-inventory/discord_test.py"]
             return subprocess.run(command, check=False).returncode
         parser.error("Unsupported command for this component")
+
+    if args.operation == "retirement-plan":
+        if args.approval is not None or args.max_operations or args.details:
+            parser.error(
+                "cloudflare retirement-plan accepts optional HOSTNAME and --json"
+            )
+        controller.DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="yggflare-compose-", dir=controller.DATA
+        ) as folder:
+            root = controller.snapshot(Path(folder))
+            command = [
+                sys.executable,
+                "/app/cloudflare/cloudflare_internal_retirement.py",
+                "--root",
+                str(root),
+            ]
+            if args.argument is not None:
+                command.extend(["--hostname", args.argument])
+            return subprocess.run(command, check=False).returncode
 
     if args.max_operations < 0:
         parser.error("--max-operations must be nonnegative")

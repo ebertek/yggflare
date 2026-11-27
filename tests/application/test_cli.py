@@ -258,6 +258,38 @@ class CommandTests(unittest.TestCase):
                 run.assert_not_called()
                 snapshot.assert_not_called()
 
+    def test_cloudflare_retirement_preview_dispatch(self):
+        for arguments in (
+            ["cloudflare", "retirement-plan"],
+            ["cloudflare", "retirement-plan", "demo.ygg.nu", "--json"],
+        ):
+            with self.subTest(arguments=arguments):
+                result, command = self.invoke(arguments)
+                self.assertEqual(result, 0)
+                self.assertEqual(
+                    command[1], "/app/cloudflare/cloudflare_internal_retirement.py"
+                )
+                self.assertNotIn("--apply", command)
+                if len(arguments) > 2:
+                    self.assertEqual(command[-2:], ["--hostname", "demo.ygg.nu"])
+
+    def test_cloudflare_retirement_rejects_mutation_arguments(self):
+        for arguments in (
+            ["cloudflare", "retirement-plan", "demo.ygg.nu", "0123456789abcdef"],
+            ["cloudflare", "retirement-plan", "--max-operations", "1"],
+            ["cloudflare", "retirement-plan", "--details"],
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                contextlib.redirect_stderr(io.StringIO()),
+                patch.object(cli.controller, "snapshot") as snapshot,
+                patch.object(cli.subprocess, "run") as run,
+                self.assertRaises(SystemExit),
+            ):
+                cli.main(arguments)
+            snapshot.assert_not_called()
+            run.assert_not_called()
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)
