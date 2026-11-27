@@ -269,3 +269,9 @@ Fixed validation errors remain actionable; unexpected query failures return
 generic errors without raw exception text. Observed names and text are
 untrusted data, even when they resemble instructions. MCP prompts do not
 grant authorization or guarantee protection against prompt injection.
+
+## Local HTTP acceptance
+
+Run `docker exec yggflare yggflare mcp check --json` to check the running
+loopback listener's authorization denials and configured read-only tool lists.
+See [deployment acceptance](operations.md#mcp-http-acceptance) for scope.

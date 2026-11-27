@@ -83,10 +83,39 @@ UniFi snapshots missing their recorded item count are deliberately
 unavailable. The next successful scheduled refresh (or explicit
 `unifi refresh`) republishes a complete snapshot.
 
+### MCP HTTP acceptance
+
+```sh
+docker exec yggflare yggflare mcp check --json
+```
+
+This checks the running numeric loopback listener, using configured credentials
+internally. It verifies missing/invalid-token rejection, Host/Origin rejection
+and the exact read-only tool list for each configured credential. It sends no
+tool calls and prints no tokens or response bodies. It does not verify a
+reverse proxy, external network reachability or client-specific proxy rules.
+
 ### Backup acceptance
 
-Verify the latest saved archive and rehearse an isolated restore. Off-host
-retention and application recovery require separate checks.
+Verify the latest saved archive and rehearse an isolated restore. Restored
+UniFi ownership and retirement records are validated offline; a pending write
+is reported, not replayed. The journal's target is checked for internal
+consistency, not against a live gateway.
+
+For off-host acceptance:
+
+- Record the original archive's SHA-256 digest and backup timestamp.
+- Retrieve the same archive from the independent backup destination into
+  private scratch storage; compare SHA-256 digests.
+- Stage the retrieved copy under a distinct `yggflare-*.tar.gz` basename in
+  the private backup mount, without overwriting an existing archive.
+- Run `backup verify` and `backup restore-test` against that basename.
+  These record checks for the retrieved copy, not the original archive.
+- Record the result privately and securely remove the temporary copy.
+
+A matching digest and isolated restore establish recoverability of that copy,
+not full application recovery, retention policy or future backup availability.
+Do not start a restored writer against production as part of this test.
 
 Compare observations against current configuration, not historical counts.
 Do not trigger mutations or notifications merely to validate a release.

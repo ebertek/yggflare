@@ -123,8 +123,11 @@ See [integrations](integrations.md) for interpretation.
 ## Assurance dashboard
 
 Import the [Grafana dashboard](../dashboards/yggflare.json) using the existing
-Prometheus datasource and preserve its UID. Check freshness and availability
-before interpreting counts. The dashboard does not install alert rules.
+Prometheus datasource and preserve its UID. The UniFi section shows collection
+health, resource counts, uplink evidence, observation age and writer outcomes.
+Pending verification and unknown completion are separate from failure.
+Check freshness and availability before interpreting counts. The dashboard
+does not install alert rules.
 
 Neutral colours represent raw counts, age and duration; amber indicates
 review candidates; red indicates stale/unavailable evidence or failed
