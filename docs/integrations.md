@@ -169,8 +169,11 @@ YGGFLARE_UNIFI_DISCORD_NOTIFY: "true"
 
 Automatic scope is the intersection of Cloudflare A records and exact
 Compose/static-inventory hostname/IPv4 declarations. Ambiguous,
-runtime-only and Cloudflare-only names are excluded. The declarations
-are rechecked before creation. Manual approval remains available.
+runtime-only and Cloudflare-only names are excluded. Addressless short
+container hostnames in other stacks are not LAN A declarations; explicit
+DNS names, conflicting static addresses and invalid address declarations
+still block eligibility. The declarations are rechecked before creation.
+Manual approval remains available.
 
 The `unifi_apply` job creates at most one policy per invocation. Its independent
 interval defaults to 60 seconds (30–3600 configurable). Pending verification

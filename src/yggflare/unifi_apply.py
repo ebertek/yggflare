@@ -503,9 +503,14 @@ def declared_targets(services, static_hosts, zone, docker_network):
     declarations = [(name, {address}) for name, address in static_hosts.items()]
     for service in services:
         name = service.get("ContainerName") or service["Name"].rsplit("/", 1)[-1]
-        host = canonical_name(service.get("Hostname") or name, zone)
+        raw_host = service.get("Hostname") or name
+        host = canonical_name(raw_host, zone)
         if host:
             values = service.get("IPv4Addresses", [])
+            # Addressless short names are container-local, not LAN A declarations.
+            # Explicit DNS names and malformed/out-of-scope addresses still block.
+            if values == [] and "." not in raw_host.rstrip("."):
+                continue
             addresses = {scoped_address(value, docker_network) for value in values}
             declarations.append((host, addresses))
 

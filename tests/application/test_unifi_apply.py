@@ -480,6 +480,73 @@ class UniFiApplyTests(unittest.TestCase):
             },
         )
 
+    def test_addressless_short_name_does_not_block_unique_lan_declaration(self):
+        zone = "example.invalid"
+        net = ipaddress.IPv4Network("192.168.10.0/24")
+        name = "alloy.example.invalid"
+        target = (name, ADDRESS)
+        services = [
+            {"Name": "main/alloy", "Hostname": "alloy", "IPv4Addresses": [ADDRESS]},
+            {"Name": "remote/alloy", "Hostname": "alloy", "IPv4Addresses": []},
+            {"Name": "another/alloy", "Hostname": "alloy"},
+            {"Name": "main/cloudflared", "Hostname": "cloudflared"},
+        ]
+        self.assertEqual(apply.declared_targets(services, {}, zone, net), {target})
+        for duplicate in (
+            {"Hostname": "alloy", "IPv4Addresses": [ADDRESS]},
+            {"Hostname": "alloy", "IPv4Addresses": ["192.168.10.21"]},
+            {"Hostname": "alloy", "IPv4Addresses": ["192.168.11.20"]},
+            {"Hostname": "alloy", "IPv4Addresses": ["${UNRESOLVED}"]},
+            {"Hostname": "alloy", "IPv4Addresses": [None]},
+            {"Hostname": name, "IPv4Addresses": []},
+            {"Hostname": "other", "IPv4Addresses": [ADDRESS]},
+        ):
+            with self.subTest(duplicate=duplicate):
+                self.assertNotIn(
+                    target,
+                    apply.declared_targets(
+                        services + [{"Name": "conflict/app", **duplicate}],
+                        {},
+                        zone,
+                        net,
+                    ),
+                )
+        self.assertNotIn(
+            target, apply.declared_targets(services, {name: ADDRESS}, zone, net)
+        )
+
+    def test_addressless_duplicates_from_compose_source(self):
+        from cloudflare_desired import compose_inventory
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for project, address in (("primary", ADDRESS), ("remote", None)):
+                directory = root / project
+                directory.mkdir()
+                network = (
+                    f"    networks:\n      lan:\n        ipv4_address: {address}\n"
+                    if address
+                    else ""
+                )
+                (directory / "compose.yaml").write_text(
+                    "services:\n  alloy:\n    hostname: alloy\n" + network
+                )
+            self.assertEqual(
+                apply.declared_targets(
+                    compose_inventory(root),
+                    {},
+                    "example.invalid",
+                    ipaddress.IPv4Network("192.168.10.0/24"),
+                ),
+                {("alloy.example.invalid", ADDRESS)},
+            )
+            (root / "remote" / "compose.yaml").write_text(
+                "services:\n  alloy:\n    hostname: alloy\n"
+                "    networks:\n      lan:\n        ipv4_address: null\n"
+            )
+            with self.assertRaisesRegex(ValueError, "Invalid static IPv4 declaration"):
+                compose_inventory(root)
+
     def test_discord_notice_uses_compact_success_embed(self):
         webhook = "https://discord.com/api/webhooks/123456789012345678/fixture-token"
         with (
