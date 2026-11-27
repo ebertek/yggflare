@@ -6,12 +6,22 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 from cloudflare_claims import claim_internal
-from cloudflare_internal_ownership import STATIC_REGISTRY_FILE, internal_scope, load_registry
+from cloudflare_internal_ownership import (
+    STATIC_REGISTRY_FILE,
+    internal_scope,
+    load_registry,
+)
 
 BOUND = internal_scope("a" * 32, "b" * 32, "example.net", "192.0.2.0/24")
 HOST = "device.example.net"
 ADDRESS = "192.0.2.42"
-RECORD = {"id": "c" * 32, "name": HOST, "content": ADDRESS, "type": "A", "proxied": False}
+RECORD = {
+    "id": "c" * 32,
+    "name": HOST,
+    "content": ADDRESS,
+    "type": "A",
+    "proxied": False,
+}
 
 
 class BulkClaimTests(unittest.TestCase):
@@ -24,12 +34,25 @@ class BulkClaimTests(unittest.TestCase):
         self.client.get_dns_record.return_value = RECORD
 
     def claim(self):
-        return claim_internal(self.client, self.data, BOUND, {HOST: ADDRESS}, filename=STATIC_REGISTRY_FILE)
+        return claim_internal(
+            self.client,
+            self.data,
+            BOUND,
+            {HOST: ADDRESS},
+            filename=STATIC_REGISTRY_FILE,
+        )
 
     def test_claim_is_idempotent_and_separate(self):
         self.assertEqual(self.claim()[HOST], "claimed")
         self.assertEqual(self.claim()[HOST], "already owned")
-        self.assertEqual(len(load_registry(self.data, BOUND, filename=STATIC_REGISTRY_FILE)["records"]), 1)
+        self.assertEqual(
+            len(
+                load_registry(self.data, BOUND, filename=STATIC_REGISTRY_FILE)[
+                    "records"
+                ]
+            ),
+            1,
+        )
         self.assertEqual(load_registry(self.data, BOUND)["records"], {})
         self.client.get_dns_record.assert_called_once_with(BOUND["zone"], RECORD["id"])
 

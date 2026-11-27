@@ -213,7 +213,9 @@ def claim_all(client, root, data, bound):
                 results[hostname] = "already owned"
                 continue
             try:
-                identity = claimed_identity(client, bound, hostname, resources, policies)
+                identity = claimed_identity(
+                    client, bound, hostname, resources, policies
+                )
             except OwnershipError:
                 results[hostname] = "skipped: live endpoint missing or conflicting"
                 continue

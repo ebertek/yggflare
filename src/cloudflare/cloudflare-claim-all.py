@@ -51,8 +51,12 @@ def claim_dns(client, root, data, settings, selected):
     protected = LIVE.protected_dns_names(hosts, companions, aliases, retained)
     if selected in ("all", "docker"):
         candidates = plan_docker_creates(
-            compose_inventory(root), LIVE.docker_ipv4(), [], domain,
-            DOCKER_NETWORK, protected,
+            compose_inventory(root),
+            LIVE.docker_ipv4(),
+            [],
+            domain,
+            DOCKER_NETWORK,
+            protected,
         )
         wanted = {row["hostname"]: row["content"] for row in candidates}
         bound = internal_scope(account, zone, domain, DOCKER_NETWORK)
@@ -62,7 +66,8 @@ def claim_dns(client, root, data, settings, selected):
             row["content"] for row in retained if row["type"] == "A"
         }
         wanted = {
-            name: address for name, address in hosts.items()
+            name: address
+            for name, address in hosts.items()
             if name not in excluded and address not in excluded
         }
         bound = internal_scope(account, zone, domain, STATIC_NETWORK)
@@ -75,20 +80,28 @@ def claim_dns(client, root, data, settings, selected):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
-    parser.add_argument("--scope", choices=("all", "external", "docker", "static"), default="all")
+    parser.add_argument(
+        "--scope", choices=("all", "external", "docker", "static"), default="all"
+    )
     args = parser.parse_args()
     client = CloudflareWriter(api_token())
     settings = cloudflare_settings()
     data = Path("/data")
     if args.scope in ("all", "external"):
         account = checked_id(settings["account_id"], "account ID")
-        zone = checked_id(client.zone_id(settings["external_zone"], account), "external zone ID")
+        zone = checked_id(
+            client.zone_id(settings["external_zone"], account), "external zone ID"
+        )
         if settings.get("external_zone_id") and settings["external_zone_id"] != zone:
             raise ValueError("Configured external DNS zone identity changed")
         tunnel = checked_tunnel_id(
-            settings.get("tunnel_id") or client.tunnel_id(account, settings["tunnel_name"])
+            settings.get("tunnel_id")
+            or client.tunnel_id(account, settings["tunnel_name"])
         )
-        report("External endpoints", claim_all(client, args.root, data, scope(account, zone, tunnel)))
+        report(
+            "External endpoints",
+            claim_all(client, args.root, data, scope(account, zone, tunnel)),
+        )
     if args.scope in ("all", "docker", "static"):
         claim_dns(client, args.root, data, settings, args.scope)
     print("No changes made to Cloudflare.")

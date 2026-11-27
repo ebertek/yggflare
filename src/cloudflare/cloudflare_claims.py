@@ -23,8 +23,7 @@ def claim_internal(client, data, bound, wanted, *, filename=REGISTRY_FILE):
         addresses = Counter(wanted.values())
         for hostname, address in sorted(wanted.items()):
             if any(
-                entry["hostname"] == hostname
-                for entry in document["records"].values()
+                entry["hostname"] == hostname for entry in document["records"].values()
             ):
                 results[hostname] = "already owned"
                 continue

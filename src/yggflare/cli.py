@@ -327,7 +327,10 @@ def main(argv=None):
         if args.argument is None or args.approval is not None:
             parser.error(f"{args.operation} requires exactly one hostname")
     elif args.operation == "claim-all":
-        if args.argument not in (None, "all", "external", "docker", "static") or args.approval is not None:
+        if (
+            args.argument not in (None, "all", "external", "docker", "static")
+            or args.approval is not None
+        ):
             parser.error("claim-all accepts only all, external, docker or static")
     elif args.argument is not None or args.approval is not None:
         parser.error("unexpected positional argument")

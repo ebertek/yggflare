@@ -262,7 +262,12 @@ def cloudflare_run():
         run(args, env=env)
         if auto_claim == "true":
             run(
-                [sys.executable, "/app/cloudflare/cloudflare-claim-all.py", "--root", str(root)],
+                [
+                    sys.executable,
+                    "/app/cloudflare/cloudflare-claim-all.py",
+                    "--root",
+                    str(root),
+                ],
                 env=env,
             )
         if env_get(env, "YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true":
