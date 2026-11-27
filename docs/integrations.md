@@ -163,8 +163,8 @@ are rechecked before creation. Manual approval remains available.
 The `unifi_apply` job creates at most one policy per invocation. Its independent
 interval defaults to 60 seconds (30–3600 configurable). Pending verification
 uses a 30-second retry interval. Other collectors keep their existing schedules.
-An unresolved journal entry blocks further creates. Owned policy repair
-requires manual approval; automatic creation never repairs or deletes policies.
+An unresolved journal entry blocks further writes. Owned policy repair
+requires manual approval; retirement requires a separate opt-in.
 
 Discord notifications are optional and sent only after policy and A/PTR
 verification. Attempts are journaled; unconfirmed deliveries are not
@@ -193,10 +193,47 @@ Unknown outcomes block writes; do not retry mutations manually.
 
 Scheduled reconciliation can recover acknowledged repairs. A manual
 repair can also be resumed using the same hostname and fingerprint.
-Repairs use the same lock and deadline as creation. No automatic repair
-or deletion is enabled. Verify the old reverse address separately.
+Repairs use the same lock and deadline as creation. Automatic repair
+is not enabled. Verify the old reverse address separately.
 Older images may reject repair journal entries or repair notification
 metadata. Disable the writer before rollback and retain the journal.
+
+## Retire obsolete owned policies
+
+```sh
+docker exec yggflare yggflare unifi retirement-plan --json
+```
+
+The preview is read-only. To observe and retire eligible policies, enable
+both automatic apply and the separate cleanup opt-in:
+
+```yaml
+YGGFLARE_UNIFI_AUTO_APPLY: "true"
+YGGFLARE_UNIFI_AUTO_CLEANUP: "true"
+YGGFLARE_UNIFI_ORPHAN_GRACE_HOURS: "24"
+```
+
+Grace is 24–720 hours. Only previously verified automatically created
+policies qualify; manual pilots and unmanaged policies are protected.
+The hostname and address must be absent from complete Cloudflare DNS
+and private Compose/static/retained declarations. Existing aliases,
+wildcards, modified policies and local conflicts block retirement.
+
+The writer persists observed orphan age in `/data/unifi-retirement.json`.
+Reappearance, changed ownership, invalid evidence or an observation gap
+over two hours resets eligibility. This is observed absence, not continuous
+proof. Disabling cleanup resets observations on the next automatic cycle.
+
+At most one exact-ID DELETE is issued per invocation after fresh checks.
+The shared ownership journal retains the old entry until the API confirms
+deletion and both A/PTR queries return absence. Cached old answers remain
+pending within the existing deadline. Lost acknowledgement blocks writes;
+never repeat a DELETE manually. Retirement notices are best-effort once
+after durable verification; an interrupted notice is not replayed.
+
+Keep both private state files. Older images cannot recover pending
+retirements; disable the writer before rollback. No cleanup is enabled
+by default. Verify the first retirement on the target gateway.
 
 ## Technitium migration procedure
 

@@ -34,6 +34,7 @@ class LiveInputs:
     policies_id: str
     inputs: str
     comparison: dict
+    records: tuple | None = None
 
 
 def canonical_json(value):
@@ -156,7 +157,17 @@ def load_live():
             "policies": policies_id,
         }
     )
-    return LiveInputs(config, site, key, token, target, policies_id, inputs, comparison)
+    return LiveInputs(
+        config,
+        site,
+        key,
+        token,
+        target,
+        policies_id,
+        inputs,
+        comparison,
+        tuple(records),
+    )
 
 
 def review(live, selected=""):

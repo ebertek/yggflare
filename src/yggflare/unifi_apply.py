@@ -1,4 +1,4 @@
-"""Guarded UniFi DNS creation and explicitly approved owned-policy repair."""
+"""Guarded UniFi DNS creation, repair and optional retirement."""
 
 import argparse
 import fcntl
@@ -51,6 +51,8 @@ DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
 NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
 REPAIR_ACTIONS = ("update", "recreate")
+RETIRE_MAX_GAP = 7200
+RETIRE_ACTION = "retire"
 
 
 class ApplyError(ValueError):
@@ -113,7 +115,7 @@ def load_ledger(path, target):
         if (
             not isinstance(repair, dict)
             or repair.keys() != {"action", "previous_id", "previous_address"}
-            or repair["action"] not in REPAIR_ACTIONS
+            or repair["action"] not in (*REPAIR_ACTIONS, RETIRE_ACTION)
             or row_id(repair["previous_id"]) != repair["previous_id"]
             or not is_rfc1918(ipv4(repair["previous_address"]))
         ):
@@ -180,6 +182,14 @@ def load_ledger(path, target):
                     repair["action"] == "recreate"
                     and identifier == previous["policy_id"]
                 )
+                or (
+                    repair["action"] == RETIRE_ACTION
+                    and (
+                        entry["manual"]
+                        or operation != old
+                        or identifier not in (None, previous["policy_id"])
+                    )
+                )
             ):
                 raise ApplyError("Repair does not match previous ownership")
             # Allow overlap only with the replaced entry, never another owner.
@@ -243,12 +253,17 @@ def discord_notice(operation, kind="create"):
         "create": "UniFi DNS created",
         "update": "UniFi DNS updated",
         "recreate": "UniFi DNS restored",
+        "retire": "UniFi DNS retired",
     }[kind]
+    detail = (
+        "Owned policy removed · A & PTR absence verified"
+        if kind == RETIRE_ACTION
+        else f"A & PTR verified · TTL {operation['ttlSeconds']}s"
+    )
     message = embed_payload(
         title,
         f"{inline_code(operation['domain'])} → "
-        f"{inline_code(operation['ipv4Address'])}\n"
-        f"A & PTR verified · TTL {operation['ttlSeconds']}s",
+        f"{inline_code(operation['ipv4Address'])}\n{detail}",
         "success",
     )
     conn = http.client.HTTPSConnection("discord.com", timeout=10)
@@ -374,6 +389,9 @@ def confirm_pending(path, ledger, live):
         raise ApplyError(
             "Create outcome is uncertain; inspect UniFi and the private journal before any further writes"
         )
+    if entry.get("repair", {}).get("action") == RETIRE_ACTION:
+        confirm_retirement(path, ledger, live)
+        return
     if "verification_deadline" not in entry:
         # Legacy acknowledged entries have no create timestamp to reuse.
         entry["verification_deadline"] = verification_deadline()
@@ -472,15 +490,36 @@ def run(data, selected="", approval="", *, automatic=False):
 
     with (data / "unifi-apply.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        live = load_live()
+        try:
+            live = load_live()
+        except Exception:
+            if automatic:
+                (data / "unifi-retirement.json").unlink(missing_ok=True)
+            raise
         ledger_path = data / "unifi-ownership.json"
         ledger = load_ledger(ledger_path, live.target)
         deliver_notice(ledger_path, ledger)
         if ledger["pending"] is not None:
-            kind = "repair" if ledger["pending"].get("repair") else "create"
+            action = ledger["pending"].get("repair", {}).get("action")
+            kind = (
+                "retirement"
+                if action == RETIRE_ACTION
+                else ("repair" if action else "create")
+            )
             confirm_pending(ledger_path, ledger, live)
             deliver_notice(ledger_path, ledger)
             return f"Recovered and verified the pending UniFi {kind}"
+        if automatic:
+            if retirement_enabled():
+                try:
+                    retired = retire_one(data, ledger_path, ledger, live)
+                except Exception:
+                    (data / "unifi-retirement.json").unlink(missing_ok=True)
+                    raise
+                if retired:
+                    return retired
+            else:
+                (data / "unifi-retirement.json").unlink(missing_ok=True)
         owned = {entry["operation"]["domain"] for entry in ledger["owned"]}
         owned_ips = {entry["operation"]["ipv4Address"] for entry in ledger["owned"]}
         if automatic:
@@ -726,7 +765,10 @@ def run_repair(data, selected, approval=None):
         ledger = load_ledger(path, live.target)
         if ledger["pending"] is not None:
             pending = ledger["pending"]
-            if not pending.get("repair") or pending["operation"]["domain"] != selected:
+            if (
+                pending.get("repair", {}).get("action") not in REPAIR_ACTIONS
+                or pending["operation"]["domain"] != selected
+            ):
                 raise ApplyError("Another pending operation blocks repair")
             confirm_pending(path, ledger, live)
             deliver_notice(path, ledger)
@@ -783,16 +825,401 @@ def run_repair(data, selected, approval=None):
         return "Repaired and verified one UniFi DNS policy"
 
 
+def retirement_enabled():
+    value = os.environ.get("YGGFLARE_UNIFI_AUTO_CLEANUP", "false")
+    if value not in ("true", "false"):
+        raise ApplyError("YGGFLARE_UNIFI_AUTO_CLEANUP must be true or false")
+    return value == "true"
+
+
+def retirement_grace():
+    raw = os.environ.get("YGGFLARE_UNIFI_ORPHAN_GRACE_HOURS", "24")
+    if not re.fullmatch(r"[0-9]{1,3}", raw) or not 24 <= int(raw) <= 720:
+        raise ApplyError("UniFi retirement grace must be 24–720 hours")
+    return int(raw) * 3600
+
+
+def retirement_protected(live):
+    """Use complete desired inputs, not the filtered create target set."""
+    if not isinstance(live.records, tuple) or not live.records:
+        raise ApplyError("Complete Cloudflare DNS evidence is required for retirement")
+    zone = live.comparison["source_zone"]
+    names, addresses, wildcards = set(), set(), set()
+    for record in live.records:
+        name = record.get("name")
+        kind = record.get("type")
+        if not isinstance(name, str) or not isinstance(kind, str):
+            raise ApplyError("Invalid Cloudflare record in retirement evidence")
+        name = name.lower().rstrip(".")
+        names.add(name)
+        if name.startswith("*."):
+            wildcards.add(name[2:])
+        content = record.get("content")
+        if kind == "A" and ipv4(content) is not None:
+            addresses.add(str(ipv4(content)))
+        if kind in {"CNAME", "PTR", "NS"} and isinstance(content, str):
+            names.add(content.lower().rstrip("."))
+    try:
+        from cloudflare_desired import compose_inventory
+        from cloudflare_retained_dns import load_retained_dns
+        from cloudflare_static_dns import load_inventory_aliases, load_inventory_details
+
+        static = Path("/config/static-hosts.json")
+        hosts, companions = load_inventory_details(static, required=True)
+        names.update(hosts)
+        names.update(load_inventory_aliases(static))
+        addresses.update(hosts.values())
+        for values in companions.values():
+            addresses.update(values)
+        for record in load_retained_dns(Path("/config/retained-dns.json")):
+            names.add(record["hostname"])
+            content = record.get("content")
+            if record["type"] == "A":
+                addresses.add(content)
+            elif record["type"] in {"CNAME", "PTR", "NS"} and content:
+                names.add(content.lower().rstrip("."))
+        services = compose_inventory(Path("/compose-source"))
+        if not services:
+            raise ValueError("Empty Compose inventory")
+        for service in services:
+            labels = [
+                service["Name"].rsplit("/", 1)[-1],
+                service.get("Hostname") or "",
+                service.get("ContainerName") or "",
+            ]
+            values = service.get("IPv4Addresses", [])
+            if any("$" in value for value in [*labels, *values]):
+                raise ValueError("Unresolved Compose declaration")
+            names.update(
+                name for value in labels if (name := canonical_name(value, zone))
+            )
+            addresses.update(str(ipv4(value)) for value in values if ipv4(value))
+    except Exception:
+        raise ApplyError("Cannot validate private retirement declarations") from None
+    return names, addresses, wildcards
+
+
+def retirement_candidate(entry, live, policies, protected):
+    operation = entry["operation"]
+    name, address = operation["domain"], operation["ipv4Address"]
+    names, addresses, wildcards = protected
+    lan = ipaddress.IPv4Network(live.comparison["configured_lan"])
+    if entry["manual"]:
+        return "manual_protected"
+    if (
+        ipv4(address) not in lan
+        or ipv4(address) in (lan.network_address, lan.broadcast_address)
+        or not name.endswith("." + live.comparison["source_zone"])
+    ):
+        return "outside_scope"
+    if (
+        name in names
+        or address in addresses
+        or any(name == suffix or name.endswith("." + suffix) for suffix in wildcards)
+    ):
+        return "still_declared"
+    matches = [
+        policy for policy in policies if row_id(policy["id"]) == entry["policy_id"]
+    ]
+    if not matches:
+        return "missing_policy"
+    if (
+        len(matches) != 1
+        or not policy_matches(matches[0], operation)
+        or matches[0].get("metadata") not in (None, {})
+        or set(matches[0]) - (set(operation) - {"operation"} | {"id", "metadata"})
+    ):
+        return "modified_policy"
+    check = plan(
+        [{"name": name, "type": "A", "content": address, "proxied": False}],
+        policies,
+        live.comparison["source_zone"],
+        lan,
+    )
+    return "orphan" if check["counts"] == {"matched": 1} else "policy_conflict"
+
+
+def retirement_state(path, target):
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return {}
+    state = read(path)
+    if (
+        set(state) != {"version", "target", "observations"}
+        or state["target"] != target
+        or not isinstance(state["observations"], dict)
+        or len(state["observations"]) > MAX_ROWS
+    ):
+        raise ApplyError("Retirement observation state invalid; review required")
+    observations = state["observations"]
+    for identifier, item in observations.items():
+        if (
+            row_id(identifier) != identifier
+            or not isinstance(item, dict)
+            or set(item) != {"identity", "first", "last"}
+            or not isinstance(item["identity"], str)
+            or not DIGEST.fullmatch(item["identity"])
+            or type(item["first"]) is not int
+            or type(item["last"]) is not int
+            or not 0 < item["first"] <= item["last"] <= 2**32
+        ):
+            raise ApplyError("Retirement observation is invalid")
+    return observations
+
+
+def retirement_report(live, ledger, policies, protected, previous, now, grace):
+    if policy_fingerprint(policies) != live.policies_id:
+        raise ApplyError("UniFi policies changed during retirement review")
+    observations, rows = {}, []
+    for entry in ledger["owned"]:
+        identifier = entry["policy_id"]
+        status = retirement_candidate(entry, live, policies, protected)
+        age = 0
+        if status == "orphan":
+            identity = fingerprint(entry)
+            old = previous.get(identifier, {})
+            first = now
+            if (
+                old.get("identity") == identity
+                and 0 <= now - old["last"] <= RETIRE_MAX_GAP
+            ):
+                first = old["first"]
+            observations[identifier] = {
+                "identity": identity,
+                "first": first,
+                "last": now,
+            }
+            age = now - first
+            status = "eligible" if age >= grace else "grace_period"
+        rows.append(
+            {
+                "hostname": entry["operation"]["domain"],
+                "address": entry["operation"]["ipv4Address"],
+                "policy_id": identifier,
+                "status": status,
+                "observed_orphan_seconds": age,
+            }
+        )
+    return rows, observations
+
+
+def retirement_review(data, live, ledger):
+    path = data / "unifi-retirement.json"
+    previous = retirement_state(path, live.target)
+    policies = all_rows(live.config, live.key, "dns", live.site)
+    rows, observations = retirement_report(
+        live,
+        ledger,
+        policies,
+        retirement_protected(live),
+        previous,
+        int(time.time()),
+        retirement_grace(),
+    )
+    return rows, observations
+
+
+def retirement_preview(data):
+    live = load_live()
+    ledger = load_ledger(data / "unifi-ownership.json", live.target)
+    rows, _ = retirement_review(data, live, ledger)
+    report = {
+        "mode": "read_only_retirement_review",
+        "enabled": retirement_enabled(),
+        "pending_write": ledger["pending"] is not None,
+        "grace_hours": retirement_grace() // 3600,
+        "counts": dict(sorted(Counter(row["status"] for row in rows).items())),
+        "rows": rows,
+    }
+    encoded = json.dumps(report)
+    if any(secret in encoded for secret in (live.key, live.token) if len(secret) >= 8):
+        raise ApplyError("Retirement review contains a credential echo")
+    return report
+
+
+def retirement_replies(live, operation, *, deleting):
+    address, name = operation["ipv4Address"], operation["domain"]
+    gateway = live.config[0]
+    missing = False
+    for answer, expected in (
+        (query(gateway, name + ".", "A"), address),
+        (
+            query(gateway, ipaddress.ip_address(address).reverse_pointer + ".", "PTR"),
+            name + ".",
+        ),
+    ):
+        status, values = answer
+        if status in {"nxdomain", "nodata"} and not values:
+            continue
+        if status == "answered" and values == [expected]:
+            missing |= deleting
+            continue
+        raise ApplyError("Unexpected DNS answer prevents retirement verification")
+    return missing
+
+
+def delete_owned_policy(live, identifier):
+    """One exact-ID DELETE, with no retry or redirect."""
+    path = f"{PREFIX}/sites/{row_id(live.site)}/dns/policies/{row_id(identifier)}"
+    conn = connection(live.config)
+    try:
+        conn.request(
+            "DELETE",
+            path,
+            headers={"Accept": "application/json", "X-API-Key": live.key},
+        )
+        if conn.getresponse().status != 200:
+            raise ApplyError("UniFi retirement acknowledgement failed")
+    finally:
+        conn.close()
+
+
+def confirm_retirement(path, ledger, live):
+    entry = ledger["pending"]
+    if "verification_deadline" not in entry:
+        raise ApplyError("Retirement acknowledgement lacks a deadline")
+    if time.time() >= entry["verification_deadline"]:
+        raise ApplyError("Retirement verification deadline expired; review required")
+    operation = entry["operation"]
+    name, address = operation["domain"], operation["ipv4Address"]
+    names, addresses, wildcards = retirement_protected(live)
+    lan = ipaddress.IPv4Network(live.comparison["configured_lan"])
+    if (
+        ipv4(address) not in lan
+        or ipv4(address) in (lan.network_address, lan.broadcast_address)
+        or not name.endswith("." + live.comparison["source_zone"])
+        or name in names
+        or address in addresses
+        or any(name == suffix or name.endswith("." + suffix) for suffix in wildcards)
+    ):
+        raise ApplyError("Retired policy became desired; review required")
+    policies = all_rows(live.config, live.key, "dns", live.site)
+    if any(row_id(policy["id"]) == entry["policy_id"] for policy in policies):
+        raise ApplyError("Acknowledged retired policy remains present; review required")
+    check = plan(
+        [{"name": name, "type": "A", "content": address, "proxied": False}],
+        policies,
+        live.comparison["source_zone"],
+        ipaddress.IPv4Network(live.comparison["configured_lan"]),
+    )
+    if check["counts"] != {"candidate": 1}:
+        raise ApplyError("New local policy conflicts with retirement")
+    if retirement_replies(live, operation, deleting=True):
+        raise DNSVerificationPending("Retired policy is awaiting A and PTR absence")
+    if time.time() >= entry["verification_deadline"]:
+        raise ApplyError("Retirement verification deadline expired; review required")
+    ledger["owned"] = [
+        item for item in ledger["owned"] if item["policy_id"] != entry["policy_id"]
+    ]
+    ledger["pending"] = None
+    # Commit absence before any best-effort notice. A crash cannot replay it.
+    write(path, ledger, durable=True)
+    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
+        try:
+            accepted = discord_notice(operation, RETIRE_ACTION)
+        except (ValueError, OSError, http.client.HTTPException):
+            accepted = False
+        if not accepted:
+            print(
+                "UniFi retirement Discord notification was not confirmed.",
+                file=sys.stderr,
+            )
+
+
+def retire_one(data, path, ledger, live):
+    """Observe all owned policies, then retire at most one eligible orphan."""
+    state = data / "unifi-retirement.json"
+    try:
+        rows, observations = retirement_review(data, live, ledger)
+    except Exception:
+        state.unlink(missing_ok=True)
+        raise
+    write(
+        state,
+        {"version": 1, "target": live.target, "observations": observations},
+        durable=True,
+    )
+    eligible = sorted(
+        (row for row in rows if row["status"] == "eligible"),
+        key=lambda row: row["hostname"],
+    )
+    if not eligible:
+        return None
+    if not ledger["pilot_verified"]:
+        raise ApplyError("A verified manual pilot is required before retirement")
+    if os.environ.get("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
+        raise ApplyError("UniFi retirement requires the mounted Compose secret")
+    identifier = eligible[0]["policy_id"]
+    owned = next(item for item in ledger["owned"] if item["policy_id"] == identifier)
+    refreshed = load_live()
+    policies = all_rows(refreshed.config, refreshed.key, "dns", refreshed.site)
+    if refreshed.inputs != live.inputs or refreshed.target != ledger["target"]:
+        raise ApplyError("Live retirement inputs changed")
+    if (
+        policy_fingerprint(policies) != refreshed.policies_id
+        or retirement_candidate(
+            owned, refreshed, policies, retirement_protected(refreshed)
+        )
+        != "orphan"
+    ):
+        raise ApplyError("Retirement candidate changed")
+    operation = owned["operation"]
+    retirement_replies(refreshed, operation, deleting=False)
+    final = load_live()
+    if final.inputs != refreshed.inputs or final.target != refreshed.target:
+        raise ApplyError("Live retirement inputs changed immediately before deletion")
+    if (
+        retirement_candidate(
+            owned,
+            final,
+            all_rows(final.config, final.key, "dns", final.site),
+            retirement_protected(final),
+        )
+        != "orphan"
+    ):
+        raise ApplyError("Retirement candidate changed immediately before deletion")
+    policies = all_rows(final.config, final.key, "dns", final.site)
+    if policy_fingerprint(policies) != refreshed.policies_id:
+        raise ApplyError("UniFi policies changed immediately before retirement")
+    if not retirement_enabled():
+        raise ApplyError("Automatic retirement is disabled")
+    pending = {
+        "operation": operation,
+        "policy_id": None,
+        "manual": False,
+        "repair": {
+            "action": RETIRE_ACTION,
+            "previous_id": identifier,
+            "previous_address": operation["ipv4Address"],
+        },
+    }
+    ledger["pending"] = pending
+    write(path, ledger, durable=True)
+    delete_owned_policy(final, identifier)
+    pending.update(policy_id=identifier, verification_deadline=verification_deadline())
+    write(path, ledger, durable=True)
+    confirm_pending(path, ledger, load_live())
+    return "Retired and verified one owned UniFi DNS policy"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("hostname", nargs="?", default="")
     parser.add_argument("fingerprint", nargs="?", default="")
     parser.add_argument("--automatic", action="store_true")
     parser.add_argument("--repair", action="store_true")
+    parser.add_argument("--retirement-plan", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     signal.alarm(180)
     try:
+        if args.retirement_plan:
+            if args.automatic or args.repair or args.hostname or args.fingerprint:
+                raise ApplyError("Invalid retirement preview invocation")
+            report = retirement_preview(Path("/data"))
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0
         if args.repair:
             if args.automatic or (args.json and args.fingerprint):
                 raise ApplyError("Invalid repair invocation")
