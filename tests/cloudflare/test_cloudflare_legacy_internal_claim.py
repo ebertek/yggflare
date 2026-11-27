@@ -63,7 +63,9 @@ class LegacyInternalClaimTests(unittest.TestCase):
             )
         )
         self.enterContext(
-            patch("cloudflare_legacy_internal_claim.write_lock", side_effect=nullcontext)
+            patch(
+                "cloudflare_legacy_internal_claim.write_lock", side_effect=nullcontext
+            )
         )
 
     def plan(self):
@@ -161,9 +163,7 @@ class LegacyInternalClaimTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Pending"):
             self.apply(token)
         state["pending"] = None
-        state["observations"] = {
-            IDENTIFIER: {"entry": entry, "first": 1, "last": 2}
-        }
+        state["observations"] = {IDENTIFIER: {"entry": entry, "first": 1, "last": 2}}
         save_state(self.data, state)
         self.assertEqual(self.apply(token), entry)
         self.assertEqual(load_state(self.data, SCOPE)["observations"], {})
