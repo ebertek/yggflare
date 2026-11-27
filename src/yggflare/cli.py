@@ -45,6 +45,7 @@ def main(argv=None):
             "plan",
             "reconcile-plan",
             "canonical-review",
+            "ipv6-review",
             "repair-plan",
             "repair-apply",
             "retirement-plan",
@@ -211,6 +212,13 @@ def main(argv=None):
         if args.argument:
             command.extend(("--", args.argument))
         return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation == "ipv6-review":
+        if args.argument or args.approval or args.max_operations or args.details:
+            parser.error("unifi ipv6-review accepts only --json")
+        return subprocess.run(
+            [sys.executable, "/app/unifi_ipv6_review.py"],
+            check=False,
+        ).returncode
     if args.component == "unifi" and args.operation == "canonical-review":
         if args.argument or args.approval or args.max_operations or args.details:
             parser.error("unifi canonical-review accepts only --json")

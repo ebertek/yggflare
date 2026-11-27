@@ -87,7 +87,7 @@ fallback. Compares A and PTR replies with Cloudflare expectations, with
 no CNAME chasing. The hostname-specific form still considers aliases.
 
 Up to 512 queries per invocation. Exit status: `0` matched, `1` review,
-`2` verification unavailable. IPv6 AAAA/PTR reconciliation is not supported.
+`2` verification unavailable. IPv6 AAAA/PTR assessment uses the separate command below; IPv6 writes are not supported.
 
 ## Preview UniFi DNS creates
 
@@ -234,6 +234,41 @@ after durable verification; an interrupted notice is not replayed.
 Keep both private state files. Older images cannot recover pending
 retirements; disable the writer before rollback. No cleanup is enabled
 by default. Verify the first retirement on the target gateway.
+
+## IPv6 DNS and resolver assessment
+
+```sh
+docker exec yggflare yggflare unifi ipv6-review --json
+```
+
+The report compares DNS-only Cloudflare AAAA records against UniFi AAAA
+policies and direct gateway AAAA/PTR replies. Only addresses in the
+explicit `YGGFLARE_DISCOVERY_IPV6_CIDRS` prefixes are queried.
+Dual-stack names are supported; shared addresses use a unique
+`yggflare:canonical` tag or remain ambiguous. DNS queries use the
+configured gateway origin, not necessarily IPv6 transport.
+
+Network detail GET requests expose configured SLAAC, DHCPv6, RA priority
+and IPv6 DNS overrides where the API supports them. Automatic resolver
+selection does not identify actual advertised servers. An absent field or
+failed detail request is unknown, not evidence that IPv6 is disabled.
+
+With `YGGFLARE_DISCOVERY_RA: "true"`, the command also solicits one
+bounded RA sample per configured discovery interface. RDNSS addresses,
+lifetimes and M/O flags are reported separately from API configuration.
+Link-local and external advertised resolvers are observations only,
+never new probe targets. No response does not establish absence.
+
+DHCPv6 DNS option 23 is not observed by this command. Before cutover,
+inspect DHCPv6 Reply/Information-request exchanges on each representative
+client network (UDP ports 546/547) and compare the client's effective
+resolver list with RA RDNSS and the intended DNS configuration. For
+example, on a Linux client use `resolvectl status` and an authorized
+interface-scoped packet capture. Do not renew leases merely to collect
+evidence. RA M/O flags do not prove DHCPv6 DNS delivery.
+
+The assessment never changes DNS, DHCPv6 or RA configuration and does
+not authorize IPv6 policy creation, updates or retirement.
 
 ## Technitium migration procedure
 
