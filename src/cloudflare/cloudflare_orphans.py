@@ -1,6 +1,6 @@
 """Explicit, persistent ownership and manual-only Cloudflare orphan retirement.
 
-Only an explicitly claimed or positively created hostname is owned. Never
+Only an explicitly claimed (including opt-in bulk claims) or positively created hostname is owned. Never
 infer ownership from an existing Cloudflare application, DNS record or route.
 """
 
@@ -199,6 +199,31 @@ def claim(client, root, data, bound, hostname):
         registry["hosts"][hostname] = identity
         save_registry(data, registry)
     return identity
+
+
+def claim_all(client, root, data, bound):
+    """Adopt matching declared endpoints; never replace existing ownership."""
+    with locked_registry(data):
+        registry = load_registry(data, bound)
+        wanted = desired_hosts(client, root, bound["account"])
+        resources = live_resources(client, bound)
+        results = {}
+        for hostname, policies in sorted(wanted.items()):
+            if hostname in registry["hosts"]:
+                results[hostname] = "already owned"
+                continue
+            try:
+                identity = claimed_identity(
+                    client, bound, hostname, resources, policies
+                )
+            except OwnershipError:
+                results[hostname] = "skipped: live endpoint missing or conflicting"
+                continue
+            registry["hosts"][hostname] = identity
+            results[hostname] = "claimed"
+        if "claimed" in results.values():
+            save_registry(data, registry)
+    return results
 
 
 def summarize(registry, desired, applications, dns, config):

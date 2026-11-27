@@ -157,6 +157,7 @@ def job_label(script):
     return {
         "cloudflare-manage.py": "Cloudflare reconciliation",
         "cloudflare-auto-cleanup.py": "Managed orphan cleanup",
+        "cloudflare-claim-all.py": "Cloudflare ownership claims",
         "cloudflare-live.py": "Cloudflare presentation refresh",
         "audit.py": "Network inventory scan",
         "traefik_inventory.py": "Traefik presentation refresh",
@@ -232,6 +233,9 @@ def cloudflare_run():
     auto = getenv("YGGFLARE_CLOUDFLARE_AUTO_APPLY", "false")
     if auto not in ("true", "false"):
         raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_APPLY must be exactly true or false")
+    auto_claim = getenv("YGGFLARE_CLOUDFLARE_AUTO_CLAIM", "false")
+    if auto_claim not in ("true", "false"):
+        raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_CLAIM must be exactly true or false")
     env = os.environ.copy()
     secret = Path(
         env_get(env, "CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
@@ -256,6 +260,16 @@ def cloudflare_run():
         if auto == "true":
             args.append("--auto")
         run(args, env=env)
+        if auto_claim == "true":
+            run(
+                [
+                    sys.executable,
+                    "/app/cloudflare/cloudflare-claim-all.py",
+                    "--root",
+                    str(root),
+                ],
+                env=env,
+            )
         if env_get(env, "YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true":
             if auto != "true":
                 raise ValueError(

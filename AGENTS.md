@@ -55,6 +55,10 @@ production acceptance are distinct. Never move a published version tag.
 - Create protected hostnames in Access → Tunnel → DNS order.
   Manual apply requires the exact fresh fingerprint. Automatic apply is
   opt-in and bounded by the configured batch size.
+- Bulk claims require explicit manual invocation or a separate automatic claim
+  opt-in; validate exact declarations and current resource identity, never replace
+  existing ownership, and exclude retained records and aliases. Internal claims
+  do not authorize deletion.
 - Preserve unrelated routes and records. Only proven owned external
   resources may be retired. Cleanup requires its own opt-in and grace
   period; delete external DNS → Tunnel route → Access app with live
