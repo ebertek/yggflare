@@ -329,7 +329,7 @@ def review(client, bound, owned, records, external, evidence, hostname=None):
     }
 
 
-def collect(client, root, data, settings, hostname=None):
+def collect_context(client, root, data, settings, hostname=None):
     """Resolve both configured zones and validate the two ownership scopes."""
     account = checked_id(settings["account_id"], "account ID")
     domain = settings["internal_zone"]
@@ -379,7 +379,7 @@ def collect(client, root, data, settings, hostname=None):
     # Keep retained exact names/addresses protected independently of content.
     evidence["private"].update(row["hostname"] for row in retained)
     evidence["private"].update(row["content"] for row in retained if row["type"] == "A")
-    return review(
+    report = review(
         client,
         bound,
         owned,
@@ -388,6 +388,12 @@ def collect(client, root, data, settings, hostname=None):
         evidence,
         hostname,
     )
+    return report, bound, external_zone, owned
+
+
+def collect(client, root, data, settings, hostname=None):
+    """Return only the public operator review, not the ownership context."""
+    return collect_context(client, root, data, settings, hostname)[0]
 
 
 def main():
