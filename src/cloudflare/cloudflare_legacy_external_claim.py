@@ -37,8 +37,8 @@ from cloudflare_orphans import (
     MAX_REGISTRY_BYTES,
     OwnershipError,
     desired_hosts,
-    digest,
     identity_from_details,
+    digest,
     live_resources,
     load_registry,
     locked_registry,
@@ -191,21 +191,20 @@ def inspect_resources(client, bound, internal, hostname, expected=None):
 
     # List data may omit additional destinations. Every self-hosted app must
     # still be hydrated in each independent round; never cache across rounds.
-    emit(
-        f"Reading {len(self_hosted)} Access application details (up to 4 concurrent GETs)"
-    )
+    emit(f"Reading {len(self_hosted)} Access application details (up to 4 concurrent GETs)")
 
     def hydrate(identifier):
         return client.get_application(bound["account"], identifier)
 
     details = {}
     with ThreadPoolExecutor(max_workers=ACCESS_DETAIL_WORKERS) as pool:
-        for index, (identifier, detail) in enumerate(
-            zip(self_hosted, pool.map(hydrate, self_hosted), strict=True), 1
-        ):
-            details[identifier] = detail
-            if index % 8 == 0 or index == len(self_hosted):
-                emit(f"Access details checked: {index}/{len(self_hosted)}")
+        # Keep at most one batch in flight so a failed read does not queue
+        # unnecessary requests for the remaining applications.
+        for start in range(0, len(self_hosted), ACCESS_DETAIL_WORKERS):
+            batch = self_hosted[start : start + ACCESS_DETAIL_WORKERS]
+            for identifier, detail in zip(batch, pool.map(hydrate, batch), strict=True):
+                details[identifier] = detail
+            emit(f"Access details checked: {len(details)}/{len(self_hosted)}")
     for listed in apps:
         identifier = listed["id"]
         app = details.get(identifier, listed)
