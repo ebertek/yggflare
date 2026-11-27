@@ -362,6 +362,44 @@ class CommandTests(unittest.TestCase):
                     command.extend(["--approval", token])
                 run.assert_called_once_with(command, check=False)
 
+    def test_unifi_legacy_claim_dispatch(self):
+        token = "a" * 64
+        for operation, extra in (
+            ("legacy-claim-plan", []),
+            ("legacy-claim-apply", [token]),
+        ):
+            with (
+                self.subTest(operation=operation),
+                patch.object(cli.subprocess, "run") as run,
+            ):
+                run.return_value.returncode = 0
+                self.assertEqual(
+                    cli.main(["unifi", operation, "demo.ygg.nu", *extra]), 0
+                )
+                expected = [
+                    cli.sys.executable,
+                    "/app/unifi_legacy_claim.py",
+                    "--hostname",
+                    "demo.ygg.nu",
+                ]
+                if extra:
+                    expected.extend(["--approval", token])
+                run.assert_called_once_with(expected, check=False)
+        for arguments in (
+            ["unifi", "legacy-claim-plan"],
+            ["unifi", "legacy-claim-apply", "demo.ygg.nu", "bad"],
+            ["unifi", "legacy-claim-plan", "demo.ygg.nu", token],
+            ["unifi", "legacy-claim-apply", "demo.ygg.nu", token, "--json"],
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                contextlib.redirect_stderr(io.StringIO()),
+                patch.object(cli.subprocess, "run") as run,
+                self.assertRaises(SystemExit),
+            ):
+                cli.main(arguments)
+            run.assert_not_called()
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)

@@ -228,8 +228,9 @@ YGGFLARE_UNIFI_AUTO_CLEANUP: "true"
 YGGFLARE_UNIFI_ORPHAN_GRACE_HOURS: "24"
 ```
 
-Grace is 24–720 hours. Only previously verified automatically created
-policies qualify; manual pilots and unmanaged policies are protected.
+Grace is 24–720 hours. Previously verified automatically created policies
+and explicitly adopted legacy retirement policies qualify; manual pilots
+and unclaimed policies are protected.
 The hostname and address must be absent from complete Cloudflare DNS
 and private Compose/static/retained declarations. Existing aliases,
 wildcards, modified policies and local conflicts block retirement.
@@ -249,6 +250,33 @@ after durable verification; an interrupted notice is not replayed.
 Keep both private state files. Older images cannot recover pending
 retirements; disable the writer before rollback. No cleanup is enabled
 by default. Verify the first retirement on the target gateway.
+
+### Explicit adoption of a retired legacy UniFi policy
+
+After the external and internal Cloudflare records are retired, review the
+remaining local policy:
+
+```sh
+docker exec yggflare yggflare unifi legacy-claim-plan host.internal.example.net
+docker exec yggflare yggflare unifi legacy-claim-apply host.internal.example.net APPROVAL_FINGERPRINT
+```
+
+This supports one unique enabled IPv4 A policy with the standard 300-second
+TTL, no custom metadata, and exact matching direct gateway A and PTR replies.
+A verified same-target manual pilot must already exist. The policy's name,
+address and exact row hash are bound to the gateway/site/Cloudflare target and
+fresh approval. Any ownership overlap, pending write, local conflict,
+Cloudflare declaration, Compose/runtime reference or private inventory
+dependency blocks adoption. Both configured Cloudflare zones are checked.
+
+Apply writes only the private ownership ledger, with distinct legacy
+provenance, and resets any previous grace observation for the selected policy.
+It never calls UniFi POST/PUT/DELETE or establishes a manual pilot. The normal
+automatic cleanup opt-ins, observed grace period, fresh policy/dependency
+checks, journaled DELETE and A/PTR absence verification govern retirement.
+Legacy ownership cannot authorize repair. No new environment variables are
+required. Review external consumers and compatibility resolvers independently
+before approval; local Docker inspection does not cover other hosts.
 
 ## IPv6 DNS and resolver assessment
 

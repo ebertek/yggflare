@@ -161,8 +161,17 @@ def load_ledger(path, target):
         if (
             not isinstance(entry, dict)
             or entry.keys()
-            - {"notice", "verification_deadline", "repair", "notice_kind"}
+            - {"notice", "verification_deadline", "repair", "notice_kind", "legacy"}
             != {"operation", "policy_id", "manual"}
+            or (
+                "legacy" in entry
+                and (
+                    entry is pending
+                    or entry["manual"] is not False
+                    or not isinstance(entry["legacy"], str)
+                    or not DIGEST.fullmatch(entry["legacy"])
+                )
+            )
             or ("repair" in entry and (entry is not pending or repair is None))
             or (
                 "notice_kind" in entry
@@ -198,6 +207,7 @@ def load_ledger(path, target):
                 name != old["domain"]
                 or repair["previous_address"] != old["ipv4Address"]
                 or entry["manual"] != previous["manual"]
+                or ("legacy" in previous and repair["action"] != RETIRE_ACTION)
                 or (
                     repair["action"] == "update"
                     and (
@@ -700,6 +710,8 @@ def repair_review(live, ledger, selected, policies, targets):
     if len(owned) != 1:
         raise ApplyError("Repair requires a previously verified owned policy")
     old = owned[0]
+    if "legacy" in old:
+        raise ApplyError("Legacy retirement ownership cannot authorize repair")
     old_op = old["operation"]
     candidates = [row for row in live.comparison["rows"] if row["hostname"] == selected]
     address = candidates[0]["address"] if len(candidates) == 1 else None
@@ -1028,7 +1040,15 @@ def retirement_candidate(entry, live, policies, protected):
         live.comparison["source_zone"],
         lan,
     )
-    return "orphan" if check["counts"] == {"matched": 1} else "policy_conflict"
+    if check["counts"] != {"matched": 1}:
+        return "policy_conflict"
+    if "legacy" in entry:
+        from unifi_legacy_claim import legacy_absence
+
+        if fingerprint(matches[0]) != entry["legacy"]:
+            return "modified_policy"
+        legacy_absence(live, operation, policies, entry["policy_id"])
+    return "orphan"
 
 
 def retirement_state(path, target):
@@ -1198,6 +1218,13 @@ def confirm_retirement(path, ledger, live):
     )
     if check["counts"] != {"candidate": 1}:
         raise ApplyError("New local policy conflicts with retirement")
+    previous = next(
+        item for item in ledger["owned"] if item["policy_id"] == entry["policy_id"]
+    )
+    if "legacy" in previous:
+        from unifi_legacy_claim import legacy_absence
+
+        legacy_absence(live, operation, policies, entry["policy_id"])
     missing = retirement_replies(live, operation, deleting=True)
     if time.time() >= entry["verification_deadline"]:
         raise ApplyError("Retirement verification deadline expired; review required")
