@@ -183,10 +183,13 @@ class UniFiApplyTests(unittest.TestCase):
             self.assertEqual(saved["pending"]["verification_deadline"], 1_800_000_600)
         self.post.assert_not_called()
 
-    def test_mismatch_or_transport_error_is_failure_not_propagation(self):
+    def test_conflict_or_nontransient_error_is_failure_not_propagation(self):
         for reply, message in (
             (("answered", ["wrong.example.invalid."]), "conflicting"),
-            (("timeout", []), "DNS verification failed"),
+            (("unexpected_answer", []), "conflicting"),
+            (("refused", []), "PTR: refused"),
+            (("query_error", []), "PTR: query_error"),
+            (("formerr", []), "PTR: formerr"),
         ):
             with self.subTest(reply=reply):
                 self.policies.side_effect = [[], [RESPONSE]]
@@ -201,6 +204,60 @@ class UniFiApplyTests(unittest.TestCase):
                 self.assertIsNotNone(
                     apply.load_ledger(self.path, LIVE.target)["pending"]
                 )
+
+    def test_transient_errors_remain_pending_and_recover_without_reposting(self):
+        for status in sorted(apply.TRANSIENT_DNS_FAILURES):
+            with self.subTest(status=status):
+                self.path.unlink(missing_ok=True)
+                self.post.reset_mock()
+                self.policies.side_effect = [[], [RESPONSE], [RESPONSE]]
+                self.query.side_effect = [
+                    (status, []),
+                    ("answered", [NAME + "."]),
+                    ("answered", [ADDRESS]),
+                    ("answered", [NAME + "."]),
+                ]
+                with redirect_stdout(io.StringIO()) as output:
+                    with self.assertRaises(apply.DNSVerificationPending):
+                        apply.run(self.data, NAME, FINGERPRINT)
+                self.assertIn(f"A: {status}", output.getvalue())
+                journal = apply.load_ledger(self.path, LIVE.target)
+                self.assertEqual(journal["owned"], [])
+                self.assertEqual(journal["pending"]["policy_id"], POLICY)
+                self.assertIn("Recovered", apply.run(self.data, NAME, FINGERPRINT))
+                self.post.assert_called_once()
+
+    def test_transient_error_does_not_mask_conflicting_other_reply(self):
+        self.query.side_effect = [
+            ("timeout", []),
+            ("answered", ["wrong.example.invalid."]),
+        ]
+        with redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(apply.ApplyError, "PTR: answered") as error:
+                apply.run(self.data, NAME, FINGERPRINT)
+        self.assertNotIsInstance(error.exception, apply.DNSVerificationPending)
+        self.assertEqual(apply.load_ledger(self.path, LIVE.target)["owned"], [])
+        self.post.assert_called_once()
+
+    def test_transient_retry_respects_original_deadline(self):
+        self.query.side_effect = [
+            ("answered", [ADDRESS]),
+            ("servfail", []),
+        ]
+        with (
+            patch.object(apply.time, "time", return_value=1_800_000_000),
+            redirect_stdout(io.StringIO()) as output,
+        ):
+            with self.assertRaises(apply.DNSVerificationPending):
+                apply.run(self.data, NAME, FINGERPRINT)
+        self.assertIn("PTR: servfail", output.getvalue())
+        pending = apply.load_ledger(self.path, LIVE.target)["pending"]
+        with patch.object(apply.time, "time", return_value=1_800_000_600):
+            with self.assertRaisesRegex(apply.ApplyError, "deadline expired"):
+                apply.run(self.data, NAME, FINGERPRINT)
+        self.assertEqual(apply.load_ledger(self.path, LIVE.target)["pending"], pending)
+        self.assertEqual(self.query.call_count, 2)
+        self.post.assert_called_once()
 
     def test_pending_is_reported_separately_by_jobs_and_metrics(self):
         with track(self.data, "unifi_apply", self.fail):

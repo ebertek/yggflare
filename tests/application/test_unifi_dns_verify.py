@@ -96,6 +96,37 @@ class UniFiDNSVerificationTests(unittest.TestCase):
         with patch("dns.query.udp_with_fallback", side_effect=dns.exception.Timeout):
             self.assertEqual(query(GATEWAY, name, "A"), ("timeout", []))
 
+    def test_transport_and_protocol_failures_are_distinct(self):
+        name = f"b.{ZONE}."
+        for failure, expected in (
+            (OSError("private transport detail"), "transport_error"),
+            (dns.exception.FormError("private protocol detail"), "query_error"),
+        ):
+            with (
+                self.subTest(expected=expected),
+                patch("dns.query.udp_with_fallback", side_effect=failure),
+            ):
+                self.assertEqual(query(GATEWAY, name, "A"), (expected, []))
+
+    def test_servfail_without_answers_is_distinct_from_unexpected_reply(self):
+        name = f"b.{ZONE}."
+
+        def reply_with_error(req, gateway, **kwargs):
+            reply = dns.message.make_response(req)
+            reply.set_rcode(dns.rcode.SERVFAIL)
+            return reply, False
+
+        with patch("dns.query.udp_with_fallback", side_effect=reply_with_error):
+            self.assertEqual(query(GATEWAY, name, "A"), ("servfail", []))
+
+        def contradictory_reply(req, gateway, **kwargs):
+            reply, fallback = reply_with_error(req, gateway, **kwargs)
+            reply.answer.append(dns.rrset.from_text(name, 60, "IN", "A", IP))
+            return reply, fallback
+
+        with patch("dns.query.udp_with_fallback", side_effect=contradictory_reply):
+            self.assertEqual(query(GATEWAY, name, "A"), ("unexpected_answer", []))
+
     def test_nxdomain_with_cname_is_not_absence(self):
         name = f"b.{ZONE}."
 

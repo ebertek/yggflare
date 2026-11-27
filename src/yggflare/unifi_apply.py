@@ -46,6 +46,31 @@ from yggflare_config import network
 DNS_VERIFICATION_WINDOW = 600
 DNS_VERIFICATION_ATTEMPTS = 3
 DNS_VERIFICATION_RETRY_SECONDS = 5
+TRANSIENT_DNS_FAILURES = frozenset({"timeout", "transport_error", "servfail"})
+DNS_FAILURE_CATEGORIES = TRANSIENT_DNS_FAILURES | {
+    "query_error",
+    "refused",
+    "formerr",
+    "notimp",
+    "notauth",
+    "notzone",
+    "yxdomain",
+    "yxrrset",
+    "nxrrset",
+    "badvers",
+    "badsig",
+    "badkey",
+    "badtime",
+    "badmode",
+    "badname",
+    "badalg",
+    "badtrunc",
+    "badcookie",
+    "answered",
+    "unexpected_answer",
+    "nxdomain",
+    "nodata",
+}
 
 DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
@@ -309,6 +334,22 @@ def deliver_notice(path, ledger):
         break
 
 
+def dns_verification_failure(kind, status, values, *, acknowledged):
+    """Retry only known transient failures without answer data after acknowledgement."""
+    category = status if status in DNS_FAILURE_CATEGORIES else "other_dns_error"
+    if status in TRANSIENT_DNS_FAILURES and not values and acknowledged:
+        print(
+            f"Gateway DNS verification retryable ({kind}: {category})",
+            flush=True,
+        )
+        return True
+    if status in {"answered", "unexpected_answer"} or values:
+        raise ApplyError(
+            f"Gateway returned conflicting or unexpected DNS answers ({kind}: {category})"
+        )
+    raise ApplyError(f"Gateway DNS verification failed ({kind}: {category})")
+
+
 def pending_dns_missing(entry, live):
     policy_id = entry["policy_id"]
     operation = entry["operation"]
@@ -354,9 +395,9 @@ def pending_dns_missing(entry, live):
     reverse_name = ipaddress.ip_address(address).reverse_pointer + "."
     gateway = live.config[0]
     missing = False
-    for answer, expected in (
-        (query(gateway, name + ".", "A"), address),
-        (query(gateway, reverse_name, "PTR"), name + "."),
+    for kind, answer, expected in (
+        ("A", query(gateway, name + ".", "A"), address),
+        ("PTR", query(gateway, reverse_name, "PTR"), name + "."),
     ):
         status, values = answer
         if status == "answered" and values == [expected]:
@@ -374,9 +415,7 @@ def pending_dns_missing(entry, live):
             # A cached pre-repair forward answer is known, not a new conflict.
             missing = True
             continue
-        if status in {"answered", "unexpected_answer"}:
-            raise ApplyError("Gateway returned conflicting or unexpected DNS answers")
-        raise ApplyError("Gateway DNS verification failed")
+        missing |= dns_verification_failure(kind, status, values, acknowledged=True)
     return missing
 
 
@@ -1042,9 +1081,10 @@ def retirement_replies(live, operation, *, deleting):
     address, name = operation["ipv4Address"], operation["domain"]
     gateway = live.config[0]
     missing = False
-    for answer, expected in (
-        (query(gateway, name + ".", "A"), address),
+    for kind, answer, expected in (
+        ("A", query(gateway, name + ".", "A"), address),
         (
+            "PTR",
             query(gateway, ipaddress.ip_address(address).reverse_pointer + ".", "PTR"),
             name + ".",
         ),
@@ -1055,7 +1095,7 @@ def retirement_replies(live, operation, *, deleting):
         if status == "answered" and values == [expected]:
             missing |= deleting
             continue
-        raise ApplyError("Unexpected DNS answer prevents retirement verification")
+        missing |= dns_verification_failure(kind, status, values, acknowledged=deleting)
     return missing
 
 
@@ -1105,10 +1145,11 @@ def confirm_retirement(path, ledger, live):
     )
     if check["counts"] != {"candidate": 1}:
         raise ApplyError("New local policy conflicts with retirement")
-    if retirement_replies(live, operation, deleting=True):
-        raise DNSVerificationPending("Retired policy is awaiting A and PTR absence")
+    missing = retirement_replies(live, operation, deleting=True)
     if time.time() >= entry["verification_deadline"]:
         raise ApplyError("Retirement verification deadline expired; review required")
+    if missing:
+        raise DNSVerificationPending("Retired policy is awaiting A and PTR absence")
     ledger["owned"] = [
         item for item in ledger["owned"] if item["policy_id"] != entry["policy_id"]
     ]

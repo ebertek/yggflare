@@ -131,14 +131,20 @@ at least five minutes.
 | Outcome | Behaviour |
 | --- | --- |
 | Matching policy; A or PTR absent | `pending_dns_verification` (exit 3) |
+| Acknowledged write; timeout, transport error or SERVFAIL | Retry verification within the original deadline |
 | Matching policy and A/PTR | Record ownership; eligible for notification |
-| Conflicting answer or policy, failed read or expired deadline | Fail; retain journal for review |
+| Conflicting answer or policy, REFUSED, protocol error, failed API read or expired deadline | Fail; retain journal for review |
 | Missing create acknowledgement | Block further writes; operator review required |
 
 An unresolved entry blocks new creates. Within the deadline, rerun the
 same manual apply invocation to verify the existing policy without another
 POST. Older acknowledged entries receive a deadline on first verification.
 Never infer ownership from a matching policy alone or discard the journal.
+Transient DNS failures log the query type (A or PTR) and failure category,
+without raw replies or exception text. A conflicting reply still blocks
+verification even when the other query fails transiently. Pre-write checks
+remain fail-closed. Acknowledged retirement also retries transient DNS
+failures within its original deadline, without another DELETE.
 
 Pending status appears in Operations jobs, `system jobs` and MCP
 `get_job_status`. Prometheus sets
