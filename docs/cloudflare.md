@@ -56,11 +56,11 @@ The registry is bound to the account, internal zone, domain and Docker subnet.
 It stores a record ID, canonical hostname, IPv4 address and detail fingerprint,
 not raw API payloads. Backups include the registry and restoration validates it.
 
-Existing DNS records are not automatically adopted. An interrupted or
+Existing DNS records are not adopted by default. An interrupted or
 unverified create cannot establish ownership. Invalid scope, conflicting
 ownership or corrupt registry state blocks new Docker A creation; investigate
 rather than remove ownership history. This is ownership capture only: internal
-DNS deletion, adoption and retirement previews are not yet implemented.
+DNS deletion and retirement previews are not yet implemented.
 
 ### DNS quota
 
@@ -90,6 +90,26 @@ need an explicit claim after verifying the live configuration:
 ```sh
 docker exec yggflare yggflare cloudflare claim host.services.example.net
 ```
+
+Bulk claim all matching declared Cloudflare endpoints and internal A records:
+
+```sh
+docker exec yggflare yggflare cloudflare claim-all
+docker exec yggflare yggflare cloudflare claim-all external
+docker exec yggflare yggflare cloudflare claim-all docker
+docker exec yggflare yggflare cloudflare claim-all static
+```
+
+Set `YGGFLARE_CLOUDFLARE_AUTO_CLAIM=true` to repeat these checks during
+Cloudflare reconciliation. Default is false; this is independent of auto-apply.
+Claims only write private ownership state, not Cloudflare resources. Existing
+ownership is never overwritten. Missing, mismatched and ambiguous resources are
+skipped. Internal Docker claims require unique agreeing Compose/runtime addresses;
+static claims require the private inventory and unique matching primary A records.
+Retained records, aliases and companion addresses are excluded. Static claims are
+stored separately in `/data/managed-static-dns.json`. Internal claims do not
+authorize deletion or claim UniFi policies. External claims can make a hostname
+eligible for the separately opted-in orphan cleanup after it disappears from Compose.
 
 Review removal of a claimed hostname with:
 

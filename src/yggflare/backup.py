@@ -179,12 +179,20 @@ def restore_test(archive_path: Path, scratch: Path) -> dict:
 
 def check_internal_dns_restore(data):
     """Validate restored Cloudflare ownership without contacting the account."""
-    from cloudflare_internal_ownership import REGISTRY_FILE, load_registry
+    from cloudflare_internal_ownership import (
+        REGISTRY_FILE,
+        STATIC_REGISTRY_FILE,
+        load_registry,
+    )
 
-    if not (data / REGISTRY_FILE).exists():
-        return {}
-    registry = load_registry(data)
-    return {"internal_dns_owned_count": len(registry["records"])}
+    result = {}
+    for filename, key in (
+        (REGISTRY_FILE, "internal_dns_owned_count"),
+        (STATIC_REGISTRY_FILE, "static_dns_owned_count"),
+    ):
+        if (data / filename).exists():
+            result[key] = len(load_registry(data, filename=filename)["records"])
+    return result
 
 
 def check_unifi_restore(data):

@@ -297,6 +297,13 @@ class CommandTests(unittest.TestCase):
         )
         self.assertEqual(result, 2)
 
+    def test_bulk_claim_dispatch(self):
+        _, command = self.invoke(["cloudflare", "claim-all"])
+        self.assertEqual(command[1], "/app/cloudflare/cloudflare-claim-all.py")
+        self.assertEqual(command[-2:], ["--scope", "all"])
+        _, command = self.invoke(["cloudflare", "claim-all", "static"])
+        self.assertEqual(command[-2:], ["--scope", "static"])
+
     def test_claim_and_orphan_cleanup_dispatch(self):
         _, claim = self.invoke(["cloudflare", "claim", "test.ebi.nu"])
         self.assertEqual(claim[1], "/app/cloudflare/cloudflare-orphans.py")

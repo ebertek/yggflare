@@ -1,7 +1,7 @@
-"""Durable provenance for verified internal Docker A record creation.
+"""Durable provenance for verified internal A records.
 
-This registry does not authorize deletion. Existing records are never adopted
-implicitly, and a lost creation acknowledgement cannot establish ownership.
+These registries do not authorize deletion. Existing records require an explicit
+bulk claim or automatic claim opt-in; failed creation never proves ownership.
 """
 
 import hashlib
@@ -17,6 +17,7 @@ from cloudflare_docker_dns import check_docker_target
 from cloudflare_orphans import locked_registry
 
 REGISTRY_FILE = "managed-internal-dns.json"
+STATIC_REGISTRY_FILE = "managed-static-dns.json"
 MAX_BYTES = 1024 * 1024
 DIGEST = re.compile(r"[0-9a-f]{64}")
 
@@ -36,8 +37,8 @@ def internal_scope(account, zone, domain, network):
     }
 
 
-def registry_path(data):
-    path = Path(data) / REGISTRY_FILE
+def registry_path(data, filename=REGISTRY_FILE):
+    path = Path(data) / filename
     if path.is_symlink():
         raise ValueError("Internal DNS ownership registry must not be a symlink")
     return path
@@ -105,9 +106,9 @@ def unique_object(pairs):
     return result
 
 
-def load_registry(data, bound=None):
+def load_registry(data, bound=None, *, filename=REGISTRY_FILE):
     """Missing state grants no ownership; invalid state is never ignored."""
-    path = registry_path(data)
+    path = registry_path(data, filename)
     if not path.exists():
         if bound is None:
             raise ValueError("Internal DNS ownership scope required")
@@ -134,10 +135,10 @@ def assert_available(document, action):
         raise ValueError("Docker DNS target conflicts with recorded ownership")
 
 
-def save_registry(data, document):
+def save_registry(data, document, *, filename=REGISTRY_FILE):
     """Atomically persist only validated identity and a hash, not API payloads."""
     validate_registry(document)
-    path = registry_path(data)
+    path = registry_path(data, filename)
     content = json.dumps(document, indent=2, sort_keys=True) + "\n"
     if len(content.encode("utf-8")) > MAX_BYTES:
         raise ValueError("Internal DNS ownership registry exceeds size limit")

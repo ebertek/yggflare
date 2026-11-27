@@ -10,6 +10,7 @@ from unittest.mock import patch
 from cloudflare_orphans import (
     OwnershipError,
     claim,
+    claim_all,
     load_registry,
     observe_orphans,
     registry_path,
@@ -158,6 +159,19 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn(HOST, summary["unmanaged"])
         with self.assertRaises(OwnershipError):
             self.plan()
+
+    def test_bulk_claim_is_idempotent_and_skips_missing_endpoint(self):
+        missing = "missing.ebi.nu"
+        with patch(
+            "cloudflare_orphans.desired_hosts",
+            return_value={HOST: [POLICY], missing: [POLICY]},
+        ):
+            first = claim_all(self.client, self.path, self.path, BOUND)
+            second = claim_all(self.client, self.path, self.path, BOUND)
+        self.assertEqual(first[HOST], "claimed")
+        self.assertTrue(first[missing].startswith("skipped"))
+        self.assertEqual(second[HOST], "already owned")
+        self.assertEqual(set(load_registry(self.path, BOUND)["hosts"]), {HOST})
 
     def test_claim_requires_declared_host(self):
         with patch("cloudflare_orphans.desired_hosts", return_value={}):

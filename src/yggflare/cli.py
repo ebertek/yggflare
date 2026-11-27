@@ -53,6 +53,7 @@ def main(argv=None):
             "preflight",
             "audit",
             "claim",
+            "claim-all",
             "orphan-plan",
             "orphan-apply",
             "verify",
@@ -325,10 +326,14 @@ def main(argv=None):
     elif args.operation in ("claim", "orphan-plan"):
         if args.argument is None or args.approval is not None:
             parser.error(f"{args.operation} requires exactly one hostname")
+    elif args.operation == "claim-all":
+        if args.argument not in (None, "all", "external", "docker", "static") or args.approval is not None:
+            parser.error("claim-all accepts only all, external, docker or static")
     elif args.argument is not None or args.approval is not None:
         parser.error("unexpected positional argument")
     if args.operation not in {
         "claim",
+        "claim-all",
         "orphan-plan",
         "orphan-apply",
         "audit",
@@ -337,7 +342,7 @@ def main(argv=None):
         "preflight",
     }:
         parser.error("Unsupported Cloudflare operation")
-    if args.operation in ("claim", "orphan-plan", "orphan-apply"):
+    if args.operation in ("claim", "claim-all", "orphan-plan", "orphan-apply"):
         if args.max_operations != 0:
             parser.error("--max-operations is not valid for the orphan workflow")
 
@@ -346,7 +351,16 @@ def main(argv=None):
         prefix="yggflare-compose-", dir=controller.DATA
     ) as folder:
         root = controller.snapshot(Path(folder))
-        if args.operation in ("claim", "orphan-plan", "orphan-apply"):
+        if args.operation == "claim-all":
+            command = [
+                sys.executable,
+                "/app/cloudflare/cloudflare-claim-all.py",
+                "--root",
+                str(root),
+                "--scope",
+                args.argument or "all",
+            ]
+        elif args.operation in ("claim", "orphan-plan", "orphan-apply"):
             command = [
                 sys.executable,
                 "/app/cloudflare/cloudflare-orphans.py",
