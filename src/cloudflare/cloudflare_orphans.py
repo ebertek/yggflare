@@ -394,13 +394,17 @@ def retire(client, root, data, bound, hostname, approval):
                     from cloudflare_internal_ownership import detail_fingerprint
 
                     if detail_fingerprint(record) != legacy["dns_hash"]:
-                        raise OwnershipError("Legacy DNS details changed before deletion")
+                        raise OwnershipError(
+                            "Legacy DNS details changed before deletion"
+                        )
                 client.delete_dns_record(
                     bound["external_zone"], plan["identity"]["dns_id"]
                 )
             if "remove_tunnel_ingress" in steps:
                 if legacy is not None:
-                    verify_legacy(client, bound, hostname, plan["identity"], dns_gone=True)
+                    verify_legacy(
+                        client, bound, hostname, plan["identity"], dns_gone=True
+                    )
                 require_absent_in_mounted_source(client, bound, hostname)
                 current = client.tunnel_configuration(
                     bound["account"], bound["tunnel"]
@@ -419,8 +423,12 @@ def retire(client, root, data, bound, hostname, approval):
             if "delete_access_app" in steps:
                 if legacy is not None:
                     verify_legacy(
-                        client, bound, hostname, plan["identity"],
-                        dns_gone=True, route_gone=True,
+                        client,
+                        bound,
+                        hostname,
+                        plan["identity"],
+                        dns_gone=True,
+                        route_gone=True,
                     )
                 require_absent_in_mounted_source(client, bound, hostname)
                 # DNS must be gone and ingress absent before removing protection.
@@ -444,12 +452,19 @@ def retire(client, root, data, bound, hostname, approval):
                     from cloudflare_internal_ownership import detail_fingerprint
 
                     if detail_fingerprint(app) != legacy["app_hash"]:
-                        raise OwnershipError("Legacy Access details changed before deletion")
+                        raise OwnershipError(
+                            "Legacy Access details changed before deletion"
+                        )
                 client.delete_access_app(bound["account"], plan["identity"]["app_id"])
             if legacy is not None:
                 verify_legacy(
-                    client, bound, hostname, plan["identity"],
-                    dns_gone=True, route_gone=True, app_gone=True,
+                    client,
+                    bound,
+                    hostname,
+                    plan["identity"],
+                    dns_gone=True,
+                    route_gone=True,
+                    app_gone=True,
                 )
             require_absent_in_mounted_source(client, bound, hostname)
             apps, dns, config = live_resources(client, bound)

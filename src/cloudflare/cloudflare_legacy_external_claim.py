@@ -11,7 +11,12 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from cloudflare_api import CloudflareClient, CloudflareError, checked_id, checked_tunnel_id
+from cloudflare_api import (
+    CloudflareClient,
+    CloudflareError,
+    checked_id,
+    checked_tunnel_id,
+)
 from cloudflare_credentials import api_token
 from cloudflare_desired import HOST, UUID
 from cloudflare_internal_cleanup import snapshot_digest
@@ -61,8 +66,7 @@ def resolve_scope(client, settings):
     ):
         raise OwnershipError("Configured zone identity changed")
     tunnel = checked_tunnel_id(
-        settings.get("tunnel_id")
-        or client.tunnel_id(account, settings["tunnel_name"])
+        settings.get("tunnel_id") or client.tunnel_id(account, settings["tunnel_name"])
     )
     return scope(account, external, tunnel), internal
 
@@ -141,9 +145,12 @@ def assert_absent(client, root, bound, hostname):
     hosts, _ = load_inventory_details(root / INVENTORY, required=True)
     aliases = load_inventory_aliases(root / INVENTORY)
     retained = load_retained_dns(root / RETAINED)
-    if internal_name in hosts or internal_name in aliases or any(
-        row["hostname"] == internal_name for row in retained
-    ) or mentions(retained, hostname, hostname):
+    if (
+        internal_name in hosts
+        or internal_name in aliases
+        or any(row["hostname"] == internal_name for row in retained)
+        or mentions(retained, hostname, hostname)
+    ):
         raise OwnershipError("External hostname protected by private inventory")
 
 
@@ -151,7 +158,10 @@ def read_fresh_absence(client, bound, hostname):
     """Reject changes to the mounted source during each evidence collection."""
     from controller import snapshot
 
-    with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+    with (
+        tempfile.TemporaryDirectory() as first,
+        tempfile.TemporaryDirectory() as second,
+    ):
         root = snapshot(Path(first))
         before = snapshot_digest(root)
         assert_absent(client, root, bound, hostname)
@@ -209,31 +219,38 @@ def inspect_resources(client, bound, internal, hostname):
 
 def detail_dns(client, bound, record):
     identifier = checked_id(record["id"], "DNS record ID")
-    detail = client.get(
-        f"/zones/{bound['external_zone']}/dns_records/{identifier}"
-    )["result"]
+    detail = client.get(f"/zones/{bound['external_zone']}/dns_records/{identifier}")[
+        "result"
+    ]
     if not isinstance(detail, dict) or any(
         record.get(field) != detail.get(field)
-        for field in ("id", "name", "type", "content", "proxied", "ttl",
-                      "comment", "tags", "settings", "modified_on")
+        for field in (
+            "id",
+            "name",
+            "type",
+            "content",
+            "proxied",
+            "ttl",
+            "comment",
+            "tags",
+            "settings",
+            "modified_on",
+        )
     ):
         raise OwnershipError("External DNS list and exact detail differ")
     return detail
 
 
 def inspect_identity(client, bound, internal, hostname):
-    apps, records, routes, config = inspect_resources(
-        client, bound, internal, hostname
-    )
+    apps, records, routes, config = inspect_resources(client, bound, internal, hostname)
     if any(len(rows) != 1 for rows in (apps, records, routes)):
         raise OwnershipError("Legacy endpoint must have all three exact resources")
     app, record = apps[0], records[0]
     policies = ordered_policy_ids(app)
     reusable = client.list_policies(bound["account"])
     identifiers = [row["id"] for row in reusable]
-    if (
-        len(identifiers) != len(set(identifiers))
-        or not all(UUID.fullmatch(policy) and policy in identifiers for policy in policies)
+    if len(identifiers) != len(set(identifiers)) or not all(
+        UUID.fullmatch(policy) and policy in identifiers for policy in policies
     ):
         raise OwnershipError("Legacy Access policy identity is not reusable")
     identity = claimed_identity(
@@ -250,8 +267,16 @@ def inspect_identity(client, bound, internal, hostname):
     return identity
 
 
-def verify_legacy(client, bound, hostname, identity, *,
-                  dns_gone=False, route_gone=False, app_gone=False):
+def verify_legacy(
+    client,
+    bound,
+    hostname,
+    identity,
+    *,
+    dns_gone=False,
+    route_gone=False,
+    app_gone=False,
+):
     """Revalidate legacy identity and visible dependencies throughout cleanup."""
     settings = cloudflare_settings()
     actual, internal = resolve_scope(client, settings)
@@ -261,7 +286,9 @@ def verify_legacy(client, bound, hostname, identity, *,
     read_fresh_absence(client, bound, hostname)
     apps, records, routes, _ = inspect_resources(client, bound, internal, hostname)
     if (
-        (dns_gone and records) or (route_gone and routes) or (app_gone and apps)
+        (dns_gone and records)
+        or (route_gone and routes)
+        or (app_gone and apps)
         or (not apps and (records or routes))
         or (not routes and records)
     ):
@@ -273,7 +300,8 @@ def verify_legacy(client, bound, hostname, identity, *,
         raise OwnershipError("Legacy Access application changed")
     if records and (
         records[0]["id"] != identity["dns_id"]
-        or detail_fingerprint(detail_dns(client, bound, records[0])) != legacy["dns_hash"]
+        or detail_fingerprint(detail_dns(client, bound, records[0]))
+        != legacy["dns_hash"]
     ):
         raise OwnershipError("Legacy external DNS record changed")
     if routes and routes[0] != identity["route"]:
@@ -289,7 +317,14 @@ def protected_legacy_hosts(client, data, bound):
             continue
         try:
             verify_legacy(client, bound, hostname, entry)
-        except (ValueError, CloudflareError, OSError, TypeError, KeyError, subprocess.SubprocessError):
+        except (
+            ValueError,
+            CloudflareError,
+            OSError,
+            TypeError,
+            KeyError,
+            subprocess.SubprocessError,
+        ):
             protected.add(hostname)
     return protected
 
@@ -310,12 +345,17 @@ def review_claim(client, data, settings, hostname):
     ):
         raise OwnershipError("External endpoint ownership collision")
     read_fresh_absence(client, bound, hostname)
-    if resolve_scope(client, settings) != (bound, internal) or inspect_identity(
-        client, bound, internal, hostname
-    ) != identity:
+    if (
+        resolve_scope(client, settings) != (bound, internal)
+        or inspect_identity(client, bound, internal, hostname) != identity
+    ):
         raise OwnershipError("Legacy endpoint evidence changed")
-    plan = {"action": "claim_retired_external", "scope": bound,
-            "hostname": hostname, "identity": identity}
+    plan = {
+        "action": "claim_retired_external",
+        "scope": bound,
+        "hostname": hostname,
+        "identity": identity,
+    }
     return plan, digest(plan)
 
 
@@ -328,7 +368,9 @@ def reset_observation(data, bound, hostname):
         return
     if not path.is_file() or path.stat().st_size > MAX_REGISTRY_BYTES:
         raise OwnershipError("Invalid external observation file")
-    state = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    state = json.loads(
+        path.read_text(encoding="utf-8"), object_pairs_hook=unique_object
+    )
     if (
         not isinstance(state, dict)
         or state.get("version") != 1
@@ -387,22 +429,42 @@ def main():
             plan, token = review_claim(client, data, settings, args.hostname)
             # Do not publish raw route settings, Access policy selectors or DNS metadata.
             identity = plan["identity"]
-            print(json.dumps({
-                "hostname": args.hostname, "scope": plan["scope"],
-                "dns_id": identity["dns_id"], "dns_target": identity["dns_target"],
-                "app_id": identity["app_id"], "policy_ids": identity["policies"],
-                "route_service": identity["route"]["service"],
-                "detail_hashes": identity["legacy"], "approval": token,
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "hostname": args.hostname,
+                        "scope": plan["scope"],
+                        "dns_id": identity["dns_id"],
+                        "dns_target": identity["dns_target"],
+                        "app_id": identity["app_id"],
+                        "policy_ids": identity["policies"],
+                        "route_service": identity["route"]["service"],
+                        "detail_hashes": identity["legacy"],
+                        "approval": token,
+                    },
+                    indent=2,
+                )
+            )
             print("No changes made. Approval permits subsequent guarded retirement.")
         else:
             apply_claim(client, data, settings, args.hostname, args.approval)
             print(f"Claimed retired external endpoint: {args.hostname}")
             print("No Cloudflare changes made; normal retirement safeguards apply.")
         return 0
-    except (CloudflareError, ValueError, OSError, TypeError, KeyError,
-            AttributeError, RuntimeError, subprocess.SubprocessError):
-        print("ERROR: Legacy external claim blocked; review live evidence.", file=sys.stderr)
+    except (
+        CloudflareError,
+        ValueError,
+        OSError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        subprocess.SubprocessError,
+    ):
+        print(
+            "ERROR: Legacy external claim blocked; review live evidence.",
+            file=sys.stderr,
+        )
         return 2
 
 
