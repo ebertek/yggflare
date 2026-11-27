@@ -438,7 +438,9 @@ def confirm_pending(path, ledger, live):
         or address not in lan
         or address in (lan.network_address, lan.broadcast_address)
     ):
-        raise ApplyError("Pending policy is outside current scope; writes remain blocked")
+        raise ApplyError(
+            "Pending policy is outside current scope; writes remain blocked"
+        )
     if entry.get("repair", {}).get("action") == RETIRE_ACTION:
         confirm_retirement(path, ledger, live)
         return
@@ -549,8 +551,10 @@ def run(data, selected="", approval="", *, automatic=False):
         ledger_path = data / "unifi-ownership.json"
         ledger = load_ledger(ledger_path, live.target)
         pending = ledger["pending"]
-        if pending is not None and not automatic and (
-            pending["operation"]["domain"] != selected or "repair" in pending
+        if (
+            pending is not None
+            and not automatic
+            and (pending["operation"]["domain"] != selected or "repair" in pending)
         ):
             raise ApplyError("Another pending operation blocks manual create")
         deliver_notice(ledger_path, ledger)
