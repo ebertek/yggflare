@@ -48,9 +48,7 @@ def main():
     if not 24 <= grace <= 720:
         raise OwnershipError("Orphan grace period must be between 24 and 720 hours")
     try:
-        batch_size = int(
-            getenv("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE", "1")
-        )
+        batch_size = int(getenv("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE", "1"))
     except ValueError as error:
         raise OwnershipError("Invalid orphan cleanup batch size") from error
     if batch_size < 0:

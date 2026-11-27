@@ -434,10 +434,7 @@ def run_scheduler(listener=None):
                     )
             last_cloud_completed = time.monotonic()
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
-        if (
-            getenv("YGGFLARE_TRAEFIK_API_URL")
-            and time.monotonic() >= next_traefik
-        ):
+        if getenv("YGGFLARE_TRAEFIK_API_URL") and time.monotonic() >= next_traefik:
             try:
                 with tracked("traefik"):
                     run([sys.executable, "/app/traefik_inventory.py"])

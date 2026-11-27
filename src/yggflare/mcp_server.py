@@ -804,14 +804,11 @@ SERVICE_FIELDS = (
 
 
 def load_services():
-    import os
 
     from docker_inventory import service_snapshot
     from web import NETWORK, SOURCE
 
-    return service_snapshot(
-        SOURCE, NETWORK, getenv("YGGFLARE_INTERNAL_DOMAIN", "")
-    )
+    return service_snapshot(SOURCE, NETWORK, getenv("YGGFLARE_INTERNAL_DOMAIN", ""))
 
 
 def scan_coverage_context(state):

@@ -28,9 +28,7 @@ def collect(network, run=None, seeds=(), observed_ports=None):
         return {}
     interfaces = [v.strip() for v in raw_interfaces.split(",")]
     try:
-        max_targets = int(
-            getenv("YGGFLARE_DISCOVERY_MAX_TARGETS", DEFAULT_MAX_TARGETS)
-        )
+        max_targets = int(getenv("YGGFLARE_DISCOVERY_MAX_TARGETS", DEFAULT_MAX_TARGETS))
     except ValueError as error:
         raise ValueError("Invalid YGGFLARE_DISCOVERY_MAX_TARGETS") from error
     if not 1 <= max_targets <= HARD_MAX_TARGETS:

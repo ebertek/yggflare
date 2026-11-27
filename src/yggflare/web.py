@@ -485,10 +485,7 @@ class Handler(BaseHTTPRequestHandler):
         ):
             self.send_error(404)
             return
-        if (
-            uri == "/metrics"
-            and getenv("YGGFLARE_METRICS_ENABLED", "false") != "true"
-        ):
+        if uri == "/metrics" and getenv("YGGFLARE_METRICS_ENABLED", "false") != "true":
             self.send_error(404)
             return
         try:
