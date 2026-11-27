@@ -22,9 +22,7 @@ def review(comparison, gateway, declared, observe=verify):
         row for row in comparison["reverse_expectations"] if len(row["hostnames"]) > 1
     ]
     addresses = {
-        row["address"]
-        for row in shared
-        if ipaddress.IPv4Address(row["address"]) in lan
+        row["address"] for row in shared if ipaddress.IPv4Address(row["address"]) in lan
     }
     by_name = {row["hostname"]: row for row in comparison["rows"]}
     eligible = [
