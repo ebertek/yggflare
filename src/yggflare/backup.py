@@ -197,7 +197,9 @@ def check_internal_dns_restore(data):
     if (data / JOURNAL).exists():
         state = load_state(data)
         if "internal_dns_owned_count" not in result:
-            raise ValueError("Restored internal DNS retirement lacks ownership registry")
+            raise ValueError(
+                "Restored internal DNS retirement lacks ownership registry"
+            )
         ledger = load_registry(data, filename=REGISTRY_FILE)
         if state["scope"]["internal"] != ledger["scope"]:
             raise ValueError("Restored internal DNS retirement scope differs")
