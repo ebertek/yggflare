@@ -158,7 +158,15 @@ def load_live():
         }
     )
     return LiveInputs(
-        config, site, key, token, target, policies_id, inputs, comparison, tuple(records)
+        config,
+        site,
+        key,
+        token,
+        target,
+        policies_id,
+        inputs,
+        comparison,
+        tuple(records),
     )
 
 

@@ -33,7 +33,14 @@ GRACE = 86400
 
 
 def live(policies):
-    records = ({"name": f"other.{ZONE}", "type": "A", "content": "192.168.10.50", "proxied": False},)
+    records = (
+        {
+            "name": f"other.{ZONE}",
+            "type": "A",
+            "content": "192.168.10.50",
+            "proxied": False,
+        },
+    )
     return LiveInputs(
         ("192.168.10.1", 443, "", "gateway.example.invalid"),
         str(UUID(int=1)),
@@ -55,20 +62,31 @@ class UniFiRetirementTests(unittest.TestCase):
         self.after = live([])
         self.ledger = apply.load_ledger(self.path, self.before.target)
         pilot = {
-            "operation": {**OPERATION, "domain": f"pilot.{ZONE}", "ipv4Address": "192.168.10.21"},
+            "operation": {
+                **OPERATION,
+                "domain": f"pilot.{ZONE}",
+                "ipv4Address": "192.168.10.21",
+            },
             "policy_id": str(UUID(int=3)),
             "manual": True,
         }
         self.ledger["owned"] = [pilot, ENTRY]
         self.ledger["pilot_verified"] = True
         apply.write(self.path, self.ledger)
-        self.enterContext(patch.dict(os.environ, {
-            "YGGFLARE_UNIFI_AUTO_APPLY": "true",
-            "YGGFLARE_UNIFI_AUTO_CLEANUP": "true",
-            "YGGFLARE_UNIFI_API_KEY_FILE": apply.UNIFI_KEY_FILE,
-            "YGGFLARE_UNIFI_DISCORD_NOTIFY": "false",
-        }))
-        self.enterContext(patch.object(apply, "retirement_protected", return_value=PROTECTED))
+        self.enterContext(
+            patch.dict(
+                os.environ,
+                {
+                    "YGGFLARE_UNIFI_AUTO_APPLY": "true",
+                    "YGGFLARE_UNIFI_AUTO_CLEANUP": "true",
+                    "YGGFLARE_UNIFI_API_KEY_FILE": apply.UNIFI_KEY_FILE,
+                    "YGGFLARE_UNIFI_DISCORD_NOTIFY": "false",
+                },
+            )
+        )
+        self.enterContext(
+            patch.object(apply, "retirement_protected", return_value=PROTECTED)
+        )
         self.enterContext(patch.object(apply.time, "time", return_value=NOW))
 
     def test_grace_resets_on_reappearance_gap_and_changed_ownership(self):
@@ -79,35 +97,79 @@ class UniFiRetirementTests(unittest.TestCase):
         # Simulate the last successful observation within the allowed gap.
         observations[POLICY]["last"] = NOW + GRACE - 60
         rows, _ = apply.retirement_report(
-            self.before, self.ledger, [POLICY_ROW], PROTECTED, observations, NOW + GRACE, GRACE
+            self.before,
+            self.ledger,
+            [POLICY_ROW],
+            PROTECTED,
+            observations,
+            NOW + GRACE,
+            GRACE,
         )
         self.assertEqual(rows[1]["status"], "eligible")
         rows, cleared = apply.retirement_report(
-            self.before, self.ledger, [POLICY_ROW], ({NAME}, set(), set()), observations, NOW + GRACE, GRACE
+            self.before,
+            self.ledger,
+            [POLICY_ROW],
+            ({NAME}, set(), set()),
+            observations,
+            NOW + GRACE,
+            GRACE,
         )
         self.assertEqual(rows[1]["status"], "still_declared")
         self.assertEqual(cleared, {})
         rows, _ = apply.retirement_report(
-            self.before, self.ledger, [POLICY_ROW], PROTECTED, observations, NOW + GRACE + 7201, GRACE
+            self.before,
+            self.ledger,
+            [POLICY_ROW],
+            PROTECTED,
+            observations,
+            NOW + GRACE + 7201,
+            GRACE,
         )
         self.assertEqual(rows[1]["status"], "grace_period")
         self.assertEqual(rows[0]["status"], "manual_protected")
 
     def test_protects_alias_address_conflicts_and_modified_policy(self):
-        for protected in (({NAME}, set(), set()), (set(), {ADDRESS}, set()), (set(), set(), {ZONE})):
-            self.assertEqual(apply.retirement_candidate(ENTRY, self.before, [POLICY_ROW], protected), "still_declared")
+        for protected in (
+            ({NAME}, set(), set()),
+            (set(), {ADDRESS}, set()),
+            (set(), set(), {ZONE}),
+        ):
+            self.assertEqual(
+                apply.retirement_candidate(ENTRY, self.before, [POLICY_ROW], protected),
+                "still_declared",
+            )
         modified = {**POLICY_ROW, "enabled": False}
-        self.assertEqual(apply.retirement_candidate(ENTRY, self.before, [modified], PROTECTED), "modified_policy")
-        self.assertEqual(apply.retirement_candidate(ENTRY, self.after, [], PROTECTED), "missing_policy")
+        self.assertEqual(
+            apply.retirement_candidate(ENTRY, self.before, [modified], PROTECTED),
+            "modified_policy",
+        )
+        self.assertEqual(
+            apply.retirement_candidate(ENTRY, self.after, [], PROTECTED),
+            "missing_policy",
+        )
         conflict = {**POLICY_ROW, "id": str(UUID(int=4)), "domain": f"alias.{ZONE}"}
-        self.assertEqual(apply.retirement_candidate(ENTRY, self.before, [POLICY_ROW, conflict], PROTECTED), "policy_conflict")
+        self.assertEqual(
+            apply.retirement_candidate(
+                ENTRY, self.before, [POLICY_ROW, conflict], PROTECTED
+            ),
+            "policy_conflict",
+        )
 
     def seed_grace(self):
         apply.write(
             self.data / "unifi-retirement.json",
-            {"version": 1, "target": self.before.target, "observations": {
-                POLICY: {"identity": apply.fingerprint(ENTRY), "first": NOW - GRACE, "last": NOW - 60}
-            }},
+            {
+                "version": 1,
+                "target": self.before.target,
+                "observations": {
+                    POLICY: {
+                        "identity": apply.fingerprint(ENTRY),
+                        "first": NOW - GRACE,
+                        "last": NOW - 60,
+                    }
+                },
+            },
         )
 
     def test_delete_is_journaled_and_ownership_removed_only_after_absence(self):
@@ -120,7 +182,11 @@ class UniFiRetirementTests(unittest.TestCase):
             self.assertEqual(identifier, POLICY)
 
         with (
-            patch.object(apply, "load_live", side_effect=[self.before, self.before, self.before, self.after]),
+            patch.object(
+                apply,
+                "load_live",
+                side_effect=[self.before, self.before, self.before, self.after],
+            ),
             patch.object(apply, "all_rows", side_effect=[[POLICY_ROW]] * 4 + [[]]),
             patch.object(apply, "query", return_value=("nxdomain", [])),
             patch.object(apply, "delete_owned_policy", side_effect=delete) as remove,
@@ -138,30 +204,55 @@ class UniFiRetirementTests(unittest.TestCase):
             patch.object(apply, "load_live", return_value=self.before),
             patch.object(apply, "all_rows", return_value=[POLICY_ROW]),
             patch.object(apply, "query", return_value=("nxdomain", [])),
-            patch.object(apply, "delete_owned_policy", side_effect=TimeoutError) as remove,
+            patch.object(
+                apply, "delete_owned_policy", side_effect=TimeoutError
+            ) as remove,
         ):
             with self.assertRaises(TimeoutError):
                 apply.run(self.data, automatic=True)
             with self.assertRaisesRegex(apply.ApplyError, "outcome is uncertain"):
                 apply.run(self.data, automatic=True)
             remove.assert_called_once()
-        self.assertEqual(apply.load_ledger(self.path, self.before.target)["owned"], self.ledger["owned"])
+        self.assertEqual(
+            apply.load_ledger(self.path, self.before.target)["owned"],
+            self.ledger["owned"],
+        )
 
     def test_acknowledged_delete_waits_for_dns_and_recovers_without_replay(self):
         self.seed_grace()
         with (
-            patch.object(apply, "load_live", side_effect=[self.before, self.before, self.before, self.after, self.after]),
+            patch.object(
+                apply,
+                "load_live",
+                side_effect=[
+                    self.before,
+                    self.before,
+                    self.before,
+                    self.after,
+                    self.after,
+                ],
+            ),
             patch.object(apply, "all_rows", side_effect=[[POLICY_ROW]] * 4 + [[], []]),
-            patch.object(apply, "query", side_effect=[
-                ("answered", [ADDRESS]), ("answered", [NAME + "."]),
-                ("answered", [ADDRESS]), ("nxdomain", []),
-                ("nxdomain", []), ("nxdomain", []),
-            ]),
+            patch.object(
+                apply,
+                "query",
+                side_effect=[
+                    ("answered", [ADDRESS]),
+                    ("answered", [NAME + "."]),
+                    ("answered", [ADDRESS]),
+                    ("nxdomain", []),
+                    ("nxdomain", []),
+                    ("nxdomain", []),
+                ],
+            ),
             patch.object(apply, "delete_owned_policy") as remove,
         ):
             with self.assertRaises(apply.DNSVerificationPending):
                 apply.run(self.data, automatic=True)
-            self.assertEqual(apply.load_ledger(self.path, self.before.target)["owned"], self.ledger["owned"])
+            self.assertEqual(
+                apply.load_ledger(self.path, self.before.target)["owned"],
+                self.ledger["owned"],
+            )
             self.assertIn("Recovered", apply.run(self.data, automatic=True))
             remove.assert_called_once()
 
@@ -183,7 +274,8 @@ class UniFiRetirementTests(unittest.TestCase):
             conn.getresponse.return_value.status = 200
             apply.delete_owned_policy(self.before, POLICY)
             conn.request.assert_called_once_with(
-                "DELETE", f"{apply.PREFIX}/sites/{self.before.site}/dns/policies/{POLICY}",
+                "DELETE",
+                f"{apply.PREFIX}/sites/{self.before.site}/dns/policies/{POLICY}",
                 headers={"Accept": "application/json", "X-API-Key": self.before.key},
             )
             conn.getresponse.return_value.status = 404

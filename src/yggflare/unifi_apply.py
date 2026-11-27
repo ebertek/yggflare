@@ -501,7 +501,11 @@ def run(data, selected="", approval="", *, automatic=False):
         deliver_notice(ledger_path, ledger)
         if ledger["pending"] is not None:
             action = ledger["pending"].get("repair", {}).get("action")
-            kind = "retirement" if action == RETIRE_ACTION else ("repair" if action else "create")
+            kind = (
+                "retirement"
+                if action == RETIRE_ACTION
+                else ("repair" if action else "create")
+            )
             confirm_pending(ledger_path, ledger, live)
             deliver_notice(ledger_path, ledger)
             return f"Recovered and verified the pending UniFi {kind}"
@@ -1040,7 +1044,10 @@ def retirement_replies(live, operation, *, deleting):
     missing = False
     for answer, expected in (
         (query(gateway, name + ".", "A"), address),
-        (query(gateway, ipaddress.ip_address(address).reverse_pointer + ".", "PTR"), name + "."),
+        (
+            query(gateway, ipaddress.ip_address(address).reverse_pointer + ".", "PTR"),
+            name + ".",
+        ),
     ):
         status, values = answer
         if status in {"nxdomain", "nodata"} and not values:
@@ -1057,7 +1064,11 @@ def delete_owned_policy(live, identifier):
     path = f"{PREFIX}/sites/{row_id(live.site)}/dns/policies/{row_id(identifier)}"
     conn = connection(live.config)
     try:
-        conn.request("DELETE", path, headers={"Accept": "application/json", "X-API-Key": live.key})
+        conn.request(
+            "DELETE",
+            path,
+            headers={"Accept": "application/json", "X-API-Key": live.key},
+        )
         if conn.getresponse().status != 200:
             raise ApplyError("UniFi retirement acknowledgement failed")
     finally:
@@ -1110,7 +1121,10 @@ def confirm_retirement(path, ledger, live):
         except (ValueError, OSError, http.client.HTTPException):
             accepted = False
         if not accepted:
-            print("UniFi retirement Discord notification was not confirmed.", file=sys.stderr)
+            print(
+                "UniFi retirement Discord notification was not confirmed.",
+                file=sys.stderr,
+            )
 
 
 def retire_one(data, path, ledger, live):
@@ -1144,7 +1158,10 @@ def retire_one(data, path, ledger, live):
         raise ApplyError("Live retirement inputs changed")
     if (
         policy_fingerprint(policies) != refreshed.policies_id
-        or retirement_candidate(owned, refreshed, policies, retirement_protected(refreshed)) != "orphan"
+        or retirement_candidate(
+            owned, refreshed, policies, retirement_protected(refreshed)
+        )
+        != "orphan"
     ):
         raise ApplyError("Retirement candidate changed")
     operation = owned["operation"]
@@ -1152,12 +1169,15 @@ def retire_one(data, path, ledger, live):
     final = load_live()
     if final.inputs != refreshed.inputs or final.target != refreshed.target:
         raise ApplyError("Live retirement inputs changed immediately before deletion")
-    if retirement_candidate(
-        owned,
-        final,
-        all_rows(final.config, final.key, "dns", final.site),
-        retirement_protected(final),
-    ) != "orphan":
+    if (
+        retirement_candidate(
+            owned,
+            final,
+            all_rows(final.config, final.key, "dns", final.site),
+            retirement_protected(final),
+        )
+        != "orphan"
+    ):
         raise ApplyError("Retirement candidate changed immediately before deletion")
     policies = all_rows(final.config, final.key, "dns", final.site)
     if policy_fingerprint(policies) != refreshed.policies_id:
