@@ -140,6 +140,7 @@ def runtime_evidence(containers, zone):
 
 def docker_containers():
     """Bound the read and reject inventory changes or partial inspections."""
+
     def identifiers():
         values = subprocess.check_output(
             ["docker", "ps", "-aq", "--no-trunc"], text=True, timeout=30
@@ -244,15 +245,21 @@ def review(client, bound, owned, records, external, evidence, hostname=None):
             elif not record_matches(current, identifier, action):
                 status = "identity_changed"
             else:
-                detail = client.get(
-                    f"/zones/{bound['zone']}/dns_records/{identifier}"
-                )["result"]
+                detail = client.get(f"/zones/{bound['zone']}/dns_records/{identifier}")[
+                    "result"
+                ]
                 if (
                     not record_matches(detail, identifier, action)
                     or detail_fingerprint(detail) != entry["fingerprint"]
                     or any(
                         current.get(field) != detail.get(field)
-                        for field in ("ttl", "comment", "tags", "settings", "modified_on")
+                        for field in (
+                            "ttl",
+                            "comment",
+                            "tags",
+                            "settings",
+                            "modified_on",
+                        )
                     )
                 ):
                     status = "identity_changed"
@@ -339,10 +346,9 @@ def collect(client, root, data, settings, hostname=None):
         raise ValueError("Overlapping internal DNS ownership registries")
     owned = {key: ("docker", row) for key, row in docker.items()}
     owned.update({key: ("static", row) for key, row in static.items()})
-    if (
-        len({entry["hostname"] for _, entry in owned.values()}) != len(owned)
-        or len({entry["address"] for _, entry in owned.values()}) != len(owned)
-    ):
+    if len({entry["hostname"] for _, entry in owned.values()}) != len(owned) or len(
+        {entry["address"] for _, entry in owned.values()}
+    ) != len(owned):
         raise ValueError("Conflicting internal DNS ownership registries")
     hosts, companions = load_inventory_details(root / INVENTORY, required=True)
     retained = load_retained_dns(root / RETAINED)
@@ -359,9 +365,7 @@ def collect(client, root, data, settings, hostname=None):
     }
     # Keep retained exact names/addresses protected independently of content.
     evidence["private"].update(row["hostname"] for row in retained)
-    evidence["private"].update(
-        row["content"] for row in retained if row["type"] == "A"
-    )
+    evidence["private"].update(row["content"] for row in retained if row["type"] == "A")
     return review(
         client,
         bound,
@@ -397,7 +401,10 @@ def main():
         subprocess.SubprocessError,
     ):
         # Docker/Compose errors and API payloads may contain private data.
-        print("ERROR: Internal DNS retirement evidence unavailable or invalid.", file=sys.stderr)
+        print(
+            "ERROR: Internal DNS retirement evidence unavailable or invalid.",
+            file=sys.stderr,
+        )
         return 2
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0

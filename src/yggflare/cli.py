@@ -311,7 +311,9 @@ def main(argv=None):
 
     if args.operation == "retirement-plan":
         if args.approval is not None or args.max_operations or args.details:
-            parser.error("cloudflare retirement-plan accepts optional HOSTNAME and --json")
+            parser.error(
+                "cloudflare retirement-plan accepts optional HOSTNAME and --json"
+            )
         controller.DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix="yggflare-compose-", dir=controller.DATA

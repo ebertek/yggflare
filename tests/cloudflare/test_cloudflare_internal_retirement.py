@@ -56,9 +56,7 @@ class RetirementReviewTests(unittest.TestCase):
         return result
 
     def test_owned_orphan_is_review_only(self):
-        self.assertEqual(
-            self.check()["counts"], {"candidate_review_only": 1}
-        )
+        self.assertEqual(self.check()["counts"], {"candidate_review_only": 1})
         self.client.get.assert_called_once_with(
             f"/zones/{BOUND['zone']}/dns_records/{RECORD['id']}"
         )
@@ -72,7 +70,11 @@ class RetirementReviewTests(unittest.TestCase):
         for key, value, expected in (
             ("compose", ({NAME}, set(), []), "still_declared"),
             ("compose", (set(), {ADDRESS}, []), "still_declared"),
-            ("compose", (set(), set(), [f"https://{NAME}:443"]), "dependency_protected"),
+            (
+                "compose",
+                (set(), set(), [f"https://{NAME}:443"]),
+                "dependency_protected",
+            ),
             ("runtime", ({NAME}, set()), "runtime_present"),
             ("runtime", (set(), {ADDRESS}), "runtime_present"),
             ("private", {ADDRESS}, "private_protected"),
