@@ -140,9 +140,7 @@ class BackupTests(unittest.TestCase):
             (config / "static-hosts.json").write_text(
                 json.dumps({"version": 1, "hosts": []})
             )
-            bound = internal_scope(
-                "a" * 32, "b" * 32, "example.net", "192.0.2.0/24"
-            )
+            bound = internal_scope("a" * 32, "b" * 32, "example.net", "192.0.2.0/24")
             entry = {
                 "id": "c" * 32,
                 "hostname": "demo.example.net",

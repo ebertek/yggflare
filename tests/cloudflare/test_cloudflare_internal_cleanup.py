@@ -67,9 +67,7 @@ class InternalCleanupTests(unittest.TestCase):
         self.review = self.enterContext(
             patch("cloudflare_internal_cleanup.fresh_review", return_value=context())
         )
-        self.notice = self.enterContext(
-            patch("cloudflare_internal_cleanup.notice")
-        )
+        self.notice = self.enterContext(patch("cloudflare_internal_cleanup.notice"))
 
     def run_cycle(self, now=NOW, notify=False):
         return run_cleanup(

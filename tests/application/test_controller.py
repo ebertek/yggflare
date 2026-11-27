@@ -289,9 +289,9 @@ class ControllerTests(unittest.TestCase):
                     controller.cloudflare_run()
                 self.assertEqual(run.call_count, 2)
                 self.assertTrue(
-                    run.call_args_list[0].args[0][1].endswith(
-                        "/cloudflare_internal_cleanup.py"
-                    )
+                    run.call_args_list[0]
+                    .args[0][1]
+                    .endswith("/cloudflare_internal_cleanup.py")
                 )
                 run.reset_mock()
                 with patch.dict(
