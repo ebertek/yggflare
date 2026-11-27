@@ -295,6 +295,10 @@ def review_orphan(client, root, data, bound, hostname):
     if hostname in wanted:
         raise OwnershipError("Hostname is still declared in Compose")
     entry = registry["hosts"][hostname]
+    if "legacy" in entry:
+        from cloudflare_legacy_external_claim import verify_legacy
+
+        verify_legacy(client, bound, hostname, entry)
     apps, dns, config = live_resources(client, bound)
     matches = candidates(hostname, apps, dns, config)
     access, records, routes = matches
@@ -367,6 +371,11 @@ def retire(client, root, data, bound, hostname, approval):
                 raise OwnershipError("Orphan plan changed: review a new fingerprint")
             steps = plan["steps"]
             require_absent_in_mounted_source(client, bound, hostname)
+            legacy = plan["identity"].get("legacy")
+            if legacy is not None:
+                from cloudflare_legacy_external_claim import verify_legacy
+
+                verify_legacy(client, bound, hostname, plan["identity"])
             if "delete_dns_cname" in steps:
                 # Verify exact record identity against a fresh API read.
                 record = client.get_dns_record(
@@ -381,10 +390,21 @@ def retire(client, root, data, bound, hostname, approval):
                     != plan["identity"]["dns_target"]
                 ):
                     raise OwnershipError("DNS changed immediately before deletion")
+                if legacy is not None:
+                    from cloudflare_internal_ownership import detail_fingerprint
+
+                    if detail_fingerprint(record) != legacy["dns_hash"]:
+                        raise OwnershipError(
+                            "Legacy DNS details changed before deletion"
+                        )
                 client.delete_dns_record(
                     bound["external_zone"], plan["identity"]["dns_id"]
                 )
             if "remove_tunnel_ingress" in steps:
+                if legacy is not None:
+                    verify_legacy(
+                        client, bound, hostname, plan["identity"], dns_gone=True
+                    )
                 require_absent_in_mounted_source(client, bound, hostname)
                 current = client.tunnel_configuration(
                     bound["account"], bound["tunnel"]
@@ -401,6 +421,15 @@ def retire(client, root, data, bound, hostname, approval):
                 validate_ingress(new_config["ingress"])
                 client.put_tunnel_ingress(bound["account"], bound["tunnel"], new_config)
             if "delete_access_app" in steps:
+                if legacy is not None:
+                    verify_legacy(
+                        client,
+                        bound,
+                        hostname,
+                        plan["identity"],
+                        dns_gone=True,
+                        route_gone=True,
+                    )
                 require_absent_in_mounted_source(client, bound, hostname)
                 # DNS must be gone and ingress absent before removing protection.
                 apps, dns, config = live_resources(client, bound)
@@ -419,7 +448,24 @@ def retire(client, root, data, bound, hostname, approval):
                     or ordered_policy_ids(app) != plan["identity"]["policies"]
                 ):
                     raise OwnershipError("Access changed immediately before deletion")
+                if legacy is not None:
+                    from cloudflare_internal_ownership import detail_fingerprint
+
+                    if detail_fingerprint(app) != legacy["app_hash"]:
+                        raise OwnershipError(
+                            "Legacy Access details changed before deletion"
+                        )
                 client.delete_access_app(bound["account"], plan["identity"]["app_id"])
+            if legacy is not None:
+                verify_legacy(
+                    client,
+                    bound,
+                    hostname,
+                    plan["identity"],
+                    dns_gone=True,
+                    route_gone=True,
+                    app_gone=True,
+                )
             require_absent_in_mounted_source(client, bound, hostname)
             apps, dns, config = live_resources(client, bound)
             if any(candidates(hostname, apps, dns, config)):

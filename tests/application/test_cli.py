@@ -336,6 +336,32 @@ class CommandTests(unittest.TestCase):
                 cli.main(arguments)
             run.assert_not_called()
 
+    def test_legacy_external_claim_dispatch(self):
+        token = "da8fce91d8119265"
+        for operation, extra in (
+            ("legacy-external-claim-plan", []),
+            ("legacy-external-claim-apply", [token]),
+        ):
+            with (
+                self.subTest(operation=operation),
+                patch.object(cli.controller, "snapshot") as snapshot,
+                patch.object(cli.subprocess, "run") as run,
+            ):
+                run.return_value.returncode = 0
+                self.assertEqual(
+                    cli.main(["cloudflare", operation, "demo.ebi.nu", *extra]), 0
+                )
+                snapshot.assert_not_called()
+                command = [
+                    cli.sys.executable,
+                    "/app/cloudflare/cloudflare_legacy_external_claim.py",
+                    "--hostname",
+                    "demo.ebi.nu",
+                ]
+                if extra:
+                    command.extend(["--approval", token])
+                run.assert_called_once_with(command, check=False)
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)

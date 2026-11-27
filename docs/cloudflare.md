@@ -204,6 +204,32 @@ stored separately in `/data/managed-static-dns.json`. Internal claims do not
 authorize deletion or claim UniFi policies. External claims can make a hostname
 eligible for the separately opted-in orphan cleanup after it disappears from Compose.
 
+### Explicit adoption of a retired external endpoint
+
+```sh
+docker exec yggflare yggflare cloudflare legacy-external-claim-plan host.services.example.net
+docker exec yggflare yggflare cloudflare legacy-external-claim-apply host.services.example.net APPROVAL_FINGERPRINT
+```
+
+The plan requires a complete, unique proxied Tunnel CNAME, exact ingress
+route and single-host self-hosted Access application with reusable policy IDs.
+Other DNS types (including A records), partial endpoints, wildcard or overlapping
+destinations, visible aliases/dependencies and still-declared or running
+services block adoption. The configured account, zones, Tunnel and full
+DNS/Access detail hashes are bound to the reviewed fingerprint. No Access
+policy or Cloudflare resource changes are made during adoption.
+
+Approval explicitly grants ownership of one retired external hostname.
+The existing cleanup settings and a new observed grace period govern
+automatic retirement; manual orphan apply remains a separate approval.
+Legacy-specific dependency/identity checks also run during retirement,
+before each mutation and final verification. Failed legacy reviews prevent
+the grace timer from aging. Confirm dependencies outside the checked Compose,
+Docker, private inventory and two DNS zones independently before approval.
+Other Tunnels and application data are not comprehensively inspected.
+The existing external cleanup recovery semantics remain unchanged; this
+does not add a per-operation acknowledgement journal.
+
 Review removal of a claimed hostname with:
 
 ```sh

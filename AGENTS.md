@@ -67,7 +67,9 @@ production acceptance are distinct. Never move a published version tag.
   DELETE intent and acknowledgement, and verified absence before releasing
   ownership. Never replay an ambiguous DELETE. Static and unmanaged records
   remain review-only unless an operator explicitly approves a fresh,
-  single-host legacy Docker A adoption fingerprint. Legacy adoption writes
+  single-host legacy Docker A or complete external endpoint adoption
+  fingerprint. Legacy external adoption binds exact resource detail hashes
+  and checks dependencies again throughout retirement. Legacy adoption writes
   ownership only, never deletes or backdates grace. Static records remain
   review-only. Recover safely from partial writes.
 - Internal DNS creation must obey the configured allocation and opt-ins.

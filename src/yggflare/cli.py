@@ -56,6 +56,8 @@ def main(argv=None):
             "claim-all",
             "legacy-claim-plan",
             "legacy-claim-apply",
+            "legacy-external-claim-plan",
+            "legacy-external-claim-apply",
             "orphan-plan",
             "orphan-apply",
             "verify",
@@ -314,8 +316,14 @@ def main(argv=None):
             return subprocess.run(command, check=False).returncode
         parser.error("Unsupported command for this component")
 
-    if args.operation in ("legacy-claim-plan", "legacy-claim-apply"):
-        applying = args.operation == "legacy-claim-apply"
+    if args.operation in (
+        "legacy-claim-plan",
+        "legacy-claim-apply",
+        "legacy-external-claim-plan",
+        "legacy-external-claim-apply",
+    ):
+        applying = args.operation.endswith("-apply")
+        external = args.operation.startswith("legacy-external-")
         if (
             not args.argument
             or applying != (args.approval is not None)
@@ -325,12 +333,16 @@ def main(argv=None):
             or args.json
         ):
             parser.error(
-                "legacy-claim-plan requires HOSTNAME; "
-                "legacy-claim-apply also requires FINGERPRINT"
+                "Legacy claim plan requires HOSTNAME; "
+                "legacy claim apply also requires FINGERPRINT"
             )
         command = [
             sys.executable,
-            "/app/cloudflare/cloudflare_legacy_internal_claim.py",
+            (
+                "/app/cloudflare/cloudflare_legacy_external_claim.py"
+                if external
+                else "/app/cloudflare/cloudflare_legacy_internal_claim.py"
+            ),
             "--hostname",
             args.argument,
         ]

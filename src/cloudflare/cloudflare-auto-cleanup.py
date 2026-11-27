@@ -73,7 +73,10 @@ def main():
 
     # Validated live source, not a stale snapshot, gates all deletion timers.
     wanted = desired_hosts(client, source, account)
-    eligible = observe_orphans(data, bound, wanted, time.time(), grace)
+    from cloudflare_legacy_external_claim import protected_legacy_hosts
+
+    protected = protected_legacy_hosts(client, data, bound)
+    eligible = observe_orphans(data, bound, set(wanted) | protected, time.time(), grace)
     if not eligible:
         print("Orphan cleanup: no eligible managed hostnames.")
         return 0
