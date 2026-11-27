@@ -377,8 +377,10 @@ class CommandTests(unittest.TestCase):
                     cli.main(["unifi", operation, "demo.ygg.nu", *extra]), 0
                 )
                 expected = [
-                    cli.sys.executable, "/app/unifi_legacy_claim.py",
-                    "--hostname", "demo.ygg.nu",
+                    cli.sys.executable,
+                    "/app/unifi_legacy_claim.py",
+                    "--hostname",
+                    "demo.ygg.nu",
                 ]
                 if extra:
                     expected.extend(["--approval", token])

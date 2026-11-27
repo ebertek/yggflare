@@ -57,19 +57,23 @@ def legacy_absence(live, operation, policies, identifier):
             or (
                 record_name.startswith("*.")
                 and any(
-                    candidate.endswith(record_name[1:])
-                    for candidate in (name, sibling)
+                    candidate.endswith(record_name[1:]) for candidate in (name, sibling)
                 )
             )
             or mentions([row.get("content"), row.get("data")], name, address)
         ):
-            raise writer.ApplyError("Legacy UniFi policy still referenced by Cloudflare")
+            raise writer.ApplyError(
+                "Legacy UniFi policy still referenced by Cloudflare"
+            )
     for policy in policies:
         if row_id(policy["id"]) == identifier:
             continue
         if mentions(policy, name, address):
             raise writer.ApplyError("Legacy UniFi policy has a local dependency")
-    with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+    with (
+        tempfile.TemporaryDirectory() as first,
+        tempfile.TemporaryDirectory() as second,
+    ):
         root = snapshot(Path(first))
         before = snapshot_digest(root)
         names, addresses, references = compose_evidence(root, zone)
@@ -81,7 +85,9 @@ def legacy_absence(live, operation, policies, identifier):
             or mentions(references, name, address)
             or mentions(containers, name, address)
         ):
-            raise writer.ApplyError("Legacy UniFi policy still referenced by Compose or Docker")
+            raise writer.ApplyError(
+                "Legacy UniFi policy still referenced by Compose or Docker"
+            )
         if snapshot_digest(snapshot(Path(second))) != before:
             raise writer.ApplyError("Legacy UniFi source changed during review")
 
@@ -91,13 +97,16 @@ def review_claim(data, live, ledger, selected, policies):
     if hostname(selected) != selected or not selected:
         raise writer.ApplyError("Legacy claim requires an exact hostname")
     if ledger["pending"] is not None or not ledger["pilot_verified"]:
-        raise writer.ApplyError("Legacy claim requires a verified pilot and no pending write")
+        raise writer.ApplyError(
+            "Legacy claim requires a verified pilot and no pending write"
+        )
     if len(ledger["owned"]) >= MAX_ROWS:
         raise writer.ApplyError("Ownership ledger is at capacity")
     if policy_fingerprint(policies) != live.policies_id:
         raise writer.ApplyError("UniFi policies changed during legacy review")
     matches = [
-        row for row in policies
+        row
+        for row in policies
         if isinstance(row.get("domain"), str)
         and row["domain"].lower().rstrip(".") == selected
     ]
@@ -127,9 +136,12 @@ def review_claim(data, live, ledger, selected, policies):
         for old in ledger["owned"]
     ):
         raise writer.ApplyError("Legacy policy conflicts with existing ownership")
-    if writer.retirement_candidate(
-        entry, live, policies, writer.retirement_protected(live)
-    ) != "orphan":
+    if (
+        writer.retirement_candidate(
+            entry, live, policies, writer.retirement_protected(live)
+        )
+        != "orphan"
+    ):
         raise writer.ApplyError("Legacy policy is not an unblocked retired candidate")
     address = operation["ipv4Address"]
     gateway = live.config[0]
@@ -138,7 +150,9 @@ def review_claim(data, live, ledger, selected, policies):
         gateway, ipaddress.ip_address(address).reverse_pointer + ".", "PTR"
     )
     if forward != ("answered", [address]) or reverse != ("answered", [selected + "."]):
-        raise writer.ApplyError("Legacy policy requires exact matching A and PTR replies")
+        raise writer.ApplyError(
+            "Legacy policy requires exact matching A and PTR replies"
+        )
     writer.retirement_state(data / "unifi-retirement.json", live.target)
     report = {
         "mode": "read_only_legacy_claim",
@@ -207,13 +221,26 @@ def main():
     signal.alarm(180)
     try:
         result = run(Path("/data"), args.hostname, args.approval)
-        print(json.dumps(result, indent=2, sort_keys=True) if isinstance(result, dict) else result)
+        print(
+            json.dumps(result, indent=2, sort_keys=True)
+            if isinstance(result, dict)
+            else result
+        )
         return 0
     except (
-        CloudflareError, OSError, ValueError, TypeError, KeyError, AttributeError,
-        RuntimeError, subprocess.SubprocessError,
+        CloudflareError,
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        subprocess.SubprocessError,
     ):
-        print("ERROR: Legacy UniFi claim blocked; review live evidence and ownership.", file=sys.stderr)
+        print(
+            "ERROR: Legacy UniFi claim blocked; review live evidence and ownership.",
+            file=sys.stderr,
+        )
         return 2
     finally:
         signal.alarm(0)

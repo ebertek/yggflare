@@ -171,7 +171,8 @@ def main(argv=None):
             command = [sys.executable, "/app/integration_inventory.py", args.component]
         return subprocess.run(command, check=False).returncode
     if args.component == "unifi" and args.operation in {
-        "legacy-claim-plan", "legacy-claim-apply"
+        "legacy-claim-plan",
+        "legacy-claim-apply",
     }:
         applying = args.operation == "legacy-claim-apply"
         if (
@@ -182,9 +183,14 @@ def main(argv=None):
             or args.details
             or (applying and args.json)
         ):
-            parser.error("unifi legacy-claim-plan requires HOSTNAME; apply also requires SHA-256 FINGERPRINT")
+            parser.error(
+                "unifi legacy-claim-plan requires HOSTNAME; apply also requires SHA-256 FINGERPRINT"
+            )
         command = [
-            sys.executable, "/app/unifi_legacy_claim.py", "--hostname", args.argument
+            sys.executable,
+            "/app/unifi_legacy_claim.py",
+            "--hostname",
+            args.argument,
         ]
         if applying:
             command.extend(["--approval", args.approval])
