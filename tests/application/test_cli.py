@@ -290,6 +290,52 @@ class CommandTests(unittest.TestCase):
             snapshot.assert_not_called()
             run.assert_not_called()
 
+    def test_legacy_internal_claim_dispatch(self):
+        token = "da8fce91d8119265"
+        for operation, extra in (
+            ("legacy-claim-plan", []),
+            ("legacy-claim-apply", [token]),
+        ):
+            with (
+                self.subTest(operation=operation),
+                patch.object(cli.controller, "snapshot") as snapshot,
+                patch.object(cli.subprocess, "run") as run,
+            ):
+                run.return_value.returncode = 0
+                self.assertEqual(
+                    cli.main(["cloudflare", operation, "demo.ygg.nu", *extra]), 0
+                )
+                snapshot.assert_not_called()
+                command = [
+                    cli.sys.executable,
+                    "/app/cloudflare/cloudflare_legacy_internal_claim.py",
+                    "--hostname",
+                    "demo.ygg.nu",
+                ]
+                if extra:
+                    command.extend(["--approval", token])
+                run.assert_called_once_with(command, check=False)
+
+    def test_legacy_internal_claim_rejects_bad_approval_and_scope(self):
+        token = "da8fce91d8119265"
+        for arguments in (
+            ["cloudflare", "legacy-claim-plan"],
+            ["cloudflare", "legacy-claim-plan", "demo.ygg.nu", token],
+            ["cloudflare", "legacy-claim-apply", "demo.ygg.nu"],
+            ["cloudflare", "legacy-claim-apply", "demo.ygg.nu", "bad"],
+            ["cloudflare", "legacy-claim-plan", "demo.ygg.nu", "--max-operations", "1"],
+            ["cloudflare", "legacy-claim-plan", "demo.ygg.nu", "--json"],
+            ["services", "legacy-claim-plan", "demo.ygg.nu"],
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                contextlib.redirect_stderr(io.StringIO()),
+                patch.object(cli.subprocess, "run") as run,
+                self.assertRaises(SystemExit),
+            ):
+                cli.main(arguments)
+            run.assert_not_called()
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)

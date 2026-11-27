@@ -122,6 +122,39 @@ isolation. Discord notices are best-effort, after verified completion only,
 with no retry after an ambiguous delivery. No legacy endpoint is adopted by
 this workflow.
 
+### Explicit adoption of a retired, unmanaged Docker A record
+
+For a single legacy internal hostname that is no longer declared, review:
+
+```sh
+docker exec yggflare yggflare cloudflare legacy-claim-plan host.internal.example.net
+```
+
+If the exact record identity and address are correct, and no remaining
+application, network device, compatibility resolver or other external
+dependency needs the record, approve the printed fingerprint:
+
+```sh
+docker exec yggflare yggflare cloudflare legacy-claim-apply host.internal.example.net APPROVAL_FINGERPRINT
+```
+
+This is explicit authorization to bring the retired A record under the
+existing Docker ownership/retirement lifecycle, **not an immediate DELETE**.
+The command uses Cloudflare GET only and writes private ownership state
+only after a second, matching live plan. With internal automatic cleanup
+enabled, the newly claimed record may be deleted after a new observed
+grace period and all normal revalidation checks. If cleanup is disabled,
+the claim does not turn it on. The grace period is not backdated.
+
+Only one unique DNS-only A record in the configured Docker allocation can
+be adopted this way. Existing ownership, static-device allocations, any
+visible declaration/dependency/conflict, changed records and pending
+retirement recovery block approval. The plan binds the account, both zones,
+domain, allocation, record ID, address and exact detail fingerprint.
+Neither bulk claims nor automatic claims use this legacy workflow.
+No external DNS/Tunnel/Access or UniFi resources are adopted or deleted.
+
+
 ### DNS quota
 
 With Docker creation enabled, Yggflare reads the internal zone's actual
