@@ -4,11 +4,14 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 import metrics
 import web
+from mcp_server import InventoryTools
+from web_views import cloudflare_view
 
 
 class MetricsTests(unittest.TestCase):
@@ -136,6 +139,14 @@ class MetricsTests(unittest.TestCase):
         self.assertIn("yggflare_inventory_state_present 0", output)
         self.assertIn("yggflare_network_state_present 0", output)
         self.assertIn("yggflare_cloudflare_snapshot_stale 1", output)
+        for name in (
+            "inventory_declared_hosts",
+            "network_discovered_ipv4_hosts",
+            "network_active_findings",
+            "network_dns_sd_services",
+            "cloudflare_orphan_hosts",
+        ):
+            self.assertNotIn(f"\nyggflare_{name} ", output)
         self.assertNotIn(
             "\nyggflare_network_scan_last_success_timestamp_seconds ",
             output,
@@ -194,7 +205,9 @@ class MetricsTests(unittest.TestCase):
                     }
                 )
             )
-            (root / "cloudflare-view-status.json").write_text('{"ok":true}')
+            (root / "cloudflare-view-status.json").write_text(
+                '{"ok":true,"attempted_at":"2026-11-03T19:00:00+00:00"}'
+            )
             sample = metrics.render(root, root, now=1793734200).decode()
         for expected in (
             "yggflare_inventory_declared_hosts 1",
@@ -228,7 +241,9 @@ class MetricsTests(unittest.TestCase):
             (root / "cloudflare-view.json").write_text(
                 '{"audited_at":"2026-11-03T00:00:00+00:00","hosts":[]}'
             )
-            (root / "cloudflare-view-status.json").write_text('{"ok":true}')
+            (root / "cloudflare-view-status.json").write_text(
+                '{"ok":true,"attempted_at":"2026-11-03T00:00:00+00:00"}'
+            )
             reference = 1793664000
             fresh = metrics.render(root, root, now=reference + 3600).decode()
             stale = metrics.render(root, root, now=reference + 9 * 3600).decode()
@@ -237,6 +252,50 @@ class MetricsTests(unittest.TestCase):
             (root / "cloudflare-view-status.json").write_text('{"ok":false}')
             failed = metrics.render(root, root, now=reference + 3600).decode()
             self.assertIn("yggflare_cloudflare_snapshot_stale 1", failed)
+
+    def test_cloudflare_evidence_parity(self):
+        now = datetime.now(UTC)
+        stamp = (now - timedelta(minutes=1)).isoformat()
+        future = (now + timedelta(hours=1)).isoformat()
+        for view, marker, available, verified in (
+            ({"audited_at": stamp, "hosts": []}, stamp, True, True),
+            ({"audited_at": stamp, "hosts": []}, future, True, False),
+            ({"audited_at": future, "hosts": []}, future, False, False),
+            ({"audited_at": stamp}, stamp, False, False),
+            ({}, stamp, False, False),
+        ):
+            with (
+                self.subTest(view=view, marker=marker),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                root = Path(tmp)
+                status = {"ok": True, "attempted_at": marker}
+                (root / "cloudflare-view.json").write_text(json.dumps(view))
+                (root / "cloudflare-view-status.json").write_text(json.dumps(status))
+                data = {"cloudflare_view": view, "cloudflare_view_status": status}
+                result = InventoryTools(lambda: data).get_cloudflare_lifecycle()
+                self.assertEqual(result["snapshot_available"], available)
+                self.assertEqual(result["last_refresh_verified"], verified)
+                self.assertEqual(result["fresh"], verified)
+                self.assertEqual("ownership_counts" in result, available)
+                html = cloudflare_view(data, lambda *_: "")
+                self.assertEqual("No complete Cloudflare" in html, not available)
+                self.assertEqual(
+                    "Latest refresh failed" in html, available and not verified
+                )
+                scrape = metrics.render(root, root, now=now.timestamp()).decode()
+                self.assertIn(
+                    f"yggflare_cloudflare_snapshot_present {int(available)}", scrape
+                )
+                self.assertIn(
+                    f"yggflare_cloudflare_last_refresh_success {int(verified)}", scrape
+                )
+                self.assertIn(
+                    f"yggflare_cloudflare_snapshot_stale {int(not verified)}", scrape
+                )
+                self.assertEqual(
+                    "\nyggflare_cloudflare_orphan_hosts " in scrape, available
+                )
 
     def test_malformed_state_refuses_to_publish_misleading_zeros(self):
         with tempfile.TemporaryDirectory() as tmp:

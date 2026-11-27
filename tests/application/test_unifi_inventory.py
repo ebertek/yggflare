@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -249,6 +250,55 @@ class UniFiInventoryTests(unittest.TestCase):
                     self.assertNotIn(KEY, sample)
                     self.assertNotIn("192.168.12.", sample)
                     self.assertNotIn("<gateway>", sample)
+
+    def test_unifi_dashboard_queries_match_exported_metric_names(self):
+        child, parent = (row["id"] for row in ROWS["devices"])
+        refresh(
+            "unifi",
+            self.root,
+            ENV,
+            self.root,
+            self.fetch,
+            device_detail=lambda config, key, site, device: (
+                {"id": child, "uplink": {"deviceId": parent}}
+                if device == child
+                else {"id": parent}
+            ),
+        )
+        (self.root / "job-status.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "jobs": {
+                        "unifi_apply": {
+                            "status": "succeeded",
+                            "started_at": "2026-01-01T00:00:00Z",
+                            "last_success_at": "2026-01-01T00:00:01Z",
+                        }
+                    },
+                }
+            )
+        )
+        with patch.dict(os.environ, ENV):
+            scrape = metrics.render(self.root, self.root).decode()
+        names = {
+            line.split()[0]
+            for line in scrape.splitlines()
+            if line.startswith("yggflare_")
+        }
+        dashboard = json.loads(
+            (Path(__file__).resolve().parents[2] / "dashboards/yggflare.json").read_text()
+        )
+        queries = [
+            target["expr"]
+            for panel in dashboard["panels"]
+            if panel["title"].startswith("UniFi ")
+            for target in panel["targets"]
+        ]
+        self.assertTrue(queries)
+        for expr in queries:
+            for name in re.findall(r"yggflare_[a-z_]+", expr):
+                self.assertIn(name, names, expr)
 
     def test_device_uplink_projection_and_partial_failure(self):
         child, parent = (row["id"] for row in ROWS["devices"])

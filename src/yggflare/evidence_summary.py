@@ -131,6 +131,34 @@ def observation_time(value):
         return None
 
 
+def cloudflare_snapshot_status(view, status, now):
+    """Distinguish a retained lifecycle snapshot from its verified refresh."""
+    stamp = observation_time(view.get("audited_at"))
+    hosts = view.get("hosts")
+    available = bool(
+        stamp is not None
+        and stamp <= now
+        and isinstance(hosts, list)
+        and all(isinstance(row, dict) for row in hosts)
+    )
+    verified = bool(
+        available
+        and status.get("ok") is True
+        and status.get("attempted_at") == view.get("audited_at")
+    )
+    return {
+        "snapshot_available": available,
+        "audited_at": view.get("audited_at") if available else None,
+        "latest_attempt_at": (
+            status.get("attempted_at")
+            if observation_time(status.get("attempted_at")) is not None
+            else None
+        ),
+        "last_refresh_verified": verified,
+        "fresh": bool(verified and (now - stamp).total_seconds() <= 8 * 3600),
+    }
+
+
 def observation_window(sources, now):
     """Describe timestamp spread without asserting synchronized collection."""
     times = {}
