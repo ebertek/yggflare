@@ -13,14 +13,31 @@ import unifi_apply as unifi
 import unifi_legacy_claim as unifi_claim
 from cloudflare_api import CloudflareClient
 from cloudflare_credentials import api_token
-from cloudflare_internal_cleanup import fresh_review, journal_path, load_state, scope_for
-from cloudflare_internal_retirement import compose_evidence, docker_containers, runtime_evidence
-from cloudflare_legacy_external_claim import resolve_scope, review_claim as external_claim
+from cloudflare_internal_cleanup import (
+    fresh_review,
+    journal_path,
+    load_state,
+    scope_for,
+)
+from cloudflare_internal_retirement import (
+    compose_evidence,
+    docker_containers,
+    runtime_evidence,
+)
+from cloudflare_legacy_external_claim import resolve_scope
+from cloudflare_legacy_external_claim import review_claim as external_claim
 from cloudflare_legacy_internal_claim import review_claim as internal_claim
-from cloudflare_orphans import AUTO_STATE, candidates, desired_hosts, live_resources, load_registry, review_orphan
+from cloudflare_orphans import (
+    AUTO_STATE,
+    candidates,
+    desired_hosts,
+    live_resources,
+    load_registry,
+    review_orphan,
+)
 from service_retirement_view import FILENAME, LABEL, LAYERS, valid_snapshot
 from traefik_inventory import read, write
-from unifi_api import all_rows, row_id
+from unifi_api import all_rows
 from unifi_reconcile_plan import load_live
 from yggflare_config import cloudflare_settings
 from yggflare_env import getenv
@@ -53,10 +70,17 @@ def external_review(client, root, data, settings, name):
     owned = ledger["hosts"].get(name)
     apps, records, routes = candidates(name, *live_resources(client, bound))
     counts = {
-        "access_count": len(apps), "dns_count": len(records), "tunnel_count": len(routes),
-        "ownership": ("legacy" if "legacy" in owned else "owned") if owned else "unmanaged",
+        "access_count": len(apps),
+        "dns_count": len(records),
+        "tunnel_count": len(routes),
+        "ownership": (
+            ("legacy" if "legacy" in owned else "owned") if owned else "unmanaged"
+        ),
         "auto_cleanup": getenv("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true",
-        "grace_required_seconds": int(getenv("YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS", "24")) * 3600,
+        "grace_required_seconds": int(
+            getenv("YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS", "24")
+        )
+        * 3600,
         "grace_seconds": None,
     }
     if name in desired_hosts(client, root, bound["account"]):
@@ -88,24 +112,39 @@ def internal_review(client, data, settings, name):
     rows = report["rows"]
     result = {
         "dns_count": report["selected_dns_record_count"],
-        "auto_cleanup": getenv("YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP", "false") == "true",
-        "grace_required_seconds": int(getenv("YGGFLARE_CLOUDFLARE_INTERNAL_ORPHAN_GRACE_HOURS", "24")) * 3600,
+        "auto_cleanup": getenv("YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP", "false")
+        == "true",
+        "grace_required_seconds": int(
+            getenv("YGGFLARE_CLOUDFLARE_INTERNAL_ORPHAN_GRACE_HOURS", "24")
+        )
+        * 3600,
         "grace_seconds": None,
         "pending": False,
     }
-    state = load_state(data, scope_for(bound, external)) if journal_path(data).exists() else None
+    state = (
+        load_state(data, scope_for(bound, external))
+        if journal_path(data).exists()
+        else None
+    )
     if state:
         result["pending"] = state["pending"] is not None
     if len(rows) != 1:
         status = "absent" if not rows and not result["dns_count"] else "unsupported"
         return {**result, "status": status}
     row = rows[0]
-    result.update(address=row["address"], ownership=row["ownership"], status=row["status"])
+    result.update(
+        address=row["address"], ownership=row["ownership"], status=row["status"]
+    )
     if state and row["status"] == "candidate_review_only":
         observed = state["observations"].get(row["record_id"])
         entry = owned.get(row["record_id"])
         now = time.time()
-        if observed and entry and observed["entry"] == entry[1] and 0 <= now - observed["last"] <= 28800:
+        if (
+            observed
+            and entry
+            and observed["entry"] == entry[1]
+            and 0 <= now - observed["last"] <= 28800
+        ):
             result["grace_seconds"] = int(now - observed["first"])
     if row["status"] == "unmanaged":
         try:
@@ -131,14 +170,20 @@ def unifi_review(data, name):
     if unifi.policy_fingerprint(policies) != live.policies_id:
         raise ValueError("UniFi policy evidence changed")
     matches = [
-        row for row in policies
-        if isinstance(row.get("domain"), str) and row["domain"].lower().rstrip(".") == name
+        row
+        for row in policies
+        if isinstance(row.get("domain"), str)
+        and row["domain"].lower().rstrip(".") == name
     ]
-    owners = [entry for entry in ledger["owned"] if entry["operation"]["domain"] == name]
+    owners = [
+        entry for entry in ledger["owned"] if entry["operation"]["domain"] == name
+    ]
     result = {
-        "policy_count": len(matches), "pending": ledger["pending"] is not None,
+        "policy_count": len(matches),
+        "pending": ledger["pending"] is not None,
         "auto_cleanup": unifi.retirement_enabled(),
-        "grace_required_seconds": unifi.retirement_grace(), "grace_seconds": None,
+        "grace_required_seconds": unifi.retirement_grace(),
+        "grace_seconds": None,
     }
     if not matches and not owners:
         return {**result, "status": "absent"}
@@ -146,13 +191,24 @@ def unifi_review(data, name):
         return {**result, "status": "policy_conflict"}
     if owners:
         entry = owners[0]
-        result["ownership"] = "manual" if entry["manual"] else ("legacy" if "legacy" in entry else "owned")
+        result["ownership"] = (
+            "manual"
+            if entry["manual"]
+            else ("legacy" if "legacy" in entry else "owned")
+        )
         result["address"] = entry["operation"]["ipv4Address"]
         try:
-            previous = unifi.retirement_state(data / "unifi-retirement.json", live.target)
+            previous = unifi.retirement_state(
+                data / "unifi-retirement.json", live.target
+            )
             rows, _ = unifi.retirement_report(
-                live, {**ledger, "owned": owners}, policies, unifi.retirement_protected(live),
-                previous, int(time.time()), unifi.retirement_grace()
+                live,
+                {**ledger, "owned": owners},
+                policies,
+                unifi.retirement_protected(live),
+                previous,
+                int(time.time()),
+                unifi.retirement_grace(),
             )
             result["status"] = rows[0]["status"]
             result["grace_seconds"] = rows[0]["observed_orphan_seconds"]
@@ -174,9 +230,12 @@ def unifi_review(data, name):
     if result.get("address"):
         address = ipaddress.IPv4Address(result["address"])
         if address in ipaddress.IPv4Network(live.comparison["configured_lan"]):
-            result["forward"] = reply_state(unifi.query(live.config[0], name + ".", "A"), str(address))
+            result["forward"] = reply_state(
+                unifi.query(live.config[0], name + ".", "A"), str(address)
+            )
             result["reverse"] = reply_state(
-                unifi.query(live.config[0], address.reverse_pointer + ".", "PTR"), name + "."
+                unifi.query(live.config[0], address.reverse_pointer + ".", "PTR"),
+                name + ".",
             )
     return result
 
@@ -194,25 +253,56 @@ def collect(data, service):
             snapshot(root)
             declared, _, _ = compose_evidence(root, settings["internal_zone"])
             public, _, _ = compose_evidence(root, settings["external_zone"])
-            return {"status": "present" if internal in declared or external in public else "absent"}
+            return {
+                "status": (
+                    "present"
+                    if internal in declared or external in public
+                    else "absent"
+                )
+            }
 
         def runtime():
             containers = docker_containers()
             declared, _ = runtime_evidence(containers, settings["internal_zone"])
             public, _ = runtime_evidence(containers, settings["external_zone"])
-            return {"status": "present" if internal in declared or external in public else "absent"}
+            return {
+                "status": (
+                    "present"
+                    if internal in declared or external in public
+                    else "absent"
+                )
+            }
 
         # Credentials are read only by this explicit collector, never by saved views.
         def cloud_external():
-            return external_review(CloudflareClient(api_token()), root, data, settings, external)
+            return external_review(
+                CloudflareClient(api_token()), root, data, settings, external
+            )
 
         def cloud_internal():
-            return internal_review(CloudflareClient(api_token()), data, settings, internal)
+            return internal_review(
+                CloudflareClient(api_token()), data, settings, internal
+            )
 
-        collectors = (compose, runtime, cloud_external, cloud_internal, lambda: unifi_review(data, internal))
-        rows = [source_row(layer, name, fn) for layer, name, fn in zip(LAYERS, names, collectors, strict=True)]
-    document = {"version": 1, "service": label, "internal": internal, "external": external,
-                "items": rows, "item_count": len(rows)}
+        collectors = (
+            compose,
+            runtime,
+            cloud_external,
+            cloud_internal,
+            lambda: unifi_review(data, internal),
+        )
+        rows = [
+            source_row(layer, name, fn)
+            for layer, name, fn in zip(LAYERS, names, collectors, strict=True)
+        ]
+    document = {
+        "version": 1,
+        "service": label,
+        "internal": internal,
+        "external": external,
+        "items": rows,
+        "item_count": len(rows),
+    }
     if not valid_snapshot(document):
         raise ValueError("Invalid sanitized retirement review")
     write(data / FILENAME, document, durable=True)
@@ -226,7 +316,9 @@ def main():
     signal.alarm(300)
     try:
         unavailable = collect(Path("/data"), args.service)
-        print(f"Saved selected service retirement review; {unavailable} unavailable layers.")
+        print(
+            f"Saved selected service retirement review; {unavailable} unavailable layers."
+        )
         return 2 if unavailable else 0
     except Exception:
         print("ERROR: Retirement evidence collection failed.", file=sys.stderr)

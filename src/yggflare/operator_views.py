@@ -12,7 +12,11 @@ VIEWS = {
         "list": ("Docker services", "list_docker_services", "query"),
         "show": ("Exact service", "get_docker_service", "identifier"),
         "drift": ("Compose review findings", "get_compose_drift", ""),
-        "retirement-plan": ("Saved retirement review", "get_service_retirement", "service"),
+        "retirement-plan": (
+            "Saved retirement review",
+            "get_service_retirement",
+            "service",
+        ),
         "dependencies": (
             "Declared dependencies",
             "get_service_dependencies",
@@ -306,7 +310,7 @@ def render(area, tools, table, params):
             "<p>Saved evidence only. Refresh explicitly using the operator CLI.</p>"
             '<form method="get" action="/services">'
             '<input type="hidden" name="view" value="retirement-plan">'
-            '<label>Service label or hostname '
+            "<label>Service label or hostname "
             f'<input name="q" value="{escape(value, quote=True)}"></label>'
             '<button type="submit">Show saved review</button></form>'
         )

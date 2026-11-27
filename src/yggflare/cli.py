@@ -154,10 +154,15 @@ def main(argv=None):
         parser.error("Pagination and project options require a read-only operator view")
     if args.component == "services" and args.operation == "retirement-refresh":
         if (
-            not args.argument or args.approval is not None
-            or args.max_operations or args.details or args.json
+            not args.argument
+            or args.approval is not None
+            or args.max_operations
+            or args.details
+            or args.json
         ):
-            parser.error("services retirement-refresh requires one service label or hostname")
+            parser.error(
+                "services retirement-refresh requires one service label or hostname"
+            )
         return subprocess.run(
             [sys.executable, "/app/service_retirement_collect.py", "--", args.argument],
             check=False,
