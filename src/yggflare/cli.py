@@ -246,11 +246,6 @@ def main(argv=None):
         if args.argument:
             command.extend(("--", args.argument))
         return subprocess.run(command, check=False).returncode
-    network_status = args.component == "network" and args.operation == "status"
-    if (args.details or args.json) and not network_status:
-        parser.error("--details and --json require network status")
-    if args.operation == "serve" and args.component != "mcp":
-        parser.error("serve requires mcp")
     if args.component == "mcp":
         if (
             args.operation not in {"serve", "check"}
@@ -265,6 +260,11 @@ def main(argv=None):
         return subprocess.run(
             [sys.executable, f"/app/{script}"], check=False
         ).returncode
+    network_status = args.component == "network" and args.operation == "status"
+    if (args.details or args.json) and not network_status:
+        parser.error("--details and --json require network status")
+    if args.operation == "serve" and args.component != "mcp":
+        parser.error("serve requires mcp")
     if network_status:
         if args.argument or args.approval or args.max_operations != 0:
             parser.error("network status accepts no additional positional arguments")
