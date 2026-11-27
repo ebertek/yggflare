@@ -1,4 +1,4 @@
-"""Guarded, create-only UniFi DNS policy reconciliation."""
+"""Guarded UniFi DNS creation and explicitly approved owned-policy repair."""
 
 import argparse
 import fcntl
@@ -36,6 +36,7 @@ from unifi_dns import ipv4, is_rfc1918, plan
 from unifi_dns_verify import query
 from unifi_reconcile_plan import (
     TTL_SECONDS,
+    fingerprint,
     load_live,
     policy_fingerprint,
     review,
@@ -49,6 +50,7 @@ DNS_VERIFICATION_RETRY_SECONDS = 5
 DIGEST = re.compile(r"[0-9a-f]{64}")
 UNIFI_KEY_FILE = "/run/secrets/unifi_api_key"
 NOTICE_STATES = ("pending", "attempted", "accepted", "unconfirmed")
+REPAIR_ACTIONS = ("update", "recreate")
 
 
 class ApplyError(ValueError):
@@ -105,12 +107,41 @@ def load_ledger(path, target):
     ):
         raise ApplyError("Ownership ledger is invalid or belongs to another target")
     seen_ids, seen_names, seen_ips = set(), set(), set()
+    repair = pending.get("repair") if isinstance(pending, dict) else None
+    previous = None
+    if repair is not None:
+        if (
+            not isinstance(repair, dict)
+            or repair.keys() != {"action", "previous_id", "previous_address"}
+            or repair["action"] not in REPAIR_ACTIONS
+            or row_id(repair["previous_id"]) != repair["previous_id"]
+            or not is_rfc1918(ipv4(repair["previous_address"]))
+        ):
+            raise ApplyError("Ownership ledger contains an invalid repair")
+        matches = [
+            entry
+            for entry in owned
+            if isinstance(entry, dict)
+            and entry.get("policy_id") == repair["previous_id"]
+        ]
+        if len(matches) != 1:
+            raise ApplyError("Repair lacks a unique previous ownership entry")
+        previous = matches[0]
     entries = owned if pending is None else [*owned, pending]
     for entry in entries:
         if (
             not isinstance(entry, dict)
-            or entry.keys() - {"notice", "verification_deadline"}
+            or entry.keys() - {"notice", "verification_deadline", "repair", "notice_kind"}
             != {"operation", "policy_id", "manual"}
+            or ("repair" in entry and (entry is not pending or repair is None))
+            or (
+                "notice_kind" in entry
+                and (
+                    entry is pending
+                    or "notice" not in entry
+                    or entry["notice_kind"] not in REPAIR_ACTIONS
+                )
+            )
             or (
                 "notice" in entry
                 and (entry is pending or entry["notice"] not in NOTICE_STATES)
@@ -131,6 +162,29 @@ def load_ledger(path, target):
         identifier = entry["policy_id"]
         operation = entry["operation"]
         name, address = operation["domain"], operation["ipv4Address"]
+        if entry is pending and previous is not None:
+            old = previous["operation"]
+            if (
+                name != old["domain"]
+                or repair["previous_address"] != old["ipv4Address"]
+                or entry["manual"] != previous["manual"]
+                or (
+                    repair["action"] == "update"
+                    and (
+                        address == old["ipv4Address"]
+                        or identifier not in (None, previous["policy_id"])
+                    )
+                )
+                or (
+                    repair["action"] == "recreate"
+                    and identifier == previous["policy_id"]
+                )
+            ):
+                raise ApplyError("Repair does not match previous ownership")
+            # Allow overlap only with the replaced entry, never another owner.
+            seen_names.remove(old["domain"])
+            seen_ips.remove(old["ipv4Address"])
+            seen_ids.remove(previous["policy_id"])
         if identifier is None:
             if entry is not pending:
                 raise ApplyError("Ownership ledger lacks an acknowledged policy ID")
@@ -182,10 +236,15 @@ def create_policy(live, key, operation):
     return identifier
 
 
-def discord_notice(operation):
+def discord_notice(operation, kind="create"):
     webhook = urlsplit(read_webhook())
+    title = {
+        "create": "UniFi DNS created",
+        "update": "UniFi DNS updated",
+        "recreate": "UniFi DNS restored",
+    }[kind]
     message = embed_payload(
-        "UniFi DNS created",
+        title,
         f"{inline_code(operation['domain'])} → "
         f"{inline_code(operation['ipv4Address'])}\n"
         f"A & PTR verified · TTL {operation['ttlSeconds']}s",
@@ -219,7 +278,12 @@ def deliver_notice(path, ledger):
         entry["notice"] = "attempted"
         write(path, ledger, durable=True)
         try:
-            accepted = discord_notice(entry["operation"])
+            kind = entry.get("notice_kind")
+            accepted = (
+                discord_notice(entry["operation"], kind)
+                if kind
+                else discord_notice(entry["operation"])
+            )
         except (ValueError, OSError, http.client.HTTPException):
             accepted = False
         entry["notice"] = "accepted" if accepted else "unconfirmed"
@@ -250,6 +314,12 @@ def pending_dns_missing(entry, live):
             "Acknowledged policy could not be uniquely verified; writes remain blocked"
         )
     address, name = operation["ipv4Address"], operation["domain"]
+    repair = entry.get("repair")
+    if repair and (
+        not repair_desired(live, name, address)
+        or (name, address) not in automatic_targets(live.comparison["source_zone"])
+    ):
+        raise ApplyError("Repair declaration changed; writes remain blocked")
     comparison = plan(
         [{"name": name, "type": "A", "content": address, "proxied": False}],
         policies,
@@ -269,6 +339,16 @@ def pending_dns_missing(entry, live):
         if status == "answered" and values == [expected]:
             continue
         if status in {"nxdomain", "nodata"} and not values:
+            missing = True
+            continue
+        if (
+            repair
+            and expected == address
+            and status == "answered"
+            and values == [repair["previous_address"]]
+            and address != repair["previous_address"]
+        ):
+            # A cached pre-repair forward answer is known, not a new conflict.
             missing = True
             continue
         if status in {"answered", "unexpected_answer"}:
@@ -311,8 +391,17 @@ def confirm_pending(path, ledger, live):
             f"Acknowledged policy is awaiting matching A and PTR replies (deadline {expires})"
         )
     del entry["verification_deadline"]
+    repair = entry.pop("repair", None)
+    if repair:
+        ledger["owned"] = [
+            old
+            for old in ledger["owned"]
+            if old["policy_id"] != repair["previous_id"]
+        ]
     if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
         entry["notice"] = "pending"
+        if repair:
+            entry["notice_kind"] = repair["action"]
     ledger["owned"].append(entry)
     ledger["pilot_verified"] |= entry["manual"]
     ledger["pending"] = None
@@ -380,9 +469,10 @@ def run(data, selected="", approval="", *, automatic=False):
         ledger = load_ledger(ledger_path, live.target)
         deliver_notice(ledger_path, ledger)
         if ledger["pending"] is not None:
+            kind = "repair" if ledger["pending"].get("repair") else "create"
             confirm_pending(ledger_path, ledger, live)
             deliver_notice(ledger_path, ledger)
-            return "Recovered and verified the pending UniFi create"
+            return f"Recovered and verified the pending UniFi {kind}"
         owned = {entry["operation"]["domain"] for entry in ledger["owned"]}
         owned_ips = {entry["operation"]["ipv4Address"] for entry in ledger["owned"]}
         if automatic:
@@ -457,16 +547,248 @@ def run(data, selected="", approval="", *, automatic=False):
         return "Created and verified one UniFi DNS policy"
 
 
+def repair_desired(live, name, address):
+    """Require one unambiguous in-LAN Cloudflare A record."""
+    rows = [row for row in live.comparison["rows"] if row["hostname"] == name]
+    choices = [
+        row
+        for row in live.comparison["reverse_expectations"]
+        if row["address"] == address
+    ]
+    return (
+        len(rows) == 1
+        and rows[0]["address"] == address
+        and rows[0]["in_configured_lan"] is True
+        and rows[0]["status"] in {"candidate", "matched", "local_conflict"}
+        and len(choices) == 1
+        and choices[0]["selection"] == "unique"
+        and choices[0]["canonical_hostname"] == name
+    )
+
+
+def repair_review(live, ledger, selected, policies, targets):
+    """Build a hostname-specific, read-only repair preview from proven ownership."""
+    if hostname(selected) != selected or ledger["pending"] is not None:
+        raise ApplyError("Repair requires an exact hostname and no pending write")
+    owned = [
+        entry for entry in ledger["owned"] if entry["operation"]["domain"] == selected
+    ]
+    if len(owned) != 1:
+        raise ApplyError("Repair requires a previously verified owned policy")
+    old = owned[0]
+    old_op = old["operation"]
+    candidates = [
+        row for row in live.comparison["rows"] if row["hostname"] == selected
+    ]
+    address = candidates[0]["address"] if len(candidates) == 1 else None
+    if (
+        not address
+        or not repair_desired(live, selected, address)
+        or (selected, address) not in targets
+        or any(
+            entry is not old and entry["operation"]["ipv4Address"] == address
+            for entry in ledger["owned"]
+        )
+    ):
+        raise ApplyError("Repair desired address is ambiguous, undeclared or out of scope")
+    if policy_fingerprint(policies) != live.policies_id:
+        raise ApplyError("UniFi policies changed during repair preview")
+    matching_id = [
+        policy for policy in policies if row_id(policy["id"]) == old["policy_id"]
+    ]
+    remaining = policies
+    if matching_id:
+        current = matching_id[0]
+        if (
+            len(matching_id) != 1
+            or not policy_matches(current, old_op)
+            or current.get("metadata") not in (None, {})
+        ):
+            raise ApplyError("Owned policy was modified externally; review required")
+        if address == old_op["ipv4Address"]:
+            raise ApplyError("Owned policy already matches the declared address")
+        action = "update"
+        remaining = [policy for policy in policies if policy is not current]
+    else:
+        action = "recreate"
+    candidate = plan(
+        [{"name": selected, "type": "A", "content": address, "proxied": False}],
+        remaining,
+        live.comparison["source_zone"],
+        ipaddress.IPv4Network(live.comparison["configured_lan"]),
+    )
+    if candidate["counts"] != {"candidate": 1}:
+        raise ApplyError("Existing DNS policy or address conflict prevents repair")
+    gateway = live.config[0]
+    forward = query(gateway, selected + ".", "A")
+    reverse = query(gateway, ipaddress.IPv4Address(address).reverse_pointer + ".", "PTR")
+    allowed_forward = [address]
+    if action == "update":
+        allowed_forward.append(old_op["ipv4Address"])
+    if not (
+        (
+            forward[0] == "answered"
+            and len(forward[1]) == 1
+            and forward[1][0] in allowed_forward
+        )
+        or (forward[0] in {"nxdomain", "nodata"} and not forward[1])
+    ):
+        raise ApplyError("Unexpected forward DNS answer prevents repair")
+    if not (
+        (reverse[0] == "answered" and reverse[1] == [selected + "."])
+        or (reverse[0] in {"nxdomain", "nodata"} and not reverse[1])
+    ):
+        raise ApplyError("Unexpected reverse DNS answer prevents repair")
+    report = {
+        "mode": "read_only_owned_repair",
+        "action": action,
+        "hostname": selected,
+        "previous_policy_id": old["policy_id"],
+        "previous_address": old_op["ipv4Address"],
+        "operation": {**old_op, "ipv4Address": address},
+        "forward": forward,
+        "reverse": reverse,
+    }
+    report["fingerprint"] = fingerprint(
+        {"inputs": live.inputs, "ledger": ledger, "report": report}
+    )
+    encoded = json.dumps(report)
+    if any(secret in encoded for secret in (live.key, live.token) if len(secret) >= 8):
+        raise ApplyError("Repair preview contains a credential echo")
+    return report
+
+
+def preview_repair(live, ledger, selected):
+    policies = all_rows(live.config, live.key, "dns", live.site)
+    targets = automatic_targets(live.comparison["source_zone"])
+    return repair_review(live, ledger, selected, policies, targets)
+
+
+def update_policy(live, key, identifier, operation):
+    """Replace only the explicitly reviewed policy ID, with a matching acknowledgement."""
+    if not valid_operation(operation):
+        raise ApplyError("Update operation failed validation")
+    identifier = row_id(identifier)
+    path = f"{PREFIX}/sites/{row_id(live.site)}/dns/policies/{identifier}"
+    payload = {
+        field: value for field, value in operation.items() if field != "operation"
+    }
+    conn = connection(live.config)
+    try:
+        conn.request(
+            "PUT",
+            path,
+            body=json.dumps(payload).encode(),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-API-Key": key,
+            },
+        )
+        updated = response_json(conn.getresponse(), 200)
+    finally:
+        conn.close()
+    if not policy_matches(updated, operation) or row_id(updated.get("id")) != identifier:
+        raise ApplyError("Update acknowledgement does not match the reviewed policy")
+    return identifier
+
+
+def run_repair(data, selected, approval=None):
+    """Manual repair uses the same lock, journal and recovery path as creation."""
+    if hostname(selected) != selected or (
+        approval is not None and not DIGEST.fullmatch(approval)
+    ):
+        raise ApplyError("Repair requires an exact hostname and valid fingerprint")
+    path = data / "unifi-ownership.json"
+    if approval is None:
+        live = load_live()
+        return preview_repair(live, load_ledger(path, live.target), selected)
+
+    with (data / "unifi-apply.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        live = load_live()
+        ledger = load_ledger(path, live.target)
+        if ledger["pending"] is not None:
+            pending = ledger["pending"]
+            if not pending.get("repair") or pending["operation"]["domain"] != selected:
+                raise ApplyError("Another pending operation blocks repair")
+            confirm_pending(path, ledger, live)
+            deliver_notice(path, ledger)
+            return "Recovered and verified the pending UniFi repair"
+        deliver_notice(path, ledger)
+        report = preview_repair(live, ledger, selected)
+        if not hmac.compare_digest(report["fingerprint"], approval):
+            raise ApplyError("Live repair preview changed; review a fresh fingerprint")
+        if os.environ.get("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
+            raise ApplyError("UniFi repair requires the mounted Compose secret")
+        refreshed = load_live()
+        checked = preview_repair(refreshed, ledger, selected)
+        if not hmac.compare_digest(checked["fingerprint"], approval):
+            raise ApplyError("Live repair inputs changed")
+        policies = all_rows(refreshed.config, refreshed.key, "dns", refreshed.site)
+        if policy_fingerprint(policies) != refreshed.policies_id:
+            raise ApplyError("UniFi policies changed immediately before repair")
+        operation = report["operation"]
+        if (selected, operation["ipv4Address"]) not in automatic_targets(
+            refreshed.comparison["source_zone"]
+        ):
+            raise ApplyError("DNS declaration changed immediately before repair")
+        old = next(
+            entry
+            for entry in ledger["owned"]
+            if entry["policy_id"] == report["previous_policy_id"]
+        )
+        pending = {
+            "operation": operation,
+            "policy_id": None,
+            "manual": old["manual"],
+            "repair": {
+                "action": report["action"],
+                "previous_id": old["policy_id"],
+                "previous_address": report["previous_address"],
+            },
+        }
+        ledger["pending"] = pending
+        write(path, ledger, durable=True)
+        if report["action"] == "update":
+            identifier = update_policy(
+                refreshed, refreshed.key, old["policy_id"], operation
+            )
+        else:
+            identifier = create_policy(refreshed, refreshed.key, operation)
+            if identifier == old["policy_id"]:
+                raise ApplyError("Recreated policy unexpectedly reused the previous ID")
+        pending.update(
+            policy_id=identifier, verification_deadline=verification_deadline()
+        )
+        write(path, ledger, durable=True)
+        confirm_pending(path, ledger, load_live())
+        deliver_notice(path, ledger)
+        return "Repaired and verified one UniFi DNS policy"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("hostname", nargs="?", default="")
     parser.add_argument("fingerprint", nargs="?", default="")
     parser.add_argument("--automatic", action="store_true")
+    parser.add_argument("--repair", action="store_true")
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     signal.alarm(180)
     try:
-        if args.automatic and (args.hostname or args.fingerprint):
-            raise ApplyError("Automatic invocation accepts no positional arguments")
+        if args.repair:
+            if args.automatic or (args.json and args.fingerprint):
+                raise ApplyError("Invalid repair invocation")
+            result = run_repair(Path("/data"), args.hostname, args.fingerprint or None)
+            print(
+                json.dumps(result, indent=2, sort_keys=True)
+                if isinstance(result, dict)
+                else result
+            )
+            return 0
+        if args.json or (args.automatic and (args.hostname or args.fingerprint)):
+            raise ApplyError("Invalid create invocation")
         print(
             run(
                 Path("/data"), args.hostname, args.fingerprint, automatic=args.automatic

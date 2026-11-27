@@ -163,14 +163,40 @@ are rechecked before creation. Manual approval remains available.
 The `unifi_apply` job creates at most one policy per invocation. Its independent
 interval defaults to 60 seconds (30–3600 configurable). Pending verification
 uses a 30-second retry interval. Other collectors keep their existing schedules.
-An unresolved journal entry blocks further creates. Previously owned
-records that disappear or drift require manual review; the writer does
-not update or delete existing policies.
+An unresolved journal entry blocks further creates. Owned policy repair
+requires manual approval; automatic creation never repairs or deletes policies.
 
 Discord notifications are optional and sent only after policy and A/PTR
 verification. Attempts are journaled; unconfirmed deliveries are not
 retried. Disable automatic creation to stop the writer or before rolling
 back to an image that does not support the current journal.
+
+## Repair owned UniFi DNS policies
+
+```sh
+docker exec yggflare yggflare unifi repair-plan HOSTNAME --json
+docker exec yggflare yggflare unifi repair-apply HOSTNAME FINGERPRINT
+```
+
+The preview requires a verified ownership entry, one unique in-LAN
+Cloudflare A record and an exact Compose/static-inventory declaration.
+An unchanged owned policy can be updated to a new address using its
+existing ID. A missing owned policy can be recreated if no replacement
+or conflicting policy exists. Externally modified policies require review.
+
+Pause concurrent policy edits. The writer rechecks the fingerprint,
+live policy list and declaration, then journals intent before one
+PUT or POST. Ownership changes only after acknowledgement and matching
+A/PTR replies. The previous ownership entry stays intact until verification.
+A cached previous forward address is pending, not proof of success.
+Unknown outcomes block writes; do not retry mutations manually.
+
+Scheduled reconciliation can recover acknowledged repairs. A manual
+repair can also be resumed using the same hostname and fingerprint.
+Repairs use the same lock and deadline as creation. No automatic repair
+or deletion is enabled. Verify the old reverse address separately.
+Older images do not support pending repair journal entries; disable the
+writer before rollback and retain the journal.
 
 ## Technitium migration procedure
 

@@ -45,6 +45,8 @@ def main(argv=None):
             "plan",
             "reconcile-plan",
             "canonical-review",
+            "repair-plan",
+            "repair-apply",
             "apply",
             "preflight",
             "audit",
@@ -159,6 +161,25 @@ def main(argv=None):
             command = [sys.executable, "/app/traefik_inventory.py"]
         else:
             command = [sys.executable, "/app/integration_inventory.py", args.component]
+        return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation in {"repair-plan", "repair-apply"}:
+        applying = args.operation == "repair-apply"
+        if (
+            not args.argument
+            or applying != bool(args.approval)
+            or args.max_operations
+            or args.details
+            or (applying and args.json)
+        ):
+            parser.error(
+                "unifi repair-plan requires HOSTNAME; repair-apply also requires FINGERPRINT"
+            )
+        command = [sys.executable, "/app/unifi_apply.py", "--repair"]
+        if args.json:
+            command.append("--json")
+        command.extend(("--", args.argument))
+        if applying:
+            command.append(args.approval)
         return subprocess.run(command, check=False).returncode
     if args.component == "unifi" and args.operation == "apply":
         if (
