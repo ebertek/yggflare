@@ -308,9 +308,7 @@ class UniFiRetirementTests(unittest.TestCase):
         ):
             with self.subTest(record=record):
                 with self.assertRaisesRegex(apply.ApplyError, "Invalid Cloudflare"):
-                    REAL_RETIREMENT_PROTECTED(
-                        replace(self.before, records=(record,))
-                    )
+                    REAL_RETIREMENT_PROTECTED(replace(self.before, records=(record,)))
 
     def test_missing_source_and_invalid_grace_fail_closed(self):
         with (

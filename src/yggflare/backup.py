@@ -96,8 +96,7 @@ def verify_archive(archive_path: Path) -> dict:
         raise ValueError("Backup must include config and data directories")
     for name in present:
         if any(
-            present.get(parent.as_posix()) is False
-            for parent in Path(name).parents
+            present.get(parent.as_posix()) is False for parent in Path(name).parents
         ):
             raise ValueError("Backup contains conflicting file and directory paths")
     return {"members": len(present), "has_secrets": present.get("secrets") is True}
