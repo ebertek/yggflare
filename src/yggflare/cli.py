@@ -44,6 +44,7 @@ def main(argv=None):
         choices=(
             "plan",
             "reconcile-plan",
+            "canonical-review",
             "apply",
             "preflight",
             "audit",
@@ -180,6 +181,13 @@ def main(argv=None):
             command.append("--json")
         if args.argument:
             command.extend(("--", args.argument))
+        return subprocess.run(command, check=False).returncode
+    if args.component == "unifi" and args.operation == "canonical-review":
+        if args.argument or args.approval or args.max_operations or args.details:
+            parser.error("unifi canonical-review accepts only --json")
+        command = [sys.executable, "/app/unifi_canonical_review.py"]
+        if args.json:
+            command.append("--json")
         return subprocess.run(command, check=False).returncode
     if args.component == "unifi" and args.operation in {"plan", "reconcile-plan"}:
         if (
