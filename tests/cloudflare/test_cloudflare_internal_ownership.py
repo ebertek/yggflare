@@ -70,6 +70,10 @@ class InternalOwnershipTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.capture()
         self.assertFalse((self.data / REGISTRY_FILE).exists())
+        self.client.get_dns_record.return_value = {**RECORD, "ttl": 300}
+        with self.assertRaisesRegex(ValueError, "attributes changed"):
+            self.capture()
+        self.assertFalse((self.data / REGISTRY_FILE).exists())
 
     def test_scope_and_existing_ownership_fail_closed(self):
         self.capture()
@@ -83,6 +87,12 @@ class InternalOwnershipTests(unittest.TestCase):
     def test_invalid_or_symlink_registry_is_not_empty_success(self):
         path = self.data / REGISTRY_FILE
         path.write_text("{}", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            load_registry(self.data, BOUND)
+        path.write_text(
+            '{"version": 1, "version": 1, "scope": {}, "records": {}}',
+            encoding="utf-8",
+        )
         with self.assertRaises(ValueError):
             load_registry(self.data, BOUND)
         path.unlink()

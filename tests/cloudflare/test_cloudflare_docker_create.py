@@ -158,14 +158,24 @@ class DockerCreationTests(unittest.TestCase):
     def test_changed_evidence_or_capacity_stops_before_write(self):
         client = Mock()
         client.dns_usage.return_value = {"record_usage": 152, "record_quota": 200}
-        with self.assertRaises(UnsafePlan):
-            apply_actions(
-                client, self.report(), {"ygg": ZONE_ID}, docker_creates=lambda: []
-            )
-        client.create_docker_a.assert_not_called()
-        client.dns_usage.return_value = {"record_usage": 190, "record_quota": 200}
-        with self.assertRaises(UnsafePlan):
-            apply_actions(
-                client, self.report(), {"ygg": ZONE_ID}, docker_creates=lambda: [ACTION]
-            )
-        client.create_docker_a.assert_not_called()
+        with TemporaryDirectory() as folder:
+            context = {"account": "a" * 32, "ygg": ZONE_ID}
+            with self.assertRaisesRegex(UnsafePlan, "creation evidence changed"):
+                apply_actions(
+                    client,
+                    self.report(),
+                    context,
+                    docker_creates=lambda: [],
+                    ownership_data=Path(folder),
+                )
+            client.create_docker_a.assert_not_called()
+            client.dns_usage.return_value = {"record_usage": 190, "record_quota": 200}
+            with self.assertRaisesRegex(UnsafePlan, "quota changed"):
+                apply_actions(
+                    client,
+                    self.report(),
+                    context,
+                    docker_creates=lambda: [ACTION],
+                    ownership_data=Path(folder),
+                )
+            client.create_docker_a.assert_not_called()

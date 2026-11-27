@@ -95,6 +95,16 @@ def validate_registry(document, bound=None):
     return document
 
 
+def unique_object(pairs):
+    """Reject duplicate keys in persisted security state."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate internal DNS ownership key")
+        result[key] = value
+    return result
+
+
 def load_registry(data, bound=None):
     """Missing state grants no ownership; invalid state is never ignored."""
     path = registry_path(data)
@@ -105,9 +115,11 @@ def load_registry(data, bound=None):
     if not path.is_file() or path.stat().st_size > MAX_BYTES:
         raise ValueError("Invalid internal DNS ownership registry file")
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        document = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object
+        )
         return validate_registry(document, bound)
-    except (ValueError, TypeError, KeyError, RecursionError, UnicodeError):
+    except (ValueError, TypeError, KeyError, RecursionError):
         raise ValueError(
             "Invalid or incompatible internal DNS ownership registry"
         ) from None
@@ -116,7 +128,8 @@ def load_registry(data, bound=None):
 def assert_available(document, action):
     """Never overwrite a prior identity even when its DNS record is missing."""
     if any(
-        entry["hostname"] == action["hostname"] or entry["address"] == action["content"]
+        entry["hostname"] == action["hostname"]
+        or entry["address"] == action["content"]
         for entry in document["records"].values()
     ):
         raise ValueError("Docker DNS target conflicts with recorded ownership")
@@ -179,6 +192,10 @@ def record_creation(data, bound, action, acknowledged, listed, client):
     detail = client.get_dns_record(bound["zone"], identifier)
     if not record_matches(detail, identifier, action):
         raise ValueError("Docker DNS exact-ID verification failed")
+    # Refuse to claim an object modified between POST and the verification GET.
+    for field in ("ttl", "comment", "tags", "settings", "modified_on"):
+        if acknowledged.get(field) != detail.get(field):
+            raise ValueError("Docker DNS creation attributes changed")
     entry = {
         "id": identifier,
         "hostname": action["hostname"],
