@@ -405,7 +405,12 @@ class CommandTests(unittest.TestCase):
             run.return_value.returncode = 0
             self.assertEqual(cli.main(["services", "retirement-refresh", "demo"]), 0)
             run.assert_called_once_with(
-                [cli.sys.executable, "/app/service_retirement_collect.py", "--", "demo"],
+                [
+                    cli.sys.executable,
+                    "/app/service_retirement_collect.py",
+                    "--",
+                    "demo",
+                ],
                 check=False,
             )
         for arguments in (

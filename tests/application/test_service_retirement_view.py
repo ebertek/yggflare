@@ -71,7 +71,9 @@ class RetirementViewTests(unittest.TestCase):
 
     def test_shared_query_and_aggregate_metrics(self):
         write(self.path, self.document)
-        with patch.object(view, "saved", wraps=lambda _data, service="": saved(self.data, service)):
+        with patch.object(
+            view, "saved", wraps=lambda _data, service="": saved(self.data, service)
+        ):
             tools = InventoryTools(lambda: {})
             report = tools.get_service_retirement("demo")
             self.assertEqual(
@@ -79,7 +81,9 @@ class RetirementViewTests(unittest.TestCase):
                 report,
             )
             html = operator_views.render(
-                "services", tools, lambda headers, rows: str(rows),
+                "services",
+                tools,
+                lambda headers, rows: str(rows),
                 {"view": ["retirement-plan"], "q": ["demo"]},
             )
             self.assertIn("Saved retirement review", html)
@@ -104,11 +108,25 @@ class RetirementViewTests(unittest.TestCase):
             patch.object(collector, "api_token", return_value="fixture"),
             patch.object(collector, "CloudflareClient"),
             patch("controller.snapshot"),
-            patch.object(collector, "compose_evidence", return_value=(set(), set(), [])),
-            patch.object(collector, "docker_containers", side_effect=ValueError("private diagnostic")),
-            patch.object(collector, "external_review", return_value={"status": "absent"}),
-            patch.object(collector, "internal_review", return_value={"status": "unmanaged", "address": "10.4.21.42"}),
-            patch.object(collector, "unifi_review", return_value={"status": "blocked"}) as unifi,
+            patch.object(
+                collector, "compose_evidence", return_value=(set(), set(), [])
+            ),
+            patch.object(
+                collector,
+                "docker_containers",
+                side_effect=ValueError("private diagnostic"),
+            ),
+            patch.object(
+                collector, "external_review", return_value={"status": "absent"}
+            ),
+            patch.object(
+                collector,
+                "internal_review",
+                return_value={"status": "unmanaged", "address": "10.4.21.42"},
+            ),
+            patch.object(
+                collector, "unifi_review", return_value={"status": "blocked"}
+            ) as unifi,
         ):
             self.assertEqual(collector.collect(self.data, "demo.ebi.nu"), 1)
             unifi.assert_called_once_with(self.data, "demo.ygg.nu", "10.4.21.42")
