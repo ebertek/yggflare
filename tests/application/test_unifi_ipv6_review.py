@@ -45,7 +45,12 @@ class IPv6ReviewTests(unittest.TestCase):
 
     def test_shared_addresses_need_explicit_tag(self):
         alias = f"alias.{ZONE}"
-        for tags, expected in (([], None), (["yggflare:canonical"], [NAME + "."])):
+        for tags, expected in (
+            ([], None),
+            ("not-a-list-yggflare:canonical", None),
+            (42, None),
+            (["yggflare:canonical"], [NAME + "."]),
+        ):
             result = compare(
                 [record(tags=tags), record(alias)],
                 [],

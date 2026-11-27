@@ -105,7 +105,8 @@ def compare(records, policies, zone, prefixes, gateway, request=query):
         else:
             eligible[name] = set(addresses)
             for item, address in zip(aaaa, addresses, strict=True):
-                if CANONICAL_TAG in (item.get("tags") or []):
+                tags = item.get("tags")
+                if isinstance(tags, list) and CANONICAL_TAG in tags:
                     tagged[address].add(name)
             checks.append(("AAAA", name + ".", expected))
         configured = [

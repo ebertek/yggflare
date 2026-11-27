@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import dns.exception
+import dns.flags
 import dns.message
 import dns.rcode
 import dns.rrset
@@ -126,6 +127,49 @@ class UniFiDNSVerificationTests(unittest.TestCase):
 
         with patch("dns.query.udp_with_fallback", side_effect=contradictory_reply):
             self.assertEqual(query(GATEWAY, name, "A"), ("unexpected_answer", []))
+
+    def test_matching_record_with_unexpected_answer_cannot_verify(self):
+        name = f"b.{ZONE}."
+        for owner, rdclass, rdtype, value in (
+            ("other.invalid.", "IN", "A", IP),
+            (name, "CH", "TXT", '"unrelated"'),
+            (name, "IN", "CNAME", "other.invalid."),
+        ):
+            with self.subTest(owner=owner, rdclass=rdclass, rdtype=rdtype):
+
+                def answer(req, gateway, **kwargs):
+                    reply = dns.message.make_response(req)
+                    reply.answer.append(dns.rrset.from_text(name, 60, "IN", "A", IP))
+                    reply.answer.append(
+                        dns.rrset.from_text(owner, 60, rdclass, rdtype, value)
+                    )
+                    return reply, False
+
+                with patch("dns.query.udp_with_fallback", side_effect=answer):
+                    self.assertEqual(
+                        query(GATEWAY, name, "A"), ("unexpected_answer", [])
+                    )
+
+    def test_truncated_or_mismatched_response_cannot_verify(self):
+        name = f"b.{ZONE}."
+        for fault in ("truncated", "wrong_id", "wrong_question"):
+            with self.subTest(fault=fault):
+
+                def answer(req, gateway, **kwargs):
+                    reply = dns.message.make_response(req)
+                    reply.answer.append(dns.rrset.from_text(name, 60, "IN", "A", IP))
+                    if fault == "truncated":
+                        reply.flags |= dns.flags.TC
+                    elif fault == "wrong_id":
+                        reply.id = (req.id + 1) % 65536
+                    else:
+                        reply.question = []
+                    return reply, False
+
+                with patch("dns.query.udp_with_fallback", side_effect=answer):
+                    self.assertEqual(
+                        query(GATEWAY, name, "A"), ("unexpected_answer", [])
+                    )
 
     def test_nxdomain_with_cname_is_not_absence(self):
         name = f"b.{ZONE}."

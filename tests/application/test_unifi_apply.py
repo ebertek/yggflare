@@ -259,6 +259,52 @@ class UniFiApplyTests(unittest.TestCase):
         self.assertEqual(self.query.call_count, 2)
         self.post.assert_called_once()
 
+    def test_manual_create_cannot_recover_different_hostname(self):
+        ledger = apply.load_ledger(self.path, LIVE.target)
+        ledger["pending"] = {
+            "operation": OPERATION,
+            "policy_id": POLICY,
+            "manual": True,
+        }
+        apply.write(self.path, ledger)
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(apply.ApplyError, "Another pending operation"):
+            apply.run(self.data, "other.example.invalid", FINGERPRINT)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.query.assert_not_called()
+        self.policies.assert_not_called()
+        self.post.assert_not_called()
+
+    def test_pending_policy_must_remain_in_current_scope(self):
+        for lan, zone in (
+            ("192.168.11.0/24", "example.invalid"),
+            ("192.168.10.20/30", "example.invalid"),
+            ("192.168.10.0/24", "different.invalid"),
+        ):
+            with self.subTest(lan=lan, zone=zone):
+                ledger = apply.load_ledger(self.path, LIVE.target)
+                ledger["pending"] = {
+                    "operation": OPERATION,
+                    "policy_id": POLICY,
+                    "manual": True,
+                }
+                apply.write(self.path, ledger)
+                before = self.path.read_bytes()
+                self.load.return_value = replace(
+                    LIVE,
+                    comparison={
+                        **LIVE.comparison,
+                        "configured_lan": lan,
+                        "source_zone": zone,
+                    },
+                )
+                with self.assertRaisesRegex(apply.ApplyError, "outside current scope"):
+                    apply.run(self.data, NAME, FINGERPRINT)
+                self.assertEqual(self.path.read_bytes(), before)
+        self.query.assert_not_called()
+        self.policies.assert_not_called()
+        self.post.assert_not_called()
+
     def test_pending_is_reported_separately_by_jobs_and_metrics(self):
         with track(self.data, "unifi_apply", self.fail):
             pass

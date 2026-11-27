@@ -9,6 +9,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 import dns.exception
+import dns.flags
 import dns.message
 import dns.name
 import dns.query
@@ -35,6 +36,12 @@ def query(gateway, name, kind):
         return "transport_error", []
     except dns.exception.DNSException:
         return "query_error", []
+    if (
+        not request.is_response(reply)
+        or reply.question != request.question
+        or reply.flags & dns.flags.TC
+    ):
+        return "unexpected_answer", []
     code = reply.rcode()
     if code != dns.rcode.NOERROR and reply.answer:
         return "unexpected_answer", []
@@ -43,19 +50,20 @@ def query(gateway, name, kind):
     question = request.question[0]
     records = set()
     for rrset in reply.answer:
-        if rrset.name != question.name or rrset.rdclass != question.rdclass:
-            continue
-        if rrset.rdtype == question.rdtype:
-            records.update(
-                (
-                    record.address
-                    if kind in {"A", "AAAA"}
-                    else record.target.to_text().lower()
-                )
-                for record in rrset
-            )
-        else:
+        if (
+            rrset.name != question.name
+            or rrset.rdclass != question.rdclass
+            or rrset.rdtype != question.rdtype
+        ):
             return "unexpected_answer", []
+        records.update(
+            (
+                record.address
+                if kind in {"A", "AAAA"}
+                else record.target.to_text().lower()
+            )
+            for record in rrset
+        )
     if records:
         return "answered", sorted(records)
     return ("unexpected_answer", []) if reply.answer else ("nodata", [])
