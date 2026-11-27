@@ -209,8 +209,10 @@ def protected(name, address, evidence, records, identifier):
         return "runtime_present"
     if name in evidence["private"] or address in evidence["private"]:
         return "private_protected"
-    if mentions(references, name, address) or mentions(
-        evidence["retained"], name, address
+    if (
+        mentions(references, name, address)
+        or mentions(evidence["retained"], name, address)
+        or mentions(evidence.get("runtime_references", []), name, address)
     ):
         return "dependency_protected"
     for row in records:
@@ -329,7 +331,7 @@ def review(client, bound, owned, records, external, evidence, hostname=None):
     }
 
 
-def collect(client, root, data, settings, hostname=None):
+def collect_context(client, root, data, settings, hostname=None):
     """Resolve both configured zones and validate the two ownership scopes."""
     account = checked_id(settings["account_id"], "account ID")
     domain = settings["internal_zone"]
@@ -365,9 +367,17 @@ def collect(client, root, data, settings, hostname=None):
         raise ValueError("Conflicting internal DNS ownership registries")
     hosts, companions = load_inventory_details(root / INVENTORY, required=True)
     retained = load_retained_dns(root / RETAINED)
+    containers = docker_containers()
     evidence = {
         "compose": compose_evidence(root, domain),
-        "runtime": runtime_evidence(docker_containers(), domain),
+        "runtime": runtime_evidence(containers, domain),
+        "runtime_references": [
+            {
+                "config": container["Config"],
+                "host": container.get("HostConfig", {}),
+            }
+            for container in containers
+        ],
         "private": (
             set(hosts)
             | set(hosts.values())
@@ -379,7 +389,7 @@ def collect(client, root, data, settings, hostname=None):
     # Keep retained exact names/addresses protected independently of content.
     evidence["private"].update(row["hostname"] for row in retained)
     evidence["private"].update(row["content"] for row in retained if row["type"] == "A")
-    return review(
+    report = review(
         client,
         bound,
         owned,
@@ -388,6 +398,12 @@ def collect(client, root, data, settings, hostname=None):
         evidence,
         hostname,
     )
+    return report, bound, external_zone, owned
+
+
+def collect(client, root, data, settings, hostname=None):
+    """Return only the public operator review, not the ownership context."""
+    return collect_context(client, root, data, settings, hostname)[0]
 
 
 def main():

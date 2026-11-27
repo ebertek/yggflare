@@ -59,7 +59,7 @@ not raw API payloads. Backups include the registry and restoration validates it.
 Existing DNS records are not adopted by default. An interrupted or
 unverified create cannot establish ownership. Invalid scope, conflicting
 ownership or corrupt registry state blocks new Docker A creation; investigate
-rather than remove ownership history. Internal DNS deletion is not implemented.
+rather than remove ownership history. Internal DNS deletion is separately opt-in.
 
 ### Internal DNS retirement review
 
@@ -88,8 +88,39 @@ includes unsupported record types; no review rows does not necessarily mean
 the DNS name is absent. No grace observations, claims, writes or deletion
 fingerprints are produced. This preview does not inspect arbitrary other
 DNS zones, application data, non-Compose dependencies or client resolver
-configuration. Web/MCP presentation and retirement execution are separate
-follow-up work.
+configuration. Web/MCP presentation is separate follow-up work.
+
+### Automatic retirement of owned Docker A records
+
+After reviewing the live preview and accepting the first controlled retirement,
+enable both `YGGFLARE_CLOUDFLARE_AUTO_APPLY=true` and
+`YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP=true`. The latter defaults to
+false and is independent of external endpoint cleanup.
+
+- `YGGFLARE_CLOUDFLARE_INTERNAL_ORPHAN_GRACE_HOURS`: 24–720, default 24.
+- `YGGFLARE_CLOUDFLARE_INTERNAL_CLEANUP_BATCH_SIZE`: 1–10, default 1.
+- `YGGFLARE_CLOUDFLARE_INTERNAL_RETIRE_NOTIFY`: true/false, default false;
+  uses the existing validated Discord webhook secret.
+
+Each Cloudflare reconciliation cycle checks the current mounted Compose and
+private inventory, local Docker and both DNS zones. The same owned identity
+must remain a candidate across observations; gaps over eight hours, changed
+ownership, reappearance or a failed review reset its grace period. A fresh
+review immediately precedes each exact-ID DELETE. This first automatic path
+is restricted to Docker ownership; static and unmanaged records are never
+deleted. DNS API absence is verified before releasing ownership; this does
+not prove recursive cache expiry, UniFi policy removal or client behaviour.
+
+The private `/data/internal-dns-retirement.json` journal records intent before
+DELETE and the returned ID before verification. An unacknowledged or
+ambiguous DELETE blocks further retirement and is never replayed. A verified
+deletion can finish removing ownership after a restart. Disable cleanup to
+stop mutations and reset observations without discarding pending recovery.
+Do not remove the journal to bypass an unknown outcome; investigate the live
+record and registry first. Backups preserve and validate the journal in
+isolation. Discord notices are best-effort, after verified completion only,
+with no retry after an ambiguous delivery. No legacy endpoint is adopted by
+this workflow.
 
 ### DNS quota
 

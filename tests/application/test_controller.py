@@ -260,6 +260,51 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 controller.cloudflare_run()
 
+    def test_internal_retirement_requires_separate_opt_in_and_runs_first(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            token = root / "token"
+            token.write_text("fixture")
+            with (
+                patch.object(controller, "DATA", root),
+                patch.object(controller, "snapshot", return_value=root),
+                patch.object(controller, "run") as run,
+                patch.dict(
+                    "os.environ",
+                    {
+                        "CLOUDFLARE_API_TOKEN_FILE": str(token),
+                        "YGGFLARE_CLOUDFLARE_AUTO_APPLY": "true",
+                        "YGGFLARE_CLOUDFLARE_AUTO_CLAIM": "false",
+                        "YGGFLARE_CLOUDFLARE_AUTO_CLEANUP": "false",
+                        "YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP": "false",
+                    },
+                ),
+            ):
+                controller.cloudflare_run()
+                self.assertEqual(run.call_count, 1)
+                run.reset_mock()
+                with patch.dict(
+                    "os.environ", {"YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP": "true"}
+                ):
+                    controller.cloudflare_run()
+                self.assertEqual(run.call_count, 2)
+                self.assertTrue(
+                    run.call_args_list[0]
+                    .args[0][1]
+                    .endswith("/cloudflare_internal_cleanup.py")
+                )
+                run.reset_mock()
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "YGGFLARE_CLOUDFLARE_AUTO_APPLY": "false",
+                        "YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP": "true",
+                    },
+                ):
+                    with self.assertRaises(ValueError):
+                        controller.cloudflare_run()
+                run.assert_not_called()
+
     def test_invalid_auto_apply_fails_closed(self):
         """Only exact true or false values are accepted."""
         with patch.dict("os.environ", {"YGGFLARE_CLOUDFLARE_AUTO_APPLY": "yes"}):

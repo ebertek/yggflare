@@ -268,7 +268,7 @@ class CloudflareWriter(CloudflareClient):
         return payload.get("result")
 
     def delete_dns_record(self, zone, record_id):
-        """Delete a previously revalidated external DNS record by exact ID."""
+        """Delete a previously revalidated owned DNS record by exact ID."""
         return self._delete(
             f"/zones/{checked_id(zone)}/dns_records/{checked_id(record_id)}"
         )

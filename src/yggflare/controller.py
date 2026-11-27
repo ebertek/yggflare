@@ -157,6 +157,7 @@ def job_label(script):
     return {
         "cloudflare-manage.py": "Cloudflare reconciliation",
         "cloudflare-auto-cleanup.py": "Managed orphan cleanup",
+        "cloudflare_internal_cleanup.py": "Managed internal DNS cleanup",
         "cloudflare-claim-all.py": "Cloudflare ownership claims",
         "cloudflare-live.py": "Cloudflare presentation refresh",
         "audit.py": "Network inventory scan",
@@ -236,6 +237,11 @@ def cloudflare_run():
     auto_claim = getenv("YGGFLARE_CLOUDFLARE_AUTO_CLAIM", "false")
     if auto_claim not in ("true", "false"):
         raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_CLAIM must be exactly true or false")
+    internal_cleanup = getenv("YGGFLARE_CLOUDFLARE_INTERNAL_AUTO_CLEANUP", "false")
+    if internal_cleanup not in ("true", "false"):
+        raise ValueError("Internal DNS cleanup must be exactly true or false")
+    if internal_cleanup == "true" and auto != "true":
+        raise ValueError("Internal DNS cleanup requires Cloudflare auto apply")
     env = os.environ.copy()
     secret = Path(
         env_get(env, "CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
@@ -244,6 +250,17 @@ def cloudflare_run():
         raise FileNotFoundError("Cloudflare API token secret missing")
     env["CLOUDFLARE_API_TOKEN_FILE"] = str(secret)
     env.pop("CLOUDFLARE_API_TOKEN", None)
+    # Recover an acknowledged DELETE before any creates or claims can obscure it.
+    retirement_journal = DATA / "internal-dns-retirement.json"
+    if (
+        internal_cleanup == "true"
+        or retirement_journal.exists()
+        or retirement_journal.is_symlink()
+    ):
+        run(
+            [sys.executable, "/app/cloudflare/cloudflare_internal_cleanup.py"],
+            env=env,
+        )
     with tempfile.TemporaryDirectory(prefix="yggflare-compose-", dir=DATA) as folder:
         root = snapshot(Path(folder))
         script = (

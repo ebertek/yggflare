@@ -192,6 +192,30 @@ def check_internal_dns_restore(data):
     ):
         if (data / filename).exists():
             result[key] = len(load_registry(data, filename=filename)["records"])
+    from cloudflare_internal_cleanup import JOURNAL, load_state
+
+    if (data / JOURNAL).exists():
+        state = load_state(data)
+        if "internal_dns_owned_count" not in result:
+            raise ValueError(
+                "Restored internal DNS retirement lacks ownership registry"
+            )
+        ledger = load_registry(data, filename=REGISTRY_FILE)
+        if state["scope"]["internal"] != ledger["scope"]:
+            raise ValueError("Restored internal DNS retirement scope differs")
+        for identifier, observation in state["observations"].items():
+            if ledger["records"].get(identifier) != observation["entry"]:
+                raise ValueError("Restored internal DNS retirement observation differs")
+        pending = state["pending"]
+        if pending:
+            entry = pending["entry"]
+            current = ledger["records"].get(entry["id"])
+            if current != entry and not (
+                pending["phase"] == "verified" and current is None
+            ):
+                raise ValueError("Restored internal DNS retirement ownership differs")
+        result["internal_dns_retirement_pending"] = pending is not None
+        result["internal_dns_retirement_observations"] = len(state["observations"])
     return result
 
 

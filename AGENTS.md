@@ -59,10 +59,14 @@ production acceptance are distinct. Never move a published version tag.
   opt-in; validate exact declarations and current resource identity, never replace
   existing ownership, and exclude retained records and aliases. Internal claims
   do not authorize deletion.
-- Preserve unrelated routes and records. Only proven owned external
-  resources may be retired. Cleanup requires its own opt-in and grace
-  period; delete external DNS → Tunnel route → Access app with live
-  revalidation. Recover safely from partial writes.
+- Preserve unrelated routes and records. Only proven owned resources may
+  be retired. External cleanup requires its own opt-in and grace period;
+  delete external DNS → Tunnel route → Access app with live revalidation.
+  Internal automatic cleanup is separately opt-in, Docker A only, with
+  continuous observed grace, complete fresh retirement evidence, exact-ID
+  DELETE intent and acknowledgement, and verified absence before releasing
+  ownership. Never replay an ambiguous DELETE. Static and unmanaged records
+  remain review-only. Recover safely from partial writes.
 - Internal DNS creation must obey the configured allocation and opt-ins.
   Docker creates require unique, agreeing Compose/runtime evidence.
   Static, alias, retained and conflicting records are protected.

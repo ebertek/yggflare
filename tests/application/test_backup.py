@@ -128,6 +128,48 @@ class BackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "internal DNS ownership"):
                 restore_test(archive, root / "scratch")
 
+    def test_internal_retirement_journal_restoration(self):
+        from cloudflare_internal_cleanup import JOURNAL, scope_for
+        from cloudflare_internal_ownership import internal_scope, save_registry
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config, data = root / "config", root / "data"
+            config.mkdir()
+            data.mkdir()
+            (config / "static-hosts.json").write_text(
+                json.dumps({"version": 1, "hosts": []})
+            )
+            bound = internal_scope("a" * 32, "b" * 32, "example.net", "192.0.2.0/24")
+            entry = {
+                "id": "c" * 32,
+                "hostname": "demo.example.net",
+                "address": "192.0.2.42",
+                "fingerprint": "d" * 64,
+            }
+            save_registry(
+                data, {"version": 1, "scope": bound, "records": {entry["id"]: entry}}
+            )
+            journal = {
+                "version": 1,
+                "scope": scope_for(bound, "e" * 32),
+                "observations": {},
+                "pending": {"entry": entry, "phase": "acknowledged"},
+            }
+            path = data / JOURNAL
+            path.write_text(json.dumps(journal))
+            archive = create_snapshot(config, data, root / "backup")
+            before = path.read_bytes()
+            result = restore_test(archive, root / "scratch")
+            self.assertTrue(result["internal_dns_retirement_pending"])
+            self.assertEqual(result["internal_dns_retirement_observations"], 0)
+            self.assertEqual(path.read_bytes(), before)
+            journal["pending"]["phase"] = "invalid"
+            path.write_text(json.dumps(journal))
+            archive = create_snapshot(config, data, root / "backup")
+            with self.assertRaisesRegex(ValueError, "internal retirement"):
+                restore_test(archive, root / "scratch")
+
     def test_verification_bounds_and_checks_gzip_trailer(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
