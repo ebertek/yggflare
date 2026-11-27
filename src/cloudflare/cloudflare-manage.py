@@ -234,6 +234,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
             ),
             maximum=active_maximum,
             unattended=args.auto,
+            ownership_data=Path("/data"),
         )
         # Only Yggflare-created endpoints can be claimed automatically.
         # Existing pre-migration hostnames must be claimed explicitly.

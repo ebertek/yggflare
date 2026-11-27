@@ -49,6 +49,19 @@ shared addresses, static/alias/retained declarations and wildcard policies
 are protected. Creation revalidates the evidence and verifies the result.
 Stopped containers cannot authorize creation or deletion.
 
+New Docker A records receive a private ownership entry in
+`/data/managed-internal-dns.json` only after a successful creation
+acknowledgement, matching live list identity and exact-ID detail verification.
+The registry is bound to the account, internal zone, domain and Docker subnet.
+It stores a record ID, canonical hostname, IPv4 address and detail fingerprint,
+not raw API payloads. Backups include the registry and restoration validates it.
+
+Existing DNS records are not automatically adopted. An interrupted or
+unverified create cannot establish ownership. Invalid scope, conflicting
+ownership or corrupt registry state blocks new Docker A creation; investigate
+rather than remove ownership history. This is ownership capture only: internal
+DNS deletion, adoption and retirement previews are not yet implemented.
+
 ### DNS quota
 
 With Docker creation enabled, Yggflare reads the internal zone's actual
