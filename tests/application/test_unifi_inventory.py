@@ -160,7 +160,13 @@ class UniFiInventoryTests(unittest.TestCase):
         status_path = self.root / "unifi-view-status.json"
         initial_view = json.loads(view_path.read_text())
         initial_status = json.loads(status_path.read_text())
-        for scenario in ("fresh", "failed_refresh", "aged", "missing_count", "bad_count"):
+        for scenario in (
+            "fresh",
+            "failed_refresh",
+            "aged",
+            "missing_count",
+            "bad_count",
+        ):
             with self.subTest(scenario=scenario):
                 view = {**initial_view}
                 status = {**initial_status}
@@ -198,7 +204,12 @@ class UniFiInventoryTests(unittest.TestCase):
                         self.assertEqual(cli.main(["unifi", "status", "--json"]), 0)
                     self.assertEqual(json.loads(output.getvalue()), state)
                     html = web.render("unifi", {}, {"view": ["status"]})
-                    for key in ("configured", "available", "fresh", "last_refresh_verified"):
+                    for key in (
+                        "configured",
+                        "available",
+                        "fresh",
+                        "last_refresh_verified",
+                    ):
                         expected = "Yes" if state[key] else "No"
                         self.assertIn(
                             f'data-label="Evidence"><span>{key}</span></td>'
@@ -212,9 +223,13 @@ class UniFiInventoryTests(unittest.TestCase):
                         if line.startswith("yggflare_unifi_")
                     }
                     self.assertEqual(gauges["yggflare_unifi_configured"], 1)
-                    self.assertEqual(gauges["yggflare_unifi_snapshot_available"], available)
+                    self.assertEqual(
+                        gauges["yggflare_unifi_snapshot_available"], available
+                    )
                     self.assertEqual(gauges["yggflare_unifi_snapshot_fresh"], fresh)
-                    self.assertEqual(gauges["yggflare_unifi_last_refresh_verified"], verified)
+                    self.assertEqual(
+                        gauges["yggflare_unifi_last_refresh_verified"], verified
+                    )
                     if available:
                         counts = {"devices": 2, "clients": 1, "networks": 1, "dns": 1}
                         self.assertEqual(state["counts"], counts)
@@ -228,7 +243,9 @@ class UniFiInventoryTests(unittest.TestCase):
                         self.assertIsNone(state["counts"])
                         for kind in ("devices", "clients", "networks", "dns"):
                             self.assertNotIn("yggflare_unifi_" + kind, gauges)
-                        self.assertNotIn("yggflare_unifi_last_success_timestamp_seconds", gauges)
+                        self.assertNotIn(
+                            "yggflare_unifi_last_success_timestamp_seconds", gauges
+                        )
                     self.assertNotIn(KEY, sample)
                     self.assertNotIn("192.168.12.", sample)
                     self.assertNotIn("<gateway>", sample)
