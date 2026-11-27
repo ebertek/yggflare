@@ -32,6 +32,7 @@ from cloudflare_orphans import claim, print_summary, scope
 from cloudflare_unaccounted_dns import print_unaccounted_summary
 from cloudflare_write_api import CloudflareWriter
 from yggflare_config import cloudflare_settings
+from yggflare_env import getenv
 
 SPEC = importlib.util.spec_from_file_location(
     "cloudflare_live_cli", Path(__file__).with_name("cloudflare-live.py")
@@ -92,7 +93,7 @@ def print_static_summary(report):
 
 def require_auto_opt_in():
     """Only a private environment opt-in may authorize unattended writes."""
-    if os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_APPLY") != "true":
+    if getenv("YGGFLARE_CLOUDFLARE_AUTO_APPLY") != "true":
         raise UnsafePlan(
             "Unattended Cloudflare writes require YGGFLARE_CLOUDFLARE_AUTO_APPLY=true"
         )
@@ -211,7 +212,7 @@ def main():  # pylint: disable=too-many-locals,too-many-branches,too-many-statem
                 reusable=client.list_policies(context["account"]),
             )
             try:
-                budget = int(os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE", "3"))
+                budget = int(getenv("YGGFLARE_CLOUDFLARE_AUTO_BATCH_SIZE", "3"))
             except ValueError as error:
                 raise ValueError("Invalid Cloudflare auto batch size") from error
             batch = unattended_batch(safe, budget)

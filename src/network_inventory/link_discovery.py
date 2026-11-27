@@ -2,7 +2,6 @@
 
 import ipaddress
 import json
-import os
 import re
 import subprocess
 import sys
@@ -14,6 +13,7 @@ from datetime import UTC, datetime
 from discovery_ra import router_records
 from service_discovery import collect as collect_services
 from service_discovery import collector_evidence
+from yggflare_env import getenv
 
 DEFAULT_MAX_TARGETS = 512
 HARD_MAX_TARGETS = 4096
@@ -23,19 +23,19 @@ MAX_SEEDS = 4096
 
 def collect(network, run=None, seeds=(), observed_ports=None):
     """Explicit interfaces and prefixes gate every active probe."""
-    raw_interfaces = os.environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").strip()
+    raw_interfaces = getenv("YGGFLARE_DISCOVERY_INTERFACES", "").strip()
     if not raw_interfaces:
         return {}
     interfaces = [v.strip() for v in raw_interfaces.split(",")]
     try:
         max_targets = int(
-            os.environ.get("YGGFLARE_DISCOVERY_MAX_TARGETS", DEFAULT_MAX_TARGETS)
+            getenv("YGGFLARE_DISCOVERY_MAX_TARGETS", DEFAULT_MAX_TARGETS)
         )
     except ValueError as error:
         raise ValueError("Invalid YGGFLARE_DISCOVERY_MAX_TARGETS") from error
     if not 1 <= max_targets <= HARD_MAX_TARGETS:
         raise ValueError("YGGFLARE_DISCOVERY_MAX_TARGETS must be 1-4096")
-    raw_prefixes = os.environ.get("YGGFLARE_DISCOVERY_IPV6_CIDRS", "").strip()
+    raw_prefixes = getenv("YGGFLARE_DISCOVERY_IPV6_CIDRS", "").strip()
     config = {
         "ipv6_prefixes": (
             [v.strip() for v in raw_prefixes.split(",")] if raw_prefixes else []
@@ -43,7 +43,7 @@ def collect(network, run=None, seeds=(), observed_ports=None):
     }
     for flag in ("arp_scan", "ndp_probe", "ipv6_scan", "os_detection", "ra"):
         name = "YGGFLARE_DISCOVERY_" + flag.upper()
-        value = os.environ.get(name, "false")
+        value = getenv(name, "false")
         if value not in ("true", "false"):
             raise ValueError(f"{name} must be true or false")
         config[flag] = value == "true"

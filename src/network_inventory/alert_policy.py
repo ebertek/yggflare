@@ -5,7 +5,8 @@ Only new TCP ports and DNS-SD service identities require repeat sightings
 before Discord delivery. Missing advertisements never mean a device is offline.
 """
 
-import os
+
+from yggflare_env import getenv
 
 MAX_TRACKED = 4096
 MAX_PENDING = 100
@@ -13,7 +14,7 @@ MAX_PENDING = 100
 
 def confirmation_scans():
     """Parse opt-in alert noise setting; 1 recreates immediate legacy alerts."""
-    raw = os.environ.get("YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS", "2")
+    raw = getenv("YGGFLARE_NETWORK_ALERT_CONFIRM_SCANS", "2")
     try:
         count = int(raw)
     except ValueError as error:

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from discovery_passive import lldp_records, sample_p0f
 from discovery_ssdp import ssdp
+from yggflare_env import env_get, getenv
 
 LIMIT = 1024 * 1024
 NETBIOS_TIMEOUT_SECONDS = 3
@@ -30,7 +31,7 @@ def smb_settings(env):
 
     def integer(name, default, maximum):
         try:
-            value = int(env.get(name, default))
+            value = int(env_get(env, name, default))
         except (TypeError, ValueError):
             raise ValueError(f"{name} must be an integer from 1 to {maximum}") from None
         if not 1 <= value <= maximum:
@@ -39,7 +40,7 @@ def smb_settings(env):
 
     target_limit = integer(
         "YGGFLARE_DISCOVERY_SMB_MAX_TARGETS",
-        env.get("YGGFLARE_DISCOVERY_MAX_TARGETS", SMB_DEFAULT_TARGET_LIMIT),
+        env_get(env, "YGGFLARE_DISCOVERY_MAX_TARGETS", SMB_DEFAULT_TARGET_LIMIT),
         SMB_HARD_TARGET_LIMIT,
     )
     workers = integer(
@@ -49,7 +50,7 @@ def smb_settings(env):
 
 
 def enabled(name):
-    value = os.environ.get("YGGFLARE_DISCOVERY_" + name, "false")
+    value = getenv("YGGFLARE_DISCOVERY_" + name, "false")
     if value not in ("true", "false"):
         raise ValueError("Discovery switches must be true or false")
     return value == "true"
@@ -389,7 +390,7 @@ def collect(interfaces, allowed, records, add, warnings, observed_ports=None):
 
         def snmp():
             # Explicit targets and credentials only; never try public/private.
-            targets = os.environ.get("YGGFLARE_DISCOVERY_SNMP_TARGETS", "").split(",")
+            targets = getenv("YGGFLARE_DISCOVERY_SNMP_TARGETS", "").split(",")
             if not 1 <= len(targets) <= 16:
                 raise ValueError("Invalid SNMP target count")
             addresses = [ipaddress.ip_address(v.strip()) for v in targets]
