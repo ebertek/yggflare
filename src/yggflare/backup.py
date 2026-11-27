@@ -148,4 +148,33 @@ def restore_test(archive_path: Path, scratch: Path) -> dict:
             "bytes": total,
             "has_secrets": (target / "secrets").is_dir(),
             "inventory_hosts": len(data.get("hosts", [])),
+            **check_unifi_restore(target / "data"),
         }
+
+
+def check_unifi_restore(data):
+    """Validate restored journal structure without contacting a live target."""
+    from traefik_inventory import read
+    from unifi_apply import DIGEST, load_ledger, retirement_state
+
+    path = data / "unifi-ownership.json"
+    retirement = data / "unifi-retirement.json"
+    if not path.exists():
+        if retirement.exists():
+            raise ValueError("Restored retirement state has no ownership journal")
+        return {"unifi_ownership_present": False}
+    document = read(path)
+    target = document.get("target")
+    if not isinstance(target, str) or not DIGEST.fullmatch(target):
+        raise ValueError("Restored UniFi ownership target is invalid")
+    try:
+        ledger = load_ledger(path, target)
+        observations = retirement_state(retirement, target)
+    except (ValueError, KeyError, TypeError, RecursionError):
+        raise ValueError("Restored UniFi journal or retirement state is invalid") from None
+    return {
+        "unifi_ownership_present": True,
+        "unifi_owned_count": len(ledger["owned"]),
+        "unifi_pending_write": ledger["pending"] is not None,
+        "unifi_retirement_observations": len(observations),
+    }

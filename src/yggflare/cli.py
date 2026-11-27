@@ -61,6 +61,7 @@ def main(argv=None):
             "discord-test",
             "status",
             "serve",
+            "check",
             "list",
             "show",
             "drift",
@@ -252,14 +253,17 @@ def main(argv=None):
         parser.error("serve requires mcp")
     if args.component == "mcp":
         if (
-            args.operation != "serve"
+            args.operation not in {"serve", "check"}
             or args.argument is not None
             or args.approval is not None
             or args.max_operations != 0
+            or args.details
+            or (args.operation == "serve" and args.json)
         ):
-            parser.error("mcp accepts only serve with no additional arguments")
+            parser.error("mcp accepts serve or check [--json]")
+        script = "mcp_http_check.py" if args.operation == "check" else "mcp_server.py"
         return subprocess.run(
-            [sys.executable, "/app/mcp_server.py"], check=False
+            [sys.executable, f"/app/{script}"], check=False
         ).returncode
     if network_status:
         if args.argument or args.approval or args.max_operations != 0:

@@ -1,11 +1,12 @@
 """Backups must be complete, private, and retain only recent snapshots."""
 
+import json
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
 
-from backup import create_snapshot, prune_snapshots
+from backup import create_snapshot, prune_snapshots, restore_test
 from job_status import archive_identity, backup_checks, record_backup_check
 
 
@@ -47,6 +48,41 @@ class BackupTests(unittest.TestCase):
             self.assertEqual(backup_checks(root, archive), {})
             with self.assertRaises(ValueError):
                 record_backup_check(root, archive, "integrity", identity, True)
+
+    def test_restore_checks_unifi_ownership_without_live_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config, data = root / "config", root / "data"
+            config.mkdir()
+            data.mkdir()
+            (config / "static-hosts.json").write_text(
+                json.dumps({"version": 1, "hosts": []})
+            )
+            path = data / "unifi-ownership.json"
+            target = "a" * 64
+            journal = {
+                "version": 1,
+                "target": target,
+                "owned": [],
+                "pending": None,
+                "pilot_verified": False,
+            }
+            path.write_text(json.dumps(journal))
+            (data / "unifi-retirement.json").write_text(
+                json.dumps({"version": 1, "target": target, "observations": {}})
+            )
+            archive = create_snapshot(config, data, root / "backup")
+            before = path.read_bytes()
+            result = restore_test(archive, root / "scratch")
+            self.assertTrue(result["unifi_ownership_present"])
+            self.assertEqual(result["unifi_owned_count"], 0)
+            self.assertFalse(result["unifi_pending_write"])
+            self.assertEqual(path.read_bytes(), before)
+            journal["pilot_verified"] = True
+            path.write_text(json.dumps(journal))
+            archive = create_snapshot(config, data, root / "backup")
+            with self.assertRaisesRegex(ValueError, "Restored UniFi"):
+                restore_test(archive, root / "scratch")
 
     def test_prune_removes_only_matching_old_archives(self):
         with tempfile.TemporaryDirectory() as directory:
