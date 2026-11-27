@@ -59,8 +59,35 @@ not raw API payloads. Backups include the registry and restoration validates it.
 Existing DNS records are not adopted by default. An interrupted or
 unverified create cannot establish ownership. Invalid scope, conflicting
 ownership or corrupt registry state blocks new Docker A creation; investigate
-rather than remove ownership history. This is ownership capture only: internal
-DNS deletion and retirement previews are not yet implemented.
+rather than remove ownership history. Internal DNS deletion is not implemented.
+
+### Internal DNS retirement review
+
+```sh
+docker exec yggflare yggflare cloudflare retirement-plan
+docker exec yggflare yggflare cloudflare retirement-plan host.internal.example.net
+```
+
+This live, GET-only JSON preview reads both internal ownership registries,
+the isolated Compose/private inventory snapshot, all local Docker containers
+(including stopped containers), and DNS records in the configured internal
+and external zones. The optional selector must be a canonical internal FQDN.
+
+It classifies owned records, unaccounted DNS-only A records in the configured
+allocations, and explicit hostname queries. Declared names and addresses,
+runtime names/aliases/addresses, static companions, retained declarations,
+shared addresses, wildcard records and visible DNS dependencies block a
+candidate. An exact-ID GET must still match the owned record's fingerprint.
+Missing, modified, ambiguous and unmanaged resources are never candidates
+for automatic deletion.
+
+`candidate_review_only` means the checked evidence did not reveal a blocker;
+it is not proof of continuous absence, complete dependency coverage, or
+permission to delete. No grace observations, claims, writes or deletion
+fingerprints are produced. This preview does not inspect arbitrary other
+DNS zones, application data, non-Compose dependencies or client resolver
+configuration. Web/MCP presentation and retirement execution are separate
+follow-up work.
 
 ### DNS quota
 

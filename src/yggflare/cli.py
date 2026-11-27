@@ -309,6 +309,24 @@ def main(argv=None):
             return subprocess.run(command, check=False).returncode
         parser.error("Unsupported command for this component")
 
+    if args.operation == "retirement-plan":
+        if args.approval is not None or args.max_operations or args.details:
+            parser.error("cloudflare retirement-plan accepts optional HOSTNAME and --json")
+        controller.DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="yggflare-compose-", dir=controller.DATA
+        ) as folder:
+            root = controller.snapshot(Path(folder))
+            command = [
+                sys.executable,
+                "/app/cloudflare/cloudflare_internal_retirement.py",
+                "--root",
+                str(root),
+            ]
+            if args.argument is not None:
+                command.extend(["--hostname", args.argument])
+            return subprocess.run(command, check=False).returncode
+
     if args.max_operations < 0:
         parser.error("--max-operations must be nonnegative")
     if args.operation == "apply":
