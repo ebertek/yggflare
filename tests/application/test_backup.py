@@ -87,6 +87,47 @@ class BackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Restored UniFi"):
                 restore_test(archive, root / "scratch")
 
+    def test_restore_validates_internal_dns_ownership(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config, data = root / "config", root / "data"
+            config.mkdir()
+            data.mkdir()
+            (config / "static-hosts.json").write_text(
+                json.dumps({"version": 1, "hosts": []})
+            )
+            path = data / "managed-internal-dns.json"
+            record_id = "c" * 32
+            document = {
+                "version": 1,
+                "scope": {
+                    "account": "a" * 32,
+                    "zone": "b" * 32,
+                    "domain": "example.net",
+                    "network": "192.0.2.0/24",
+                },
+                "records": {
+                    record_id: {
+                        "id": record_id,
+                        "hostname": "demo.example.net",
+                        "address": "192.0.2.42",
+                        "fingerprint": "d" * 64,
+                    }
+                },
+            }
+            path.write_text(json.dumps(document))
+            before = path.read_bytes()
+            archive = create_snapshot(config, data, root / "backup")
+            self.assertEqual(
+                restore_test(archive, root / "scratch")["internal_dns_owned_count"], 1
+            )
+            self.assertEqual(path.read_bytes(), before)
+            document["records"][record_id]["fingerprint"] = "invalid"
+            path.write_text(json.dumps(document))
+            archive = create_snapshot(config, data, root / "backup")
+            with self.assertRaisesRegex(ValueError, "internal DNS ownership"):
+                restore_test(archive, root / "scratch")
+
     def test_verification_bounds_and_checks_gzip_trailer(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

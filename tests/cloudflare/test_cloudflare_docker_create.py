@@ -2,12 +2,18 @@
 
 import ipaddress
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from cloudflare_api import CloudflareClient, CloudflareError
 from cloudflare_dns_quota import capacity_sufficient, quota_status
 from cloudflare_docker_dns import plan_docker_creates
 from cloudflare_guarded import UnsafePlan, apply_actions, check_plan
+from cloudflare_internal_ownership import (
+    internal_scope,
+    load_registry,
+)
 from cloudflare_write_api import CloudflareWriter
 
 ZONE = "ygg.nu"
@@ -103,18 +109,34 @@ class DockerCreationTests(unittest.TestCase):
     def test_revalidate_and_verify_creation(self):
         client = Mock()
         client.dns_usage.return_value = {"record_usage": 152, "record_quota": 200}
-        client.list_dns.return_value = [
-            {
-                "name": ACTION["hostname"],
-                "type": "A",
-                "content": ACTION["content"],
-                "proxied": False,
-            }
-        ]
+        record = {
+            "id": "c" * 32,
+            "name": ACTION["hostname"],
+            "type": "A",
+            "content": ACTION["content"],
+            "proxied": False,
+        }
+        client.list_dns.return_value = [record]
+        client.create_docker_a.return_value = record
+        client.get_dns_record.return_value = record
         fresh = Mock(return_value=[ACTION])
-        done = apply_actions(
-            client, self.report(), {"ygg": ZONE_ID}, docker_creates=fresh
-        )
+        with TemporaryDirectory() as folder:
+            data = Path(folder)
+            context = {"account": "a" * 32, "ygg": ZONE_ID}
+            done = apply_actions(
+                client,
+                self.report(),
+                context,
+                docker_creates=fresh,
+                ownership_data=data,
+            )
+            bound = internal_scope(context["account"], ZONE_ID, ZONE, NETWORK)
+            ledger = load_registry(data, bound)
+            self.assertEqual(list(ledger["records"]), [record["id"]])
+            self.assertEqual(
+                ledger["records"][record["id"]]["hostname"], ACTION["hostname"]
+            )
+            client.get_dns_record.assert_called_once_with(ZONE_ID, record["id"])
         self.assertEqual(
             done, [{"kind": ACTION["kind"], "hostname": ACTION["hostname"]}]
         )
@@ -124,17 +146,36 @@ class DockerCreationTests(unittest.TestCase):
             ZONE_ID, ACTION["hostname"], ACTION["content"]
         )
 
-    def test_changed_evidence_or_capacity_stops_before_write(self):
+    def test_missing_ownership_storage_blocks_creation(self):
         client = Mock()
         client.dns_usage.return_value = {"record_usage": 152, "record_quota": 200}
-        with self.assertRaises(UnsafePlan):
-            apply_actions(
-                client, self.report(), {"ygg": ZONE_ID}, docker_creates=lambda: []
-            )
-        client.create_docker_a.assert_not_called()
-        client.dns_usage.return_value = {"record_usage": 190, "record_quota": 200}
-        with self.assertRaises(UnsafePlan):
+        with self.assertRaisesRegex(UnsafePlan, "ownership storage"):
             apply_actions(
                 client, self.report(), {"ygg": ZONE_ID}, docker_creates=lambda: [ACTION]
             )
         client.create_docker_a.assert_not_called()
+
+    def test_changed_evidence_or_capacity_stops_before_write(self):
+        client = Mock()
+        client.dns_usage.return_value = {"record_usage": 152, "record_quota": 200}
+        with TemporaryDirectory() as folder:
+            context = {"account": "a" * 32, "ygg": ZONE_ID}
+            with self.assertRaisesRegex(UnsafePlan, "creation evidence changed"):
+                apply_actions(
+                    client,
+                    self.report(),
+                    context,
+                    docker_creates=lambda: [],
+                    ownership_data=Path(folder),
+                )
+            client.create_docker_a.assert_not_called()
+            client.dns_usage.return_value = {"record_usage": 190, "record_quota": 200}
+            with self.assertRaisesRegex(UnsafePlan, "quota changed"):
+                apply_actions(
+                    client,
+                    self.report(),
+                    context,
+                    docker_creates=lambda: [ACTION],
+                    ownership_data=Path(folder),
+                )
+            client.create_docker_a.assert_not_called()
