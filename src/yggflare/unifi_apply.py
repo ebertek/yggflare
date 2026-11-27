@@ -428,6 +428,17 @@ def confirm_pending(path, ledger, live):
         raise ApplyError(
             "Create outcome is uncertain; inspect UniFi and the private journal before any further writes"
         )
+    operation = entry["operation"]
+    zone = live.comparison["source_zone"]
+    lan = ipaddress.IPv4Network(live.comparison["configured_lan"])
+    address = ipv4(operation["ipv4Address"])
+    name = operation["domain"]
+    if (
+        not (name == zone or name.endswith("." + zone))
+        or address not in lan
+        or address in (lan.network_address, lan.broadcast_address)
+    ):
+        raise ApplyError("Pending policy is outside current scope; writes remain blocked")
     if entry.get("repair", {}).get("action") == RETIRE_ACTION:
         confirm_retirement(path, ledger, live)
         return
@@ -537,9 +548,14 @@ def run(data, selected="", approval="", *, automatic=False):
             raise
         ledger_path = data / "unifi-ownership.json"
         ledger = load_ledger(ledger_path, live.target)
+        pending = ledger["pending"]
+        if pending is not None and not automatic and (
+            pending["operation"]["domain"] != selected or "repair" in pending
+        ):
+            raise ApplyError("Another pending operation blocks manual create")
         deliver_notice(ledger_path, ledger)
-        if ledger["pending"] is not None:
-            action = ledger["pending"].get("repair", {}).get("action")
+        if pending is not None:
+            action = pending.get("repair", {}).get("action")
             kind = (
                 "retirement"
                 if action == RETIRE_ACTION
