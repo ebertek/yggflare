@@ -18,6 +18,7 @@ from unifi_api import MAX_ROWS, all_rows, get_network, hostname, row_id
 from unifi_dns import CANONICAL_TAG
 from unifi_dns_verify import MAX_QUERIES, WORKERS, query
 from unifi_reconcile_plan import load_live, policy_fingerprint
+from yggflare_env import env_get
 
 MAX_NETWORKS = 32
 MAX_RA_BYTES = 65536
@@ -40,7 +41,7 @@ def ipv6(value):
 
 
 def scopes(environ):
-    raw = environ.get("YGGFLARE_DISCOVERY_IPV6_CIDRS", "").strip()
+    raw = env_get(environ, "YGGFLARE_DISCOVERY_IPV6_CIDRS", "").strip()
     if not raw:
         return []
     parts = raw.split(",")
@@ -309,11 +310,11 @@ def parse_ra(raw, prefixes):
 
 
 def sample_ra(environ, prefixes, execute=subprocess.run):
-    if environ.get("YGGFLARE_DISCOVERY_RA", "false") != "true":
+    if env_get(environ, "YGGFLARE_DISCOVERY_RA", "false") != "true":
         return {"status": "disabled", "interfaces": []}
     interfaces = [
         item.strip()
-        for item in environ.get("YGGFLARE_DISCOVERY_INTERFACES", "").split(",")
+        for item in env_get(environ, "YGGFLARE_DISCOVERY_INTERFACES", "").split(",")
     ]
     if (
         not prefixes

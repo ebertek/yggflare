@@ -6,7 +6,6 @@ import hmac
 import http.client
 import ipaddress
 import json
-import os
 import re
 import signal
 import sys
@@ -42,6 +41,7 @@ from unifi_reconcile_plan import (
     review,
 )
 from yggflare_config import network
+from yggflare_env import getenv
 
 DNS_VERIFICATION_WINDOW = 600
 DNS_VERIFICATION_ATTEMPTS = 3
@@ -321,7 +321,7 @@ def discord_notice(operation, kind="create"):
 
 
 def deliver_notice(path, ledger):
-    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") != "true":
+    if getenv("YGGFLARE_UNIFI_DISCORD_NOTIFY") != "true":
         return
     for entry in ledger["owned"]:
         if entry.get("notice") != "pending":
@@ -488,7 +488,7 @@ def confirm_pending(path, ledger, live):
         ledger["owned"] = [
             old for old in ledger["owned"] if old["policy_id"] != repair["previous_id"]
         ]
-    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
+    if getenv("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
         entry["notice"] = "pending"
         if repair:
             entry["notice_kind"] = repair["action"]
@@ -545,7 +545,7 @@ def automatic_targets(zone):
 
 def run(data, selected="", approval="", *, automatic=False):
     if automatic:
-        if os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
+        if getenv("YGGFLARE_UNIFI_AUTO_APPLY") != "true":
             raise ApplyError("Scheduled UniFi creates are disabled")
     elif hostname(selected) != selected or not DIGEST.fullmatch(approval):
         raise ApplyError(
@@ -625,7 +625,7 @@ def run(data, selected="", approval="", *, automatic=False):
             raise ApplyError("An owned hostname or address requires manual review")
         if len(ledger["owned"]) >= MAX_ROWS:
             raise ApplyError("Ownership ledger is at capacity")
-        if os.environ.get("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
+        if getenv("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
             raise ApplyError(
                 "UniFi creates require the existing read-only Compose secret mount"
             )
@@ -849,7 +849,7 @@ def run_repair(data, selected, approval=None):
         report = preview_repair(live, ledger, selected)
         if not hmac.compare_digest(report["fingerprint"], approval):
             raise ApplyError("Live repair preview changed; review a fresh fingerprint")
-        if os.environ.get("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
+        if getenv("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
             raise ApplyError("UniFi repair requires the mounted Compose secret")
         refreshed = load_live()
         checked = preview_repair(refreshed, ledger, selected)
@@ -899,14 +899,14 @@ def run_repair(data, selected, approval=None):
 
 
 def retirement_enabled():
-    value = os.environ.get("YGGFLARE_UNIFI_AUTO_CLEANUP", "false")
+    value = getenv("YGGFLARE_UNIFI_AUTO_CLEANUP", "false")
     if value not in ("true", "false"):
         raise ApplyError("YGGFLARE_UNIFI_AUTO_CLEANUP must be true or false")
     return value == "true"
 
 
 def retirement_grace():
-    raw = os.environ.get("YGGFLARE_UNIFI_ORPHAN_GRACE_HOURS", "24")
+    raw = getenv("YGGFLARE_UNIFI_ORPHAN_GRACE_HOURS", "24")
     if not re.fullmatch(r"[0-9]{1,3}", raw) or not 24 <= int(raw) <= 720:
         raise ApplyError("UniFi retirement grace must be 24–720 hours")
     return int(raw) * 3600
@@ -1204,7 +1204,7 @@ def confirm_retirement(path, ledger, live):
     ledger["pending"] = None
     # Commit absence before any best-effort notice. A crash cannot replay it.
     write(path, ledger, durable=True)
-    if os.environ.get("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
+    if getenv("YGGFLARE_UNIFI_DISCORD_NOTIFY") == "true":
         try:
             accepted = discord_notice(operation, RETIRE_ACTION)
         except (ValueError, OSError, http.client.HTTPException):
@@ -1237,7 +1237,7 @@ def retire_one(data, path, ledger, live):
         return None
     if not ledger["pilot_verified"]:
         raise ApplyError("A verified manual pilot is required before retirement")
-    if os.environ.get("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
+    if getenv("YGGFLARE_UNIFI_API_KEY_FILE") != UNIFI_KEY_FILE:
         raise ApplyError("UniFi retirement requires the mounted Compose secret")
     identifier = eligible[0]["policy_id"]
     owned = next(item for item in ledger["owned"] if item["policy_id"] == identifier)

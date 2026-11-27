@@ -36,6 +36,7 @@ from probe_inventory import saved as saved_probes
 from traefik_inventory import saved as saved_traefik
 from unifi_inventory import FIELDS as UNIFI_FIELDS
 from unifi_inventory import UPLINK_FIELDS, uplink_counts
+from yggflare_env import env_get, getenv
 
 MAX_PAGE = 50
 MAX_TEXT = 512
@@ -809,7 +810,7 @@ def load_services():
     from web import NETWORK, SOURCE
 
     return service_snapshot(
-        SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", "")
+        SOURCE, NETWORK, getenv("YGGFLARE_INTERNAL_DOMAIN", "")
     )
 
 
@@ -3049,7 +3050,7 @@ PROMPTS = {
 
 
 def enabled_tools(env):
-    raw = env.get("YGGFLARE_MCP_TOOL_GROUPS", "all")
+    raw = env_get(env, "YGGFLARE_MCP_TOOL_GROUPS", "all")
     groups = set(GROUPS) if raw == "all" else set(raw.split(","))
     if not groups or groups - set(GROUPS):
         raise ValueError("Unknown or empty MCP tool group configuration")
@@ -3147,7 +3148,7 @@ def build_server(
     enabled = enabled_tools(env)
     if slots is None:
         slots = threading.BoundedSemaphore(4)
-    audit = env.get("YGGFLARE_MCP_AUDIT_LOG", "false")
+    audit = env_get(env, "YGGFLARE_MCP_AUDIT_LOG", "false")
     if audit not in {"true", "false"}:
         raise ValueError("Invalid MCP audit log setting")
     calls = {

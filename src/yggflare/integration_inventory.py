@@ -20,6 +20,7 @@ from docker_inventory import image_reference
 from prometheus_client.parser import text_string_to_metric_families
 from stack_revision import enrich_stacks
 from traefik_inventory import read, snapshot_rows, source_id, timestamp, write
+from yggflare_env import env_get, env_required
 
 ADAPTER_KINDS = {
     "komodo": ("servers", "stacks", "stack_services", "deployments"),
@@ -97,25 +98,25 @@ FIELDS = (
 
 
 def scheduled(adapter, env):
-    return bool(env.get("YGGFLARE_" + adapter.upper() + "_API_URL")) and (
-        adapter != "unifi" or env.get("YGGFLARE_UNIFI_COLLECT_ENABLED") == "true"
+    return bool(env_get(env, "YGGFLARE_" + adapter.upper() + "_API_URL")) and (
+        adapter != "unifi" or env_get(env, "YGGFLARE_UNIFI_COLLECT_ENABLED") == "true"
     )
 
 
 def settings(adapter, env):
     if adapter == "unifi":
-        return unifi_api.settings(env) if env.get("YGGFLARE_UNIFI_API_URL") else None
+        return unifi_api.settings(env) if env_get(env, "YGGFLARE_UNIFI_API_URL") else None
     if adapter not in ADAPTERS:
         raise ValueError("Unknown integration")
     prefix = "YGGFLARE_" + adapter.upper()
-    value = env.get(prefix + "_API_URL", "")
+    value = env_get(env, prefix + "_API_URL", "")
     if not value:
         return None
     try:
         url = urlsplit(value)
         address = ipaddress.ip_address(url.hostname or "")
-        lan = ipaddress.ip_network(env["YGGFLARE_LAN_CIDR"])
-        allow_http = env.get(prefix + "_ALLOW_HTTP", "false") == "true"
+        lan = ipaddress.ip_network(env_required(env, "YGGFLARE_LAN_CIDR"))
+        allow_http = env_get(env, prefix + "_ALLOW_HTTP", "false") == "true"
         if (
             url.scheme not in {"http", "https"}
             or (url.scheme == "http" and not allow_http and not address.is_loopback)
@@ -148,7 +149,7 @@ def credentials(adapter, directory=Path("/config"), *, env=None):
     result = []
     for filename in SECRET_FILES[adapter]:
         variable, mount_name = SECRET_MOUNTS[filename]
-        configured = env.get(variable, "")
+        configured = env_get(env, variable, "")
         mounted = bool(configured)
         if mounted:
             path = DOCKER_SECRETS / mount_name
@@ -532,7 +533,7 @@ def valid_rows(adapter, rows):
 
 def saved(adapter, data, env=None):
     env = os.environ if env is None else env
-    configured = bool(env.get("YGGFLARE_" + adapter.upper() + "_API_URL"))
+    configured = bool(env_get(env, "YGGFLARE_" + adapter.upper() + "_API_URL"))
     try:
         origin = settings(adapter, env)
     except ValueError:

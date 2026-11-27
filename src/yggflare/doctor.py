@@ -17,6 +17,7 @@ import controller
 from backup import verify_archive
 from discord_webhook import read_webhook
 from integration_inventory import credentials, saved, settings
+from yggflare_env import getenv
 
 DAY = dt.timedelta(days=1)
 
@@ -73,7 +74,7 @@ def checks():
         "/backup must be a writable persistent mount",
     )
     token = Path(
-        os.environ.get("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
+        getenv("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
     )
     add(
         "Cloudflare credential",
@@ -130,7 +131,7 @@ def checks():
         age_ok(data / "heartbeat", 5 / 60),
         "scheduler heartbeat older than five minutes",
     )
-    if os.environ.get("YGGFLARE_UNIFI_COLLECT_ENABLED") == "true":
+    if getenv("YGGFLARE_UNIFI_COLLECT_ENABLED") == "true":
         try:
             unifi_configured = settings("unifi", os.environ) is not None
             if unifi_configured:
