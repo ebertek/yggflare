@@ -222,6 +222,25 @@ class UniFiRepairTests(unittest.TestCase):
             put.assert_called_once()
             post.assert_not_called()
 
+    def test_recreated_policy_cannot_be_claimed_if_previous_id_reappears(self):
+        old_policy = {**policy(OLD), "domain": "other.example.invalid"}
+        after = live(NEW, [old_policy, policy(NEW, RESTORED)])
+        pending = {
+            "operation": {**OPERATION, "ipv4Address": NEW},
+            "policy_id": RESTORED,
+            "manual": True,
+            "repair": {
+                "action": "recreate",
+                "previous_id": POLICY,
+                "previous_address": OLD,
+            },
+        }
+        with patch.object(
+            apply, "all_rows", return_value=[old_policy, policy(NEW, RESTORED)]
+        ):
+            with self.assertRaisesRegex(apply.ApplyError, "Previous policy reappeared"):
+                apply.pending_dns_missing(pending, after)
+
     def test_put_uses_exact_policy_id_and_requires_matching_acknowledgement(self):
         operation = {**OPERATION, "ipv4Address": NEW}
         with patch.object(apply, "connection") as connect:

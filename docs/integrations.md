@@ -195,8 +195,8 @@ Scheduled reconciliation can recover acknowledged repairs. A manual
 repair can also be resumed using the same hostname and fingerprint.
 Repairs use the same lock and deadline as creation. No automatic repair
 or deletion is enabled. Verify the old reverse address separately.
-Older images do not support pending repair journal entries; disable the
-writer before rollback and retain the journal.
+Older images may reject repair journal entries or repair notification
+metadata. Disable the writer before rollback and retain the journal.
 
 ## Technitium migration procedure
 

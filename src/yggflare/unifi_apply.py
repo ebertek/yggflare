@@ -316,8 +316,15 @@ def pending_dns_missing(entry, live):
         )
     address, name = operation["ipv4Address"], operation["domain"]
     repair = entry.get("repair")
+    if (
+        repair
+        and repair["action"] == "recreate"
+        and any(row_id(policy["id"]) == repair["previous_id"] for policy in policies)
+    ):
+        raise ApplyError("Previous policy reappeared; writes remain blocked")
     if repair and (
-        not repair_desired(live, name, address)
+        matches[0].get("metadata") not in (None, {})
+        or not repair_desired(live, name, address)
         or (name, address) not in automatic_targets(live.comparison["source_zone"])
     ):
         raise ApplyError("Repair declaration changed; writes remain blocked")
@@ -359,6 +366,8 @@ def pending_dns_missing(entry, live):
 
 
 def confirm_pending(path, ledger, live):
+    if ledger["target"] != live.target:
+        raise ApplyError("Ownership target changed; writes remain blocked")
     entry = ledger["pending"]
     policy_id = entry["policy_id"]
     if policy_id is None:
@@ -578,8 +587,10 @@ def repair_review(live, ledger, selected, policies, targets):
     old_op = old["operation"]
     candidates = [row for row in live.comparison["rows"] if row["hostname"] == selected]
     address = candidates[0]["address"] if len(candidates) == 1 else None
+    lan = ipaddress.IPv4Network(live.comparison["configured_lan"])
     if (
         not address
+        or ipv4(old_op["ipv4Address"]) not in lan
         or not repair_desired(live, selected, address)
         or (selected, address) not in targets
         or any(
@@ -692,6 +703,7 @@ def update_policy(live, key, identifier, operation):
     if (
         not policy_matches(updated, operation)
         or row_id(updated.get("id")) != identifier
+        or updated.get("metadata") not in (None, {})
     ):
         raise ApplyError("Update acknowledgement does not match the reviewed policy")
     return identifier
