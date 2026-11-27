@@ -8,7 +8,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from evidence_summary import monitor_port_summary, probe_coverage
+from evidence_summary import (
+    cloudflare_snapshot_status,
+    monitor_port_summary,
+    probe_coverage,
+)
 from finding_lifecycle import STATES as FINDING_STATES
 from finding_lifecycle import rows as finding_rows
 from integration_inventory import ADAPTER_KINDS
@@ -19,7 +23,6 @@ from traefik_inventory import saved as saved_traefik
 from unifi_inventory import uplink_counts
 
 MAX_BYTES = 4 * 1024 * 1024
-STALE_CLOUDFLARE_SECONDS = 8 * 60 * 60
 
 
 def read_optional(path):
@@ -103,7 +106,10 @@ def render(config, data, now=None):
 
     seen_at = epoch(scan.get("scanned_at"))
     dns_sd_at = epoch(scan.get("dns_sd_scanned_at"))
-    view_at = epoch(view.get("audited_at"))
+    cloudflare = cloudflare_snapshot_status(
+        view, view_status, datetime.fromtimestamp(now, UTC)
+    )
+    view_at = epoch(cloudflare["audited_at"])
     duration = scan.get("scan_duration_seconds")
     if duration is not None and (
         isinstance(duration, bool)
@@ -116,10 +122,8 @@ def render(config, data, now=None):
         isinstance(host, dict) and host.get("lifecycle") == "orphaned"
         for host in view_hosts
     )
-    cloudflare_ok = view_status.get("ok") is True
-    cloudflare_stale = (
-        view_at is None or not cloudflare_ok or now - view_at > STALE_CLOUDFLARE_SECONDS
-    )
+    cloudflare_ok = cloudflare["last_refresh_verified"]
+    cloudflare_stale = not cloudflare["fresh"]
     unknown_count = sum(key.startswith("unknown-device:") for key in reported)
     findings_count = len(reported)
     observed_identities = [
@@ -137,7 +141,7 @@ def render(config, data, now=None):
         (
             "yggflare_inventory_declared_hosts",
             "Declared static inventory entries",
-            len(entries),
+            len(entries) if isinstance(inventory.get("hosts"), list) else None,
         ),
         (
             "yggflare_network_state_present",
@@ -147,47 +151,67 @@ def render(config, data, now=None):
         (
             "yggflare_network_discovered_ipv4_hosts",
             "Responsive IPv4 hosts in the most recent saved scan",
-            len(observed),
+            len(observed) if seen_at is not None and "hosts" in scan else None,
         ),
         (
             "yggflare_network_unknown_ipv4_hosts",
             "Current unidentified non-Docker IPv4 hosts in drift state",
-            unknown_count,
+            unknown_count if "reported" in scan and seen_at is not None else None,
         ),
         (
             "yggflare_network_active_findings",
             "Current network findings including new hosts IP changes and ports",
-            findings_count,
+            findings_count if "reported" in scan and seen_at is not None else None,
         ),
         (
             "yggflare_network_dns_sd_services",
             "DNS SD service identities from the most recent available browse",
-            len(advertisements),
+            (
+                len(advertisements)
+                if dns_sd_at is not None and "advertisements" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_observed_identities",
             "Evidence-based identity keys observed in the latest scan",
-            len(observed_identities),
+            (
+                len(observed_identities)
+                if seen_at is not None and "identity_history" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_high_confidence_identities",
             "Observed identities corroborated by declared and direct MAC evidence",
-            sum(entry.get("confidence") == "high" for entry in observed_identities),
+            (
+                sum(entry.get("confidence") == "high" for entry in observed_identities)
+                if seen_at is not None and "identity_history" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_identity_conflicts",
             "Addresses with unresolved competing identity evidence",
-            len(identity_conflicts),
+            (
+                len(identity_conflicts)
+                if seen_at is not None and "identity_conflicts" in scan
+                else None
+            ),
         ),
         (
             "yggflare_network_supplemental_warnings",
             "Supplemental discovery warnings in the most recent scan",
-            len(warnings),
+            (
+                len(warnings)
+                if seen_at is not None and "warnings" in supplementary
+                else None
+            ),
         ),
         (
             "yggflare_network_pending_discord_events",
             "Queued network notifications awaiting delivery",
-            len(pending),
+            len(pending) if "pending_discord_events" in scan else None,
         ),
         (
             "yggflare_network_scan_last_success_timestamp_seconds",
@@ -206,8 +230,8 @@ def render(config, data, now=None):
         ),
         (
             "yggflare_cloudflare_snapshot_present",
-            "Cloudflare presentation snapshot exists",
-            int((Path(data) / "cloudflare-view.json").is_file()),
+            "Valid saved Cloudflare lifecycle snapshot available",
+            cloudflare["snapshot_available"],
         ),
         (
             "yggflare_cloudflare_last_audit_timestamp_seconds",
@@ -216,7 +240,7 @@ def render(config, data, now=None):
         ),
         (
             "yggflare_cloudflare_last_refresh_success",
-            "Whether the latest Cloudflare presentation refresh succeeded",
+            "Latest Cloudflare refresh matches the saved snapshot",
             int(cloudflare_ok),
         ),
         (
@@ -227,7 +251,7 @@ def render(config, data, now=None):
         (
             "yggflare_cloudflare_orphan_hosts",
             "Owned Cloudflare hosts absent from desired configuration in last view",
-            orphan_count,
+            orphan_count if cloudflare["snapshot_available"] else None,
         ),
     ]
     coverage = scan.get("scan_coverage")

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Required, TypedDict
 
 from evidence_summary import (
+    cloudflare_snapshot_status,
     monitor_port_summary,
     network_collection_verified,
     observation_time,
@@ -158,13 +159,8 @@ def snapshot_context(data):
 def cloudflare_context(data):
     view = data.get("cloudflare_view", {})
     status = data.get("cloudflare_view_status", {})
-    stamp = view.get("audited_at")
     return {
-        "audited_at": stamp or None,
-        "latest_attempt_at": status.get("attempted_at"),
-        "last_refresh_verified": bool(
-            stamp and status.get("ok") is True and status.get("attempted_at") == stamp
-        ),
+        **cloudflare_snapshot_status(view, status, datetime.now(UTC)),
         "caveat": (
             "Saved lifecycle evidence only; not a live DNS, Access policy, "
             "reachability or security audit. Declared / unclaimed is ownership "
@@ -248,6 +244,7 @@ class PageContext(TypedDict, total=False):
     pending_confirmations: int
     identity_conflicts: int
     audited_at: str | None
+    snapshot_available: bool
     latest_attempt_at: str | None
     last_refresh_verified: bool
     ownership_counts: dict[str, int]
@@ -1419,8 +1416,12 @@ class InventoryTools:
     ) -> CloudflarePage:
         """Read saved Cloudflare lifecycle and DNS/Access/Tunnel presence, not policy rules."""
         data = self.loader()
+        context = cloudflare_context(data)
+        hosts = (
+            data["cloudflare_view"]["hosts"] if context["snapshot_available"] else []
+        )
         rows = []
-        for item in data.get("cloudflare_view", {}).get("hosts", []):
+        for item in hosts:
             if hostname and hostname.casefold() != item.get("hostname", "").casefold():
                 continue
             row = project(item, CLOUDFLARE_FIELDS)
@@ -1428,16 +1429,13 @@ class InventoryTools:
             row["dns_record_count"] = len(item.get("dns_record_ids", []))
             rows.append(row)
         counts = {
-            key: sum(
-                item.get("lifecycle") == key
-                for item in data.get("cloudflare_view", {}).get("hosts", [])
-            )
+            key: sum(item.get("lifecycle") == key for item in hosts)
             for key in ("managed", "orphaned", "declared / unclaimed", "unmanaged")
         }
         return {
-            **cloudflare_context(data),
+            **context,
             **page(rows, offset, limit, snapshot_id),
-            "ownership_counts": counts,
+            **({"ownership_counts": counts} if context["snapshot_available"] else {}),
         }
 
     def get_cloudflare_audit(

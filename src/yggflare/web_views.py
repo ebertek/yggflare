@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 
 from docker_inventory import address_key
+from evidence_summary import cloudflare_snapshot_status
 from presentation_text import html_text as escape
 
 
@@ -455,7 +456,8 @@ def drift_view(data, table):
 def cloudflare_view(data, table):
     view = data.get("cloudflare_view", {})
     status = data.get("cloudflare_view_status", {})
-    if not view:
+    evidence = cloudflare_snapshot_status(view, status, datetime.now(UTC))
+    if not evidence["snapshot_available"]:
         return (
             "<p>No complete Cloudflare audit snapshot yet. Managed/orphaned/unmanaged classifications are unavailable until the next controller audit.</p><h2>Local claims (classification unavailable)</h2>"
             + table(
@@ -463,18 +465,13 @@ def cloudflare_view(data, table):
                 [[h, "Claim recorded"] for h in data.get("managed_hosts", [])],
             )
         )
-    stamp = view.get("audited_at", "")
-    try:
-        age = datetime.now(UTC) - datetime.fromisoformat(stamp)
-        stale = age.total_seconds() > 8 * 3600 or age.total_seconds() < 0
-    except (ValueError, TypeError):
-        stale = True
+    stamp = evidence["audited_at"]
     content = f'<p class="muted">Last complete read-only Cloudflare audit: {escape(stamp)}. This is a snapshot; classification never authorizes cleanup.</p>'
-    if not status.get("ok") or status.get("attempted_at") != stamp:
+    if not evidence["last_refresh_verified"]:
         content += "<p>Latest refresh failed, is incomplete, or has no matching completion marker. Showing the last complete snapshot.</p>"
-    if stale:
+    if not evidence["fresh"]:
         content += (
-            "<p>Snapshot is stale (older than eight hours or invalid timestamp).</p>"
+            "<p>Snapshot is stale (older than eight hours or refresh unverified).</p>"
         )
     timers = data.get("orphan_observations", {})
     missing = (

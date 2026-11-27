@@ -116,8 +116,13 @@ Prometheus uses fixed, aggregate metrics for:
 - Collector availability, freshness and scheduler outcomes.
 - Komodo tracked inputs, Kuma monitor port selection and probe coverage.
 
-Unavailable outcomes are omitted, not zero-filled. Scrapes read saved
-state and the local probe allowlist; they never start live collection.
+Unavailable outcomes are omitted, not zero-filled. Missing Cloudflare
+lifecycle and network evidence does not produce healthy zero counts.
+Cloudflare refresh verification requires the completion marker to match
+the available snapshot timestamp; future or incomplete snapshots are
+unavailable. The Web UI, MCP lifecycle and Prometheus share this check.
+Scrapes read saved state and the local probe allowlist; they never start
+live collection.
 See [integrations](integrations.md) for interpretation.
 
 ## Assurance dashboard
