@@ -61,7 +61,7 @@ def settings(env=None):
     default_hosts = f"{host}:{port}"
     if address.is_loopback:
         default_hosts += f",localhost:{port}"
-    allowed_hosts = env_get(env, "YGGFLARE_MCP_ALLOWED_HOSTS", default_hosts)
+    allowed_hosts = env_get(env, "YGGFLARE_MCP_ALLOWED_HOSTS") or default_hosts
     hosts = tuple(item.strip().lower() for item in allowed_hosts.split(","))
     if not all(HOST_PATTERN.fullmatch(item) for item in hosts):
         raise ValueError("MCP requires explicit allowed Host values; no wildcards")
