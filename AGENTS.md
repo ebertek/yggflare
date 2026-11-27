@@ -100,7 +100,12 @@ production acceptance are distinct. Never move a published version tag.
   owned policies. Retirement requires separate opt-in and observed grace,
   complete desired-name/address absence, exact unchanged automatic ownership,
   fresh policy revalidation and journaled DELETE acknowledgement. Protect
-  manual pilots and unmanaged policies; verify policy and A/PTR absence.
+  manual pilots and unclaimed policies; verify policy and A/PTR absence.
+  An explicitly fingerprint-approved retired legacy A policy may enter
+  the same retirement lifecycle after exact matching A/PTR evidence,
+  full dependency checks and a verified same-target pilot. Record distinct
+  legacy provenance, never backdate grace or authorize repair, and recheck
+  the policy hash and dependencies during retirement.
 - IPv6 assessment is read-only. Distinguish configured DNS overrides,
   observed RA RDNSS, and unobserved DHCPv6 option delivery. No IPv6 writes
   or expansion of discovery targets from advertisements.
