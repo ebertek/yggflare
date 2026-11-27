@@ -3132,7 +3132,9 @@ def prompt_reader(text):
     return prompt
 
 
-def build_server(loader: Callable = load_model, *, env=None, slots=None, audit_log=None):
+def build_server(
+    loader: Callable = load_model, *, env=None, slots=None, audit_log=None
+):
     """Register only the explicit read-only tool allowlist."""
     server = MCPServer(
         "Yggflare",

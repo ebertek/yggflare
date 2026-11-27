@@ -61,7 +61,13 @@ def http_logging(sink):
         if root not in roots or not isinstance(logger, logging.Logger):
             continue
         saved.append(
-            (logger, logger.handlers[:], logger.level, logger.propagate, logger.disabled)
+            (
+                logger,
+                logger.handlers[:],
+                logger.level,
+                logger.propagate,
+                logger.disabled,
+            )
         )
         logger.handlers = [handler] if name == root else []
         logger.setLevel(roots[root] if name == root else logging.NOTSET)
