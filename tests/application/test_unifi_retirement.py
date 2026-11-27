@@ -256,6 +256,47 @@ class UniFiRetirementTests(unittest.TestCase):
             self.assertIn("Recovered", apply.run(self.data, automatic=True))
             remove.assert_called_once()
 
+    def test_transient_error_only_retries_after_delete_acknowledgement(self):
+        with patch.object(apply, "query", return_value=("timeout", [])):
+            with self.assertRaisesRegex(apply.ApplyError, "A: timeout") as error:
+                apply.retirement_replies(self.before, OPERATION, deleting=False)
+            self.assertNotIsInstance(error.exception, apply.DNSVerificationPending)
+        self.seed_grace()
+        with (
+            patch.object(
+                apply,
+                "load_live",
+                side_effect=[
+                    self.before,
+                    self.before,
+                    self.before,
+                    self.after,
+                    self.after,
+                ],
+            ),
+            patch.object(apply, "all_rows", side_effect=[[POLICY_ROW]] * 4 + [[], []]),
+            patch.object(
+                apply,
+                "query",
+                side_effect=[
+                    ("answered", [ADDRESS]),
+                    ("answered", [NAME + "."]),
+                    ("servfail", []),
+                    ("nxdomain", []),
+                    ("nxdomain", []),
+                    ("nxdomain", []),
+                ],
+            ),
+            patch.object(apply, "delete_owned_policy") as remove,
+        ):
+            with self.assertRaises(apply.DNSVerificationPending):
+                apply.run(self.data, automatic=True)
+            saved = apply.load_ledger(self.path, self.before.target)
+            self.assertEqual(saved["owned"], self.ledger["owned"])
+            self.assertEqual(saved["pending"]["policy_id"], POLICY)
+            self.assertIn("Recovered", apply.run(self.data, automatic=True))
+            remove.assert_called_once()
+
     def test_missing_source_and_invalid_grace_fail_closed(self):
         with (
             patch.object(apply, "all_rows", return_value=[POLICY_ROW]),

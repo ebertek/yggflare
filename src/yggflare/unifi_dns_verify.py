@@ -31,10 +31,12 @@ def query(gateway, name, kind):
         reply, _ = dns.query.udp_with_fallback(request, gateway, timeout=DNS_TIMEOUT)
     except dns.exception.Timeout:
         return "timeout", []
-    except (dns.exception.DNSException, OSError):
+    except OSError:
+        return "transport_error", []
+    except dns.exception.DNSException:
         return "query_error", []
     code = reply.rcode()
-    if code == dns.rcode.NXDOMAIN and reply.answer:
+    if code != dns.rcode.NOERROR and reply.answer:
         return "unexpected_answer", []
     if code != dns.rcode.NOERROR:
         return dns.rcode.to_text(code).lower(), []
