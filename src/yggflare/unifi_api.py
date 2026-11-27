@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from traefik_inventory import finite_number, unique_object, validate_depth
+from yggflare_env import env_get, env_required
 
 PREFIX = "/proxy/network/integration/v1"
 PAGE_SIZE = 100
@@ -35,15 +36,15 @@ def row_id(value):
 def settings(env):
     """Fixed numeric HTTPS origin in the declared LAN; optional site and TLS name."""
     try:
-        value = env["YGGFLARE_UNIFI_API_URL"]
+        value = env_required(env, "YGGFLARE_UNIFI_API_URL")
         if any(not 33 <= ord(char) <= 126 for char in value):
             raise ValueError
         url = urlsplit(value)
         address = ipaddress.ip_address(url.hostname or "")
-        lan = ipaddress.ip_network(env["YGGFLARE_LAN_CIDR"])
+        lan = ipaddress.ip_network(env_required(env, "YGGFLARE_LAN_CIDR"))
         port = url.port if url.port is not None else 443
-        site = env.get("YGGFLARE_UNIFI_SITE_ID", "")
-        tls_name = env.get("YGGFLARE_UNIFI_TLS_NAME") or str(address)
+        site = env_get(env, "YGGFLARE_UNIFI_SITE_ID", "")
+        tls_name = env_get(env, "YGGFLARE_UNIFI_TLS_NAME") or str(address)
         if (
             url.scheme != "https"
             or url.username is not None

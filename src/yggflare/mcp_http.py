@@ -18,6 +18,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_server import GROUPS, build_server, enabled_tools
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
+from yggflare_env import env_get
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9._~-]{32,256}")
 HOST_PATTERN = re.compile(r"[A-Za-z0-9.:\[\]-]{1,253}")
@@ -28,7 +29,7 @@ PRINCIPAL_CONFIG = Path("/config/mcp-principals.json")
 
 def enabled(env=None):
     env = os.environ if env is None else env
-    value = env.get("YGGFLARE_MCP_ENABLED", "false")
+    value = env_get(env, "YGGFLARE_MCP_ENABLED", "false")
     if value not in ("true", "false"):
         raise ValueError("YGGFLARE_MCP_ENABLED must be true or false")
     return value == "true"
@@ -46,10 +47,10 @@ class HTTPSettings:
 def settings(env=None):
     env = os.environ if env is None else env
     try:
-        address = ipaddress.ip_address(env.get("YGGFLARE_MCP_BIND", "127.0.0.1"))
+        address = ipaddress.ip_address(env_get(env, "YGGFLARE_MCP_BIND", "127.0.0.1"))
         if address.is_unspecified or address.is_multicast or "%" in str(address):
             raise ValueError
-        port = int(env.get("YGGFLARE_MCP_PORT", "8788"))
+        port = int(env_get(env, "YGGFLARE_MCP_PORT", "8788"))
         if not 1 <= port <= 65535:
             raise ValueError
     except ValueError:
@@ -60,13 +61,11 @@ def settings(env=None):
     default_hosts = f"{host}:{port}"
     if address.is_loopback:
         default_hosts += f",localhost:{port}"
-    hosts = tuple(
-        item.strip().lower()
-        for item in (env.get("YGGFLARE_MCP_ALLOWED_HOSTS") or default_hosts).split(",")
-    )
+    allowed_hosts = env_get(env, "YGGFLARE_MCP_ALLOWED_HOSTS") or default_hosts
+    hosts = tuple(item.strip().lower() for item in allowed_hosts.split(","))
     if not all(HOST_PATTERN.fullmatch(item) for item in hosts):
         raise ValueError("MCP requires explicit allowed Host values; no wildcards")
-    principals = env.get("YGGFLARE_MCP_PRINCIPALS_FILE", "")
+    principals = env_get(env, "YGGFLARE_MCP_PRINCIPALS_FILE", "")
     if principals and principals != str(PRINCIPAL_CONFIG):
         raise ValueError("MCP principals require the fixed private configuration path")
     if principals and not address.is_loopback:
@@ -75,7 +74,7 @@ def settings(env=None):
         str(address),
         port,
         hosts,
-        Path(env.get("YGGFLARE_MCP_TOKEN_FILE", "/config/mcp-token.txt")),
+        Path(env_get(env, "YGGFLARE_MCP_TOKEN_FILE", "/config/mcp-token.txt")),
         PRINCIPAL_CONFIG if principals else None,
     )
 
@@ -126,7 +125,7 @@ def read_principals(path, env=None):
     """Explicit opt-in replaces, rather than supplements, the legacy token."""
     env = os.environ if env is None else env
     enabled_tools(env)  # Validate the server-wide ceiling first.
-    raw = env.get("YGGFLARE_MCP_TOOL_GROUPS", "all")
+    raw = env_get(env, "YGGFLARE_MCP_TOOL_GROUPS", "all")
     ceiling = set(GROUPS) if raw == "all" else set(raw.split(","))
     try:
         document = json.loads(private_read(path, 16 * 1024))

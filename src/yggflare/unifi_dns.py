@@ -14,6 +14,7 @@ from cloudflare_credentials import api_token
 from integration_inventory import credentials
 from unifi_api import MAX_ROWS, all_rows, get_page, hostname, select_site, settings
 from yggflare_config import domain, network
+from yggflare_env import getenv
 
 CANONICAL_TAG = "yggflare:canonical"
 RFC1918 = tuple(
@@ -205,9 +206,9 @@ def plan(records, policies, zone, lan):
 
 def cloudflare_records(zone, token):
     client = CloudflareClient(token)
-    account = checked_id(os.environ.get("CLOUDFLARE_ACCOUNT_ID"), "account ID")
+    account = checked_id(getenv("CLOUDFLARE_ACCOUNT_ID"), "account ID")
     zone_id = client.zone_id(zone, account)
-    configured = os.environ.get("CLOUDFLARE_INTERNAL_ZONE_ID")
+    configured = getenv("CLOUDFLARE_INTERNAL_ZONE_ID")
     if configured and checked_id(configured) != zone_id:
         raise ValueError("Configured internal zone does not match Cloudflare")
     return client.list_dns(zone_id)

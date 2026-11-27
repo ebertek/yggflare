@@ -1,7 +1,6 @@
 """Explicit opt-in, time-delayed retirement of proven, reviewed orphans."""
 
 import json
-import os
 import sys
 import time
 import urllib.request
@@ -20,6 +19,7 @@ from cloudflare_orphans import (
 from cloudflare_write_api import CloudflareWriter
 from discord_embed import embed_payload, inline_code
 from yggflare_config import cloudflare_settings
+from yggflare_env import getenv
 
 
 def cleanup_batch(eligible, budget):
@@ -31,14 +31,14 @@ def cleanup_batch(eligible, budget):
 
 def main():
     """Require both opt-ins; never delete a hostname not in the ownership registry."""
-    if os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") != "true":
+    if getenv("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") != "true":
         print("Orphan automatic cleanup disabled.")
         return 0
-    if os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_APPLY") != "true":
+    if getenv("YGGFLARE_CLOUDFLARE_AUTO_APPLY") != "true":
         raise OwnershipError(
             "Auto cleanup additionally requires YGGFLARE_CLOUDFLARE_AUTO_APPLY=true"
         )
-    raw_grace = os.environ.get("YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS", "24")
+    raw_grace = getenv("YGGFLARE_CLOUDFLARE_ORPHAN_GRACE_HOURS", "24")
     try:
         grace = int(raw_grace)
     except ValueError as error:
@@ -48,9 +48,7 @@ def main():
     if not 24 <= grace <= 720:
         raise OwnershipError("Orphan grace period must be between 24 and 720 hours")
     try:
-        batch_size = int(
-            os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE", "1")
-        )
+        batch_size = int(getenv("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP_BATCH_SIZE", "1"))
     except ValueError as error:
         raise OwnershipError("Invalid orphan cleanup batch size") from error
     if batch_size < 0:
@@ -93,7 +91,7 @@ def main():
 def notify_retirement(hostname):
     """Best-effort reporting; never expose the webhook credential in logs."""
     secret = Path(
-        os.environ.get(
+        getenv(
             "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE",
             "/run/secrets/network_discord_webhook",
         )

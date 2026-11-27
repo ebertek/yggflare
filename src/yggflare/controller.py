@@ -24,12 +24,13 @@ from mcp_logging import http_logging
 from probe_inventory import INTERVAL as PROBE_INTERVAL
 from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
 from watchers import start as start_watchers
+from yggflare_env import env_get, getenv
 
 CONFIG = Path("/config")
 DATA = Path("/data")
 SOURCE = Path("/compose-source")
 BACKUP = Path("/backup")
-LOG_FORMAT = os.getenv("YGGFLARE_LOG_FORMAT", "text").lower()
+LOG_FORMAT = getenv("YGGFLARE_LOG_FORMAT", "text").lower()
 if LOG_FORMAT not in ("text", "json"):
     raise ValueError("YGGFLARE_LOG_FORMAT must be text or json")
 CLOUD_INTERVAL = dt.timedelta(hours=6)
@@ -124,8 +125,8 @@ def log(level, component, message, **fields):
 
 def image_identity():
     """Return safe, immutable image-build metadata or development placeholders."""
-    version = os.environ.get("YGGFLARE_BUILD_VERSION", "dev")
-    revision = os.environ.get("YGGFLARE_BUILD_REVISION", "unknown")
+    version = getenv("YGGFLARE_BUILD_VERSION", "dev")
+    revision = getenv("YGGFLARE_BUILD_REVISION", "unknown")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", version):
         version = "unknown"
     if not re.fullmatch(r"[a-fA-F0-9]{40}", revision):
@@ -228,12 +229,12 @@ def run(args, *, env=None):
 
 def cloudflare_run():
     """Run Cloudflare using environment configuration and mounted secrets."""
-    auto = os.environ.get("YGGFLARE_CLOUDFLARE_AUTO_APPLY", "false")
+    auto = getenv("YGGFLARE_CLOUDFLARE_AUTO_APPLY", "false")
     if auto not in ("true", "false"):
         raise ValueError("YGGFLARE_CLOUDFLARE_AUTO_APPLY must be exactly true or false")
     env = os.environ.copy()
     secret = Path(
-        env.get("CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
+        env_get(env, "CLOUDFLARE_API_TOKEN_FILE", "/run/secrets/cloudflare_api_token")
     )
     if not secret.is_file():
         raise FileNotFoundError("Cloudflare API token secret missing")
@@ -255,7 +256,7 @@ def cloudflare_run():
         if auto == "true":
             args.append("--auto")
         run(args, env=env)
-        if env.get("YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true":
+        if env_get(env, "YGGFLARE_CLOUDFLARE_AUTO_CLEANUP", "false") == "true":
             if auto != "true":
                 raise ValueError(
                     "YGGFLARE_CLOUDFLARE_AUTO_CLEANUP requires YGGFLARE_CLOUDFLARE_AUTO_APPLY=true"
@@ -345,7 +346,7 @@ def tracked(job):
 def unifi_apply_interval(environ):
     """Validate the independent DNS writer cadence before scheduling writes."""
     name = "YGGFLARE_UNIFI_APPLY_INTERVAL_SECONDS"
-    raw = environ.get(name, str(UNIFI_APPLY_INTERVAL_DEFAULT))
+    raw = env_get(environ, name, str(UNIFI_APPLY_INTERVAL_DEFAULT))
     if not re.fullmatch(r"[0-9]{1,4}", raw) or not 30 <= int(raw) <= 3600:
         raise ValueError(f"{name} must be an integer from 30 to 3600")
     return int(raw)
@@ -369,7 +370,7 @@ def run_unifi_apply(interval):
 
 def run_scheduler(listener=None):
     threading.Thread(target=heartbeat_loop, daemon=True).start()
-    web_enabled = os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true"
+    web_enabled = getenv("YGGFLARE_WEB_ENABLED", "false") == "true"
     if web_enabled:
         from web import serve  # pylint: disable=import-outside-toplevel
 
@@ -381,7 +382,7 @@ def run_scheduler(listener=None):
     next_traefik = 0.0
     next_probe = 0.0
     next_integration = dict.fromkeys(ADAPTERS, 0.0)
-    unifi_auto_apply = os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") == "true"
+    unifi_auto_apply = getenv("YGGFLARE_UNIFI_AUTO_APPLY") == "true"
     unifi_interval = (
         unifi_apply_interval(os.environ)
         if unifi_auto_apply
@@ -433,10 +434,7 @@ def run_scheduler(listener=None):
                     )
             last_cloud_completed = time.monotonic()
             next_cloud = dt.datetime.now(dt.timezone.utc) + CLOUD_INTERVAL
-        if (
-            os.environ.get("YGGFLARE_TRAEFIK_API_URL")
-            and time.monotonic() >= next_traefik
-        ):
+        if getenv("YGGFLARE_TRAEFIK_API_URL") and time.monotonic() >= next_traefik:
             try:
                 with tracked("traefik"):
                     run([sys.executable, "/app/traefik_inventory.py"])
@@ -466,7 +464,7 @@ def run_scheduler(listener=None):
             delay = run_unifi_apply(unifi_interval)
             next_unifi_apply = time.monotonic() + delay
         if (
-            os.environ.get("YGGFLARE_PROBES_ENABLED") == "true"
+            getenv("YGGFLARE_PROBES_ENABLED") == "true"
             and time.monotonic() >= next_probe
         ):
             try:

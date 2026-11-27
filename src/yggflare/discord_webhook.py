@@ -4,10 +4,11 @@ Never include the URL, webhook ID or token in error messages: webhook URLs
 are credentials. Parsing does not contact Discord or any other service.
 """
 
-import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from yggflare_env import getenv
 
 DEFAULT_WEBHOOK_FILE = "/run/secrets/network_discord_webhook"
 WEBHOOK_FILE_ENV = "YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE"
@@ -40,7 +41,7 @@ def validate_webhook_url(value):
 
 def read_webhook(path=None):
     """Read and validate the configured secret, hiding credential contents."""
-    target = Path(path or os.environ.get(WEBHOOK_FILE_ENV, DEFAULT_WEBHOOK_FILE))
+    target = Path(path or getenv(WEBHOOK_FILE_ENV, DEFAULT_WEBHOOK_FILE))
     try:
         value = target.read_text(encoding="utf-8").strip()
     except (OSError, UnicodeError):

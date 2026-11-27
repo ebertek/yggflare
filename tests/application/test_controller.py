@@ -144,12 +144,13 @@ class ControllerTests(unittest.TestCase):
     def test_unifi_apply_interval_validates_bounds(self):
         name = "YGGFLARE_UNIFI_APPLY_INTERVAL_SECONDS"
         self.assertEqual(controller.unifi_apply_interval({}), 60)
+        self.assertEqual(controller.unifi_apply_interval({name: ""}), 60)
         for value in ("30", "60", "300", "3600"):
             with self.subTest(value=value):
                 self.assertEqual(
                     controller.unifi_apply_interval({name: value}), int(value)
                 )
-        for value in ("0", "29", "3601", "abc", "-1", "1.5", "", "9" * 100):
+        for value in ("0", "29", "3601", "abc", "-1", "1.5", " ", "9" * 100):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 controller.unifi_apply_interval({name: value})
 

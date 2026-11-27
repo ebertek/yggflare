@@ -10,6 +10,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from yggflare_env import getenv
+
 JOBS = (
     "cloudflare_cycle",
     "cloudflare_view",
@@ -163,8 +165,8 @@ def artifact_status(backup):
 
 def health(data):
     """Inspect fixed heartbeat and immutable build identity only."""
-    version = os.environ.get("YGGFLARE_BUILD_VERSION", "dev")
-    revision = os.environ.get("YGGFLARE_BUILD_REVISION", "unknown")
+    version = getenv("YGGFLARE_BUILD_VERSION", "dev")
+    revision = getenv("YGGFLARE_BUILD_REVISION", "unknown")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", version):
         version = "unknown"
     if not re.fullmatch(r"[a-fA-F0-9]{40}", revision):

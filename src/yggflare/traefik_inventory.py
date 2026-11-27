@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from yggflare_env import env_get, env_required
+
 SECTIONS = tuple(
     (protocol, kind)
     for protocol in ("http", "tcp", "udp")
@@ -39,13 +41,13 @@ def timestamp():
 
 def settings(env):
     """Accept only a fixed numeric, scoped internal API origin, no credentials."""
-    value = env.get("YGGFLARE_TRAEFIK_API_URL", "")
+    value = env_get(env, "YGGFLARE_TRAEFIK_API_URL", "")
     if not value:
         return None
     try:
         url = urlsplit(value)
         address = ipaddress.ip_address(url.hostname or "")
-        lan = ipaddress.ip_network(env["YGGFLARE_LAN_CIDR"])
+        lan = ipaddress.ip_network(env_required(env, "YGGFLARE_LAN_CIDR"))
         if (
             url.scheme not in {"http", "https"}
             or url.username is not None

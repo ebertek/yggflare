@@ -180,6 +180,10 @@ production acceptance are distinct. Never move a published version tag.
 
 - Use `YGGFLARE_*` for application settings and `CLOUDFLARE_*` for
   Cloudflare API/resource and existing DNS opt-ins. No `YGG_*`/`CF_*` aliases.
+- Read application settings through `yggflare_env` helpers; literal empty
+  strings behave like absent values, preserving defaults and required-setting
+  validation. Nonempty invalid settings still fail validation. Do not normalize
+  unrelated process environment or credential file contents.
 - Use validated environment domains and network ranges, not hardcoded
   deployment values. Coordinate compatible images and Compose changes.
 - Alphabetize YAML mappings at each level, including services, environment,

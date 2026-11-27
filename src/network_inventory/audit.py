@@ -26,17 +26,18 @@ from discord_format import render
 from discord_webhook import validate_webhook_url
 from finding_lifecycle import update as update_findings
 from link_discovery import collect as collect_links
+from yggflare_env import env_required, getenv
 
-NETWORK = ipaddress.ip_network(os.environ["YGGFLARE_LAN_CIDR"], strict=True)
+NETWORK = ipaddress.ip_network(
+    env_required(os.environ, "YGGFLARE_LAN_CIDR"), strict=True
+)
 DEFAULT_PORTS = (
     "21,22,23,53,80,81,139,443,445,554,1883,3000,5000,"
     "6053,6444,7000,8008,8009,8080,8443,8888,9000,9100,1400"
 )
-DEFAULT_STATE = Path(
-    os.environ.get("YGGFLARE_NETWORK_STATE_DIR", "/data/network-inventory")
-)
+DEFAULT_STATE = Path(getenv("YGGFLARE_NETWORK_STATE_DIR", "/data/network-inventory"))
 DEFAULT_INVENTORY = Path(
-    os.environ.get("YGGFLARE_STATIC_INVENTORY", "/config/static-hosts.json")
+    getenv("YGGFLARE_STATIC_INVENTORY", "/config/static-hosts.json")
 )
 NMAP_SERVICES = Path("/usr/share/nmap/nmap-services")
 MAX_NMAP_SERVICES_BYTES = 8 * 1024 * 1024
@@ -719,7 +720,7 @@ def main():
         print("First observation saved; suppressing initial Discord notification.")
     if snapshot["pending_discord_events"]:
         try:
-            webhook_file = os.environ.get("YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE")
+            webhook_file = getenv("YGGFLARE_NETWORK_DISCORD_WEBHOOK_FILE")
             webhook = (
                 Path(webhook_file).read_text(encoding="utf-8").strip()
                 if webhook_file and Path(webhook_file).is_file()

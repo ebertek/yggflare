@@ -18,6 +18,7 @@ from pathlib import Path
 
 from evidence_summary import check_identity
 from traefik_inventory import read, snapshot_rows, timestamp, write
+from yggflare_env import env_get, env_required
 
 INTERVAL = 300
 MAX_TARGETS = 16
@@ -45,12 +46,12 @@ FIELDS = (
 
 
 def settings(config_dir, env):
-    enabled = env.get("YGGFLARE_PROBES_ENABLED", "false")
+    enabled = env_get(env, "YGGFLARE_PROBES_ENABLED", "false")
     if enabled == "false":
         return None
     if enabled != "true":
         raise ValueError("Invalid probe enable setting")
-    selected = env.get("YGGFLARE_PROBES_CONFIG_FILE", "")
+    selected = env_get(env, "YGGFLARE_PROBES_CONFIG_FILE", "")
     if selected and selected != "/yggflare-probes.json":
         raise ValueError("Probe configuration requires its fixed Docker config path")
     path = CONFIG_MOUNT if selected else config_dir / "probes.json"
@@ -70,10 +71,10 @@ def settings(config_dir, env):
     if len(payload) > 64 * 1024:
         raise ValueError("Probe configuration exceeds size limit")
     document = json.loads(payload)
-    lan = ipaddress.ip_network(env["YGGFLARE_LAN_CIDR"])
+    lan = ipaddress.ip_network(env_required(env, "YGGFLARE_LAN_CIDR"))
     ipv6 = [
         ipaddress.ip_network(value.strip())
-        for value in env.get("YGGFLARE_DISCOVERY_IPV6_CIDRS", "").split(",")
+        for value in env_get(env, "YGGFLARE_DISCOVERY_IPV6_CIDRS", "").split(",")
         if value.strip()
     ]
     if not isinstance(document, dict) or document.get("version") != 1:
@@ -293,7 +294,7 @@ def refresh(data, config, env, runner=probe):
 
 def saved(data, config=Path("/config"), env=None):
     env = os.environ if env is None else env
-    configured = env.get("YGGFLARE_PROBES_ENABLED", "false") == "true"
+    configured = env_get(env, "YGGFLARE_PROBES_ENABLED", "false") == "true"
     try:
         targets = settings(config, env)
     except (OSError, KeyError, ValueError, TypeError):
@@ -320,7 +321,7 @@ def saved(data, config=Path("/config"), env=None):
             for check in target["checks"]
         ]
         if targets is not None
-        else [] if env.get("YGGFLARE_PROBES_ENABLED", "false") == "false" else None
+        else [] if env_get(env, "YGGFLARE_PROBES_ENABLED", "false") == "false" else None
     )
     rows = snapshot_rows(view, MAX_TARGETS * len(CHECKS))
     available = bool(

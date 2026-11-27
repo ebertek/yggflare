@@ -142,7 +142,12 @@ automatic apply. See [Cloudflare](cloudflare.md) for the quota and write rules.
 | `YGGFLARE_WEB_ENABLED`                 | `false`     | Web UI                    |
 | `YGGFLARE_WEB_PORT`                    | `8787`      | HTTP port                 |
 
-Application defaults apply even when a setting is omitted. To override a value not
+For every application setting (`YGGFLARE_*` and `CLOUDFLARE_*`), an explicitly
+empty string is equivalent to an unset variable. Optional settings use their
+existing defaults; required settings still fail validation. Nonempty values
+remain subject to the same validation, including credential-file paths. This
+also preserves the existing unset-zone UniFi ownership target fingerprint.
+Do not reset or manually rebind a journal if its target differs. To override a value not
 forwarded by the supplied Compose file, add it to that service's `environment:`.
 
 For optional settings, see [discovery](discovery.md),
