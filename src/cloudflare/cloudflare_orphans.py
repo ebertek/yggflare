@@ -156,7 +156,11 @@ def claimed_identity(client, bound, hostname, resources, wanted):
     if len(apps) != 1 or len(records) != 1 or len(routes) != 1:
         raise OwnershipError(f"{hostname}: Access, DNS and ingress must each be unique")
     app = full_app(client, bound["account"], apps[0])
-    record, route = records[0], routes[0]
+    return identity_from_details(bound, hostname, app, records[0], routes[0], wanted)
+
+
+def identity_from_details(bound, hostname, app, record, route, wanted):
+    """Validate an already hydrated app from the current evidence round."""
     target = bound["tunnel"].lower() + ".cfargotunnel.com"
     if (
         app.get("domain") != hostname

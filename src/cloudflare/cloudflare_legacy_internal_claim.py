@@ -32,6 +32,7 @@ from cloudflare_internal_ownership import (
 )
 from cloudflare_internal_retirement import checked_records, normalized
 from cloudflare_orphans import digest, locked_registry
+from retirement_progress import emit, reporting
 from yggflare_config import cloudflare_settings
 
 APPROVAL = re.compile(r"[0-9a-f]{16}")
@@ -59,6 +60,12 @@ def orphan_candidate(report, owned, hostname):
         or row["ownership"] != "unmanaged"
         or row["status"] != "unmanaged"
     ):
+        if row["status"] == "private_protected":
+            for blocker in row.get("private_blockers", []):
+                emit(
+                    f"Private protection: {blocker['source']} / "
+                    f"{blocker['hostname']} (matching {blocker['match']})"
+                )
         raise ValueError("Legacy claim blocked by ownership or retirement evidence")
     identifier = checked_id(row["record_id"], "legacy DNS record ID")
     if any(
@@ -109,6 +116,7 @@ def review_claim(client, data, settings, hostname):
     """Read fresh evidence twice, without recording ownership or approval state."""
     if canonical_name(hostname, settings["internal_zone"]) != hostname:
         raise ValueError("Legacy claim requires a canonical internal hostname")
+    emit("Review 1/2: checking internal DNS and retirement blockers")
     report, bound, external, owned = fresh_review(client, data, settings, hostname)
     row = orphan_candidate(report, owned, hostname)
     scope = scope_for(bound, external)
@@ -119,6 +127,7 @@ def review_claim(client, data, settings, hostname):
     entry = verified_entry(client, bound, row)
 
     # Recheck declarations, runtime, zone scope and ownership after detail GET.
+    emit("Review 2/2: revalidating internal DNS identity and dependencies")
     report, actual, external, owned = fresh_review(client, data, settings, hostname)
     if (
         scope_for(actual, external) != scope
@@ -138,6 +147,7 @@ def apply_claim(client, data, settings, hostname, approval):
     """Approve local ownership only; the normal retirement scheduler owns DELETE."""
     if not isinstance(approval, str) or not APPROVAL.fullmatch(approval):
         raise ValueError("Legacy claim requires a reviewed fingerprint")
+    emit("Acquiring ownership writer locks")
     with write_lock(), locked_registry(data):
         plan, expected = review_claim(client, data, settings, hostname)
         if not hmac.compare_digest(approval, expected):
@@ -157,6 +167,7 @@ def apply_claim(client, data, settings, hostname, approval):
             # No previous observation may age a newly adopted identity.
             state["observations"].pop(entry["id"], None)
             save_state(data, state)
+        emit("Approval matched; saving local ownership")
         ledger["records"][entry["id"]] = entry
         save_registry(data, ledger)
     return entry
@@ -207,4 +218,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with reporting():
+        sys.exit(main())

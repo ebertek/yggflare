@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -35,9 +36,9 @@ from cloudflare_orphans import (
     AUTO_STATE,
     MAX_REGISTRY_BYTES,
     OwnershipError,
-    claimed_identity,
     desired_hosts,
     digest,
+    identity_from_details,
     live_resources,
     load_registry,
     locked_registry,
@@ -50,7 +51,10 @@ from cloudflare_static_dns import (
     load_inventory_aliases,
     load_inventory_details,
 )
+from retirement_progress import emit, reporting
 from yggflare_config import cloudflare_settings, domain
+
+ACCESS_DETAIL_WORKERS = 4
 
 
 def resolve_scope(client, settings):
@@ -176,17 +180,36 @@ def inspect_resources(client, bound, internal, hostname, expected=None):
     internal_dns = checked_records(client.list_dns(internal))
     app_matches = []
     seen = set()
+    self_hosted = []
     for listed in apps:
         identifier = checked_tunnel_id(listed["id"])
         if identifier in seen:
             raise OwnershipError("Duplicate Access application ID")
         seen.add(identifier)
-        # List data may omit additional destinations. Hydrate self-hosted apps.
-        app = (
-            client.get_application(bound["account"], identifier)
-            if listed.get("type") == "self_hosted"
-            else listed
-        )
+        if listed.get("type") == "self_hosted":
+            self_hosted.append(identifier)
+
+    # List data may omit additional destinations. Every self-hosted app must
+    # still be hydrated in each independent round; never cache across rounds.
+    emit(
+        f"Reading {len(self_hosted)} Access application details (up to 4 concurrent GETs)"
+    )
+
+    def hydrate(identifier):
+        return client.get_application(bound["account"], identifier)
+
+    details = {}
+    with ThreadPoolExecutor(max_workers=ACCESS_DETAIL_WORKERS) as pool:
+        # Keep at most one batch in flight so a failed read does not queue
+        # unnecessary requests for the remaining applications.
+        for start in range(0, len(self_hosted), ACCESS_DETAIL_WORKERS):
+            batch = self_hosted[start : start + ACCESS_DETAIL_WORKERS]
+            for identifier, detail in zip(batch, pool.map(hydrate, batch), strict=True):
+                details[identifier] = detail
+            emit(f"Access details checked: {len(details)}/{len(self_hosted)}")
+    for listed in apps:
+        identifier = listed["id"]
+        app = details.get(identifier, listed)
         if (
             app.get("id") != identifier
             or app.get("type") != listed.get("type")
@@ -258,7 +281,7 @@ def detail_dns(client, bound, record):
 
 
 def inspect_identity(client, bound, internal, hostname):
-    apps, records, routes, config = inspect_resources(client, bound, internal, hostname)
+    apps, records, routes, _ = inspect_resources(client, bound, internal, hostname)
     if any(len(rows) != 1 for rows in (apps, records, routes)):
         raise OwnershipError("Legacy endpoint must have all three exact resources")
     app, record = apps[0], records[0]
@@ -269,10 +292,8 @@ def inspect_identity(client, bound, internal, hostname):
         UUID.fullmatch(policy) and policy in identifiers for policy in policies
     ):
         raise OwnershipError("Legacy Access policy identity is not reusable")
-    identity = claimed_identity(
-        client, bound, hostname, (apps, records, config), policies
-    )
-    # claimed_identity fetches the app again; require its full detail to agree.
+    identity = identity_from_details(bound, hostname, app, record, routes[0], policies)
+    # Keep one independent exact target read after validating the hydrated app.
     if client.get_application(bound["account"], identity["app_id"]) != app:
         raise OwnershipError("Access details changed during legacy review")
     identity["legacy"] = {
@@ -352,11 +373,14 @@ def protected_legacy_hosts(client, data, bound):
 def review_claim(client, data, settings, hostname):
     if not HOST.fullmatch(hostname):
         raise OwnershipError("Legacy claim requires an exact external hostname")
+    emit("Resolving external scope and ownership")
     bound, internal = resolve_scope(client, settings)
     registry = load_registry(data, bound)
     if hostname in registry["hosts"]:
         raise OwnershipError("External hostname already owned")
+    emit("Review 1/2: checking Compose, Docker and private declarations")
     read_fresh_absence(client, bound, hostname)
+    emit("Review 1/2: checking DNS, Tunnel and Access")
     identity = inspect_identity(client, bound, internal, hostname)
     if any(
         existing.get("app_id") == identity["app_id"]
@@ -364,6 +388,7 @@ def review_claim(client, data, settings, hostname):
         for existing in registry["hosts"].values()
     ):
         raise OwnershipError("External endpoint ownership collision")
+    emit("Review 2/2: rechecking declarations and live resource identities")
     read_fresh_absence(client, bound, hostname)
     if (
         resolve_scope(client, settings) != (bound, internal)
@@ -422,6 +447,7 @@ def reset_observation(data, bound, hostname):
 def apply_claim(client, data, settings, hostname, approval):
     if not isinstance(approval, str) or not APPROVAL.fullmatch(approval):
         raise OwnershipError("Legacy external claim requires a reviewed fingerprint")
+    emit("Acquiring ownership writer locks")
     with write_lock(), locked_registry(data):
         plan, expected = review_claim(client, data, settings, hostname)
         if not hmac.compare_digest(approval, expected):
@@ -430,6 +456,7 @@ def apply_claim(client, data, settings, hostname, approval):
         registry = load_registry(data, bound)
         if hostname in registry["hosts"]:
             raise OwnershipError("External hostname already owned")
+        emit("Approval matched; saving local ownership")
         reset_observation(data, bound, hostname)
         registry["hosts"][hostname] = copy.deepcopy(plan["identity"])
         save_registry(data, registry)
@@ -489,4 +516,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with reporting():
+        sys.exit(main())

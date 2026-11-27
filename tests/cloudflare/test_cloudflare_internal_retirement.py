@@ -95,6 +95,31 @@ class RetirementReviewTests(unittest.TestCase):
                 self.evidence = before
         self.client.get.assert_not_called()
 
+    def test_selected_private_blocker_identifies_retained_shared_address(self):
+        self.evidence["private"] = {ADDRESS}
+        self.evidence["private_sources"] = [
+            ("retained_dns", "ns.ygg.nu", ADDRESS),
+            ("static_companion", "gateway.ygg.nu", ADDRESS),
+            ("static_primary", "other.ygg.nu", "10.4.20.2"),
+        ]
+        report = self.check(owned=False, selector=NAME)
+        row = report["rows"][0]
+        self.assertEqual(row["status"], "private_protected")
+        self.assertEqual(row["private_blocker_count"], 2)
+        self.assertEqual(
+            row["private_blockers"],
+            [
+                {"source": "retained_dns", "hostname": "ns.ygg.nu", "match": "address"},
+                {
+                    "source": "static_companion",
+                    "hostname": "gateway.ygg.nu",
+                    "match": "address",
+                },
+            ],
+        )
+        self.assertEqual(self.check(owned=False)["rows"], [])
+        self.client.get.assert_not_called()
+
     def test_duplicate_shared_wildcard_and_external_alias_block(self):
         for row, expected in (
             ({**RECORD, "name": "other.ygg.nu"}, "shared_address"),

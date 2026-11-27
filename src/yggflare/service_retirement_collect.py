@@ -35,6 +35,7 @@ from cloudflare_orphans import (
     load_registry,
     review_orphan,
 )
+from retirement_progress import emit, reporting
 from service_retirement_view import FILENAME, LABEL, LAYERS, valid_snapshot
 from traefik_inventory import read, write
 from unifi_api import all_rows
@@ -57,10 +58,12 @@ def selected_names(service, settings):
 
 def source_row(layer, name, collect):
     """Never expose exception messages or partially collected raw data."""
+    emit(f"Collecting {layer} retirement evidence")
     try:
         result = collect()
     except Exception:
         result = {"status": "unavailable"}
+    emit(f"Completed {layer} retirement evidence: {result['status']}")
     return {"layer": layer, "hostname": name, "observed_at": int(time.time()), **result}
 
 
@@ -141,6 +144,9 @@ def internal_review(client, data, settings, name):
     result.update(
         address=row["address"], ownership=row["ownership"], status=row["status"]
     )
+    if row["status"] == "private_protected" and "private_blockers" in row:
+        result["private_blockers"] = row["private_blockers"]
+        result["private_blocker_count"] = row["private_blocker_count"]
     if state and row["status"] == "candidate_review_only":
         observed = state["observations"].get(row["record_id"])
         entry = owned.get(row["record_id"])
@@ -348,4 +354,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with reporting():
+        sys.exit(main())

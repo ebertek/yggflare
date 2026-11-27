@@ -1,6 +1,8 @@
 """Retired unmanaged Docker A claims require exact operator approval."""
 
+import contextlib
 import copy
+import io
 import tempfile
 import unittest
 from contextlib import nullcontext
@@ -10,6 +12,7 @@ from unittest.mock import Mock, patch
 from cloudflare_internal_cleanup import load_state, save_state, scope_for
 from cloudflare_internal_ownership import internal_scope, load_registry
 from cloudflare_legacy_internal_claim import apply_claim, review_claim
+from retirement_progress import reporting
 
 BOUND = internal_scope("a" * 32, "b" * 32, "example.net", "192.0.2.0/24")
 EXTERNAL = "e" * 32
@@ -73,6 +76,24 @@ class LegacyInternalClaimTests(unittest.TestCase):
 
     def apply(self, token):
         return apply_claim(self.client, self.data, SETTINGS, HOST, token)
+
+    def test_private_blocker_progress_is_safe_and_does_not_authorize(self):
+        result = evidence("private_protected")
+        result[0]["rows"][0]["private_blockers"] = [
+            {"source": "retained_dns", "hostname": "ns.example.net", "match": "address"}
+        ]
+        self.review.return_value = result
+        with (
+            contextlib.redirect_stderr(io.StringIO()) as output,
+            reporting(),
+            self.assertRaises(ValueError),
+        ):
+            self.plan()
+        self.assertIn(
+            "retained_dns / ns.example.net (matching address)", output.getvalue()
+        )
+        self.assertEqual(load_registry(self.data, BOUND)["records"], {})
+        self.client.delete_dns_record.assert_not_called()
 
     def test_preview_is_read_only_and_apply_only_grants_ownership(self):
         plan, token = self.plan()

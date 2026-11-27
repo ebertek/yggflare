@@ -69,6 +69,25 @@ class RetirementViewTests(unittest.TestCase):
                 write(self.path, document)
                 self.assertFalse(view.saved(self.data)["available"])
 
+    def test_private_blockers_are_projected_and_strictly_validated(self):
+        row = self.document["items"][3]
+        row.update(
+            status="private_protected",
+            private_blocker_count=1,
+            private_blockers=[
+                {"source": "retained_dns", "hostname": "ns.ygg.nu", "match": "address"}
+            ],
+        )
+        write(self.path, self.document)
+        self.assertEqual(
+            view.saved(self.data)["items"][3]["private_blockers"],
+            row["private_blockers"],
+        )
+        self.assertNotIn("ns.ygg.nu", metrics.render(self.data, self.data).decode())
+        row["private_blockers"][0]["description"] = "private"
+        write(self.path, self.document)
+        self.assertFalse(view.saved(self.data)["available"])
+
     def test_shared_query_and_aggregate_metrics(self):
         write(self.path, self.document)
         with patch.object(

@@ -59,6 +59,8 @@ FIELDS = {
     "auto_cleanup",
     "forward",
     "reverse",
+    "private_blockers",
+    "private_blocker_count",
 }
 
 
@@ -125,6 +127,38 @@ def valid_snapshot(document):
             key in row and row[key] not in DNS_STATES for key in ("forward", "reverse")
         ):
             return False
+        if "private_blockers" in row or "private_blocker_count" in row:
+            blockers = row.get("private_blockers")
+            count = row.get("private_blocker_count")
+            if (
+                layer != "internal"
+                or row["status"] != "private_protected"
+                or not isinstance(blockers, list)
+                or type(count) is not int
+                or not 0 <= count <= 4096
+                or len(blockers) != min(count, 32)
+            ):
+                return False
+            for blocker in blockers:
+                if (
+                    not isinstance(blocker, dict)
+                    or set(blocker) != {"source", "hostname", "match"}
+                    or blocker["source"]
+                    not in {
+                        "static_primary",
+                        "static_alias",
+                        "static_companion",
+                        "retained_dns",
+                    }
+                    or blocker["match"] not in {"hostname", "address"}
+                    or not isinstance(blocker["hostname"], str)
+                    or not 0 < len(blocker["hostname"]) <= 253
+                    or not all(
+                        re.fullmatch(r"[a-z0-9_][a-z0-9_-]{0,62}", label)
+                        for label in blocker["hostname"].split(".")
+                    )
+                ):
+                    return False
         if row.get("address") is not None:
             try:
                 if str(ipaddress.IPv4Address(row["address"])) != row["address"]:

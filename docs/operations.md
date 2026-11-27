@@ -159,3 +159,8 @@ retirement, cache expiry, or absence on other hosts. If the policy and
 internal record no longer provide a known IPv4 address, PTR evidence is
 unavailable; independently check the previously known address. Aggregate metrics cover
 only the selected saved review and expose no resource labels.
+
+The explicit retirement refresh reports elapsed-time progress per source on
+stderr, including Access detail collection progress. Private internal DNS
+blocker identities are included in the saved CLI/Web/MCP projection; the
+aggregate metrics remain free of resource names and addresses.
