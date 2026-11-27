@@ -6,16 +6,17 @@ read-only mode remain authoritative; watching inputs never bypasses them.
 
 import hashlib
 import json
-import os
 import subprocess
 import threading
 import time
 from pathlib import Path
 
+from yggflare_env import getenv
+
 
 def enabled(name, default=True):
     """Parse feature switches without accepting ambiguous truthy values."""
-    value = os.getenv(name, str(default).lower()).lower()
+    value = getenv(name, str(default).lower()).lower()
     if value not in ("true", "false"):
         raise ValueError(f"{name} must be true or false")
     return value == "true"
@@ -23,7 +24,7 @@ def enabled(name, default=True):
 
 def seconds(name, default, minimum, maximum):
     """Validate bounds for watcher timing configuration."""
-    raw = os.getenv(name, str(default))
+    raw = getenv(name, str(default))
     try:
         result = int(raw)
     except ValueError as error:

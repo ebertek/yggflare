@@ -5,7 +5,6 @@ Only new TCP ports and DNS-SD service identities require repeat sightings
 before Discord delivery. Missing advertisements never mean a device is offline.
 """
 
-
 from yggflare_env import getenv
 
 MAX_TRACKED = 4096

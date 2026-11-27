@@ -24,7 +24,7 @@ from mcp_logging import http_logging
 from probe_inventory import INTERVAL as PROBE_INTERVAL
 from traefik_inventory import INTERVAL as TRAEFIK_INTERVAL
 from watchers import start as start_watchers
-from yggflare_env import env_get, env_required, getenv
+from yggflare_env import env_get, getenv
 
 CONFIG = Path("/config")
 DATA = Path("/data")
@@ -238,7 +238,7 @@ def cloudflare_run():
     )
     if not secret.is_file():
         raise FileNotFoundError("Cloudflare API token secret missing")
-    env_required(env, "CLOUDFLARE_API_TOKEN_FILE") = str(secret)
+    env["CLOUDFLARE_API_TOKEN_FILE"] = str(secret)
     env.pop("CLOUDFLARE_API_TOKEN", None)
     with tempfile.TemporaryDirectory(prefix="yggflare-compose-", dir=DATA) as folder:
         root = snapshot(Path(folder))

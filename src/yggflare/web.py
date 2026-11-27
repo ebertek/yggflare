@@ -4,7 +4,6 @@ import csv
 import io
 import ipaddress
 import json
-import os
 import socket
 import sys
 import traceback
@@ -23,6 +22,7 @@ from operator_views import render as render_operator
 from presentation_text import csv_cell
 from presentation_text import html_text as escape
 from web_views import cloudflare_view, discovery_view, drift_view, ports_view
+from yggflare_env import getenv
 
 
 class IPv6ThreadingHTTPServer(ThreadingHTTPServer):
@@ -45,7 +45,7 @@ def validated_bind_address(value):
 
 CONFIG = Path("/config")
 DATA = Path("/data")
-NETWORK = ipaddress.ip_network(os.environ.get("YGGFLARE_LAN_CIDR", "10.4.20.0/23"))
+NETWORK = ipaddress.ip_network(getenv("YGGFLARE_LAN_CIDR", "10.4.20.0/23"))
 SOURCE = Path("/compose-source")
 MAX_BYTES = 4 * 1024 * 1024
 
@@ -160,7 +160,7 @@ def model():
             }
         )
     docker_hosts, warnings = snapshot(
-        SOURCE, NETWORK, os.environ.get("YGGFLARE_INTERNAL_DOMAIN", "")
+        SOURCE, NETWORK, getenv("YGGFLARE_INTERNAL_DOMAIN", "")
     )
 
     def optional_state(filename):
@@ -487,7 +487,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if (
             uri == "/metrics"
-            and os.environ.get("YGGFLARE_METRICS_ENABLED", "false") != "true"
+            and getenv("YGGFLARE_METRICS_ENABLED", "false") != "true"
         ):
             self.send_error(404)
             return
@@ -580,13 +580,13 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve():
     """Bind only to loopback unless explicitly configured otherwise."""
-    port = int(os.environ.get("YGGFLARE_WEB_PORT", "8787"))
+    port = int(getenv("YGGFLARE_WEB_PORT", "8787"))
     if not 1 <= port <= 65535:
         raise ValueError("Invalid YGGFLARE_WEB_PORT")
-    metrics_enabled = os.environ.get("YGGFLARE_METRICS_ENABLED", "false")
+    metrics_enabled = getenv("YGGFLARE_METRICS_ENABLED", "false")
     if metrics_enabled not in ("true", "false"):
         raise ValueError("YGGFLARE_METRICS_ENABLED must be true or false")
-    host = os.environ.get("YGGFLARE_WEB_BIND", "127.0.0.1")
+    host = getenv("YGGFLARE_WEB_BIND", "127.0.0.1")
     address = validated_bind_address(host)
     server_type = (
         IPv6ThreadingHTTPServer if address.version == 6 else ThreadingHTTPServer

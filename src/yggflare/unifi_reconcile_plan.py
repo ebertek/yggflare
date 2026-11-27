@@ -18,6 +18,7 @@ from unifi_api import all_rows, hostname, select_site, settings
 from unifi_dns import cloudflare_records, plan
 from unifi_dns_verify import verify
 from yggflare_config import domain, network
+from yggflare_env import getenv
 
 SCHEMA_VERSION = 2
 TTL_SECONDS = 300
@@ -145,8 +146,8 @@ def load_live():
             "gateway": config,
             "site": site,
             "zone": zone,
-            "cloudflare_account": os.environ.get("CLOUDFLARE_ACCOUNT_ID"),
-            "cloudflare_zone": os.environ.get("CLOUDFLARE_INTERNAL_ZONE_ID"),
+            "cloudflare_account": getenv("CLOUDFLARE_ACCOUNT_ID"),
+            "cloudflare_zone": getenv("CLOUDFLARE_INTERNAL_ZONE_ID"),
         }
     )
     policies_id = policy_fingerprint(policies)

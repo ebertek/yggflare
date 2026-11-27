@@ -105,7 +105,9 @@ def scheduled(adapter, env):
 
 def settings(adapter, env):
     if adapter == "unifi":
-        return unifi_api.settings(env) if env_get(env, "YGGFLARE_UNIFI_API_URL") else None
+        return (
+            unifi_api.settings(env) if env_get(env, "YGGFLARE_UNIFI_API_URL") else None
+        )
     if adapter not in ADAPTERS:
         raise ValueError("Unknown integration")
     prefix = "YGGFLARE_" + adapter.upper()
