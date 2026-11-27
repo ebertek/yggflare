@@ -155,5 +155,7 @@ use the existing hostname-specific approval commands for adoption and the
 existing retirement workflow for deletion. External DNS → Tunnel → Access,
 then internal DNS before UniFi, is the recommended review order; no unified
 mutation command is provided. A missing resource is not proof of historical
-retirement, cache expiry, or absence on other hosts. Aggregate metrics cover
+retirement, cache expiry, or absence on other hosts. If the policy and
+internal record no longer provide a known IPv4 address, PTR evidence is
+unavailable; independently check the previously known address. Aggregate metrics cover
 only the selected saved review and expose no resource labels.

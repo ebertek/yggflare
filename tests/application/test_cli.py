@@ -400,6 +400,30 @@ class CommandTests(unittest.TestCase):
                 cli.main(arguments)
             run.assert_not_called()
 
+    def test_service_retirement_refresh_is_explicit(self):
+        with patch.object(cli.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            self.assertEqual(cli.main(["services", "retirement-refresh", "demo"]), 0)
+            run.assert_called_once_with(
+                [cli.sys.executable, "/app/service_retirement_collect.py", "--", "demo"],
+                check=False,
+            )
+        for arguments in (
+            ["services", "retirement-refresh"],
+            ["services", "retirement-refresh", "demo", "approval"],
+            ["services", "retirement-refresh", "demo", "--json"],
+            ["services", "retirement-plan", "demo", "--all"],
+            ["services", "retirement-plan", "demo", "--project", "test"],
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                contextlib.redirect_stderr(io.StringIO()),
+                patch.object(cli.subprocess, "run") as run,
+                self.assertRaises(SystemExit),
+            ):
+                cli.main(arguments)
+            run.assert_not_called()
+
     def test_plan_preserves_requested_limit(self):
         result, command = self.invoke(["cloudflare", "plan", "--max-operations", "1"])
         self.assertEqual(result, 0)
