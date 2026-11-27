@@ -207,6 +207,7 @@ def load_ledger(path, target):
                 name != old["domain"]
                 or repair["previous_address"] != old["ipv4Address"]
                 or entry["manual"] != previous["manual"]
+                or ("legacy" in previous and repair["action"] != RETIRE_ACTION)
                 or (
                     repair["action"] == "update"
                     and (
