@@ -89,7 +89,9 @@ class LegacyInternalClaimTests(unittest.TestCase):
             self.assertRaises(ValueError),
         ):
             self.plan()
-        self.assertIn("retained_dns / ns.example.net (matching address)", output.getvalue())
+        self.assertIn(
+            "retained_dns / ns.example.net (matching address)", output.getvalue()
+        )
         self.assertEqual(load_registry(self.data, BOUND)["records"], {})
         self.client.delete_dns_record.assert_not_called()
 

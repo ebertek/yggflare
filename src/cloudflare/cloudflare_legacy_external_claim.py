@@ -37,8 +37,8 @@ from cloudflare_orphans import (
     MAX_REGISTRY_BYTES,
     OwnershipError,
     desired_hosts,
-    identity_from_details,
     digest,
+    identity_from_details,
     live_resources,
     load_registry,
     locked_registry,
@@ -191,7 +191,9 @@ def inspect_resources(client, bound, internal, hostname, expected=None):
 
     # List data may omit additional destinations. Every self-hosted app must
     # still be hydrated in each independent round; never cache across rounds.
-    emit(f"Reading {len(self_hosted)} Access application details (up to 4 concurrent GETs)")
+    emit(
+        f"Reading {len(self_hosted)} Access application details (up to 4 concurrent GETs)"
+    )
 
     def hydrate(identifier):
         return client.get_application(bound["account"], identifier)

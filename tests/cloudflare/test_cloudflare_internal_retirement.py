@@ -106,10 +106,17 @@ class RetirementReviewTests(unittest.TestCase):
         row = report["rows"][0]
         self.assertEqual(row["status"], "private_protected")
         self.assertEqual(row["private_blocker_count"], 2)
-        self.assertEqual(row["private_blockers"], [
-            {"source": "retained_dns", "hostname": "ns.ygg.nu", "match": "address"},
-            {"source": "static_companion", "hostname": "gateway.ygg.nu", "match": "address"},
-        ])
+        self.assertEqual(
+            row["private_blockers"],
+            [
+                {"source": "retained_dns", "hostname": "ns.ygg.nu", "match": "address"},
+                {
+                    "source": "static_companion",
+                    "hostname": "gateway.ygg.nu",
+                    "match": "address",
+                },
+            ],
+        )
         self.assertEqual(self.check(owned=False)["rows"], [])
         self.client.get.assert_not_called()
 

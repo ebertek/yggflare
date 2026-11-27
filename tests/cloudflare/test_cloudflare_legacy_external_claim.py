@@ -77,17 +77,25 @@ class LegacyExternalTests(unittest.TestCase):
 
     def test_two_fresh_rounds_without_redundant_target_get(self):
         other = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-        self.client.apps.append({**self.client.apps[0], "id": other, "domain": "other.ebi.nu"})
+        self.client.apps.append(
+            {**self.client.apps[0], "id": other, "domain": "other.ebi.nu"}
+        )
         with (
-            patch.object(self.client, "get_application", wraps=self.client.get_application) as detail,
+            patch.object(
+                self.client, "get_application", wraps=self.client.get_application
+            ) as detail,
             contextlib.redirect_stderr(io.StringIO()) as output,
             contextlib.redirect_stdout(io.StringIO()) as stdout,
             reporting(),
         ):
             self.plan()
         self.assertEqual(detail.call_count, 6)
-        self.assertEqual(sum(call.args[1] == APP_ID for call in detail.call_args_list), 4)
-        self.assertEqual(sum(call.args[1] == other for call in detail.call_args_list), 2)
+        self.assertEqual(
+            sum(call.args[1] == APP_ID for call in detail.call_args_list), 4
+        )
+        self.assertEqual(
+            sum(call.args[1] == other for call in detail.call_args_list), 2
+        )
         self.assertIn("Review 1/2", output.getvalue())
         self.assertIn("Review 2/2", output.getvalue())
         self.assertIn("Access details checked: 2/2", output.getvalue())
@@ -96,7 +104,9 @@ class LegacyExternalTests(unittest.TestCase):
 
     def test_non_target_detail_failure_and_hidden_overlap_block(self):
         other = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-        self.client.apps.append({**self.client.apps[0], "id": other, "domain": "other.ebi.nu"})
+        self.client.apps.append(
+            {**self.client.apps[0], "id": other, "domain": "other.ebi.nu"}
+        )
         original = self.client.get_application
 
         def failed(account, identifier):
