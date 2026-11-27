@@ -1,4 +1,4 @@
-"""Explicit read-only verification of A and PTR replies from the UniFi gateway."""
+"""Explicit read-only verification of address and PTR replies from the UniFi gateway."""
 
 import argparse
 import json
@@ -45,7 +45,9 @@ def query(gateway, name, kind):
             continue
         if rrset.rdtype == question.rdtype:
             records.update(
-                record.address if kind == "A" else record.target.to_text().lower()
+                record.address
+                if kind in {"A", "AAAA"}
+                else record.target.to_text().lower()
                 for record in rrset
             )
         else:

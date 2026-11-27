@@ -88,6 +88,9 @@ production acceptance are distinct. Never move a published version tag.
   complete desired-name/address absence, exact unchanged automatic ownership,
   fresh policy revalidation and journaled DELETE acknowledgement. Protect
   manual pilots and unmanaged policies; verify policy and A/PTR absence.
+- IPv6 assessment is read-only. Distinguish configured DNS overrides,
+  observed RA RDNSS, and unobserved DHCPv6 option delivery. No IPv6 writes
+  or expansion of discovery targets from advertisements.
 - Notify Discord only after verification; preserve journaled delivery
   outcomes and duplicate protection.
 
