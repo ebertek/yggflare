@@ -50,8 +50,10 @@ def mentions(value, name, address):
         return False
     return any(
         re.search(
-            r"(?<![a-z0-9_.-])" + re.escape(target) + r"(?![a-z0-9_.-])",
-            value.lower().rstrip("."),
+            r"(?<![a-z0-9_.-])"
+            + re.escape(target)
+            + r"(?:\.(?![a-z0-9_.-])|(?![a-z0-9_.-]))",
+            value.lower(),
         )
         for target in (name, address)
     )
@@ -143,7 +145,10 @@ def docker_containers():
 
     def identifiers():
         values = subprocess.check_output(
-            ["docker", "ps", "-aq", "--no-trunc"], text=True, timeout=30
+            ["docker", "ps", "-aq", "--no-trunc"],
+            text=True,
+            timeout=30,
+            stderr=subprocess.DEVNULL,
         ).split()
         if (
             len(values) > MAX_CONTAINERS
@@ -163,6 +168,7 @@ def docker_containers():
                 ["docker", "inspect", "--type", "container", *batch],
                 text=True,
                 timeout=30,
+                stderr=subprocess.DEVNULL,
             )
         )
         if (
@@ -215,6 +221,8 @@ def protected(name, address, evidence, records, identifier):
             return "record_conflict"
         if other.startswith("*.") and name.endswith(other[1:]):
             return "wildcard_protected"
+        if other.endswith("." + name):
+            return "dependency_protected"
         if row["type"] == "A" and row["content"] == address:
             return "shared_address"
         if mentions(row.get("content"), name, address) or mentions(
@@ -245,21 +253,15 @@ def review(client, bound, owned, records, external, evidence, hostname=None):
             elif not record_matches(current, identifier, action):
                 status = "identity_changed"
             else:
-                detail = client.get(f"/zones/{bound['zone']}/dns_records/{identifier}")[
-                    "result"
-                ]
+                detail = client.get(
+                    f"/zones/{bound['zone']}/dns_records/{identifier}"
+                )["result"]
                 if (
                     not record_matches(detail, identifier, action)
                     or detail_fingerprint(detail) != entry["fingerprint"]
                     or any(
                         current.get(field) != detail.get(field)
-                        for field in (
-                            "ttl",
-                            "comment",
-                            "tags",
-                            "settings",
-                            "modified_on",
-                        )
+                        for field in ("ttl", "comment", "tags", "settings", "modified_on")
                     )
                 ):
                     status = "identity_changed"
@@ -312,6 +314,11 @@ def review(client, bound, owned, records, external, evidence, hostname=None):
         "counts": dict(sorted(Counter(row["status"] for row in rows).items())),
         "rows": rows,
         "matching_rows": bool(rows),
+        "selected_dns_record_count": (
+            sum(normalized(row["name"]) == hostname for row in records)
+            if hostname is not None
+            else None
+        ),
         "deletion_authorized": False,
     }
 
@@ -346,9 +353,10 @@ def collect(client, root, data, settings, hostname=None):
         raise ValueError("Overlapping internal DNS ownership registries")
     owned = {key: ("docker", row) for key, row in docker.items()}
     owned.update({key: ("static", row) for key, row in static.items()})
-    if len({entry["hostname"] for _, entry in owned.values()}) != len(owned) or len(
-        {entry["address"] for _, entry in owned.values()}
-    ) != len(owned):
+    if (
+        len({entry["hostname"] for _, entry in owned.values()}) != len(owned)
+        or len({entry["address"] for _, entry in owned.values()}) != len(owned)
+    ):
         raise ValueError("Conflicting internal DNS ownership registries")
     hosts, companions = load_inventory_details(root / INVENTORY, required=True)
     retained = load_retained_dns(root / RETAINED)
@@ -365,7 +373,9 @@ def collect(client, root, data, settings, hostname=None):
     }
     # Keep retained exact names/addresses protected independently of content.
     evidence["private"].update(row["hostname"] for row in retained)
-    evidence["private"].update(row["content"] for row in retained if row["type"] == "A")
+    evidence["private"].update(
+        row["content"] for row in retained if row["type"] == "A"
+    )
     return review(
         client,
         bound,

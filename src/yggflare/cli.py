@@ -262,8 +262,11 @@ def main(argv=None):
             [sys.executable, f"/app/{script}"], check=False
         ).returncode
     network_status = args.component == "network" and args.operation == "status"
-    if (args.details or args.json) and not network_status:
-        parser.error("--details and --json require network status")
+    cloudflare_retirement = (
+        args.component == "cloudflare" and args.operation == "retirement-plan"
+    )
+    if (args.details or args.json) and not (network_status or cloudflare_retirement):
+        parser.error("--details and --json require a supported review command")
     if args.operation == "serve" and args.component != "mcp":
         parser.error("serve requires mcp")
     if network_status:
@@ -311,9 +314,7 @@ def main(argv=None):
 
     if args.operation == "retirement-plan":
         if args.approval is not None or args.max_operations or args.details:
-            parser.error(
-                "cloudflare retirement-plan accepts optional HOSTNAME and --json"
-            )
+            parser.error("cloudflare retirement-plan accepts optional HOSTNAME and --json")
         controller.DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix="yggflare-compose-", dir=controller.DATA

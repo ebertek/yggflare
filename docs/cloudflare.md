@@ -83,7 +83,9 @@ for automatic deletion.
 
 `candidate_review_only` means the checked evidence did not reveal a blocker;
 it is not proof of continuous absence, complete dependency coverage, or
-permission to delete. No grace observations, claims, writes or deletion
+permission to delete. For a selected hostname, `selected_dns_record_count`
+includes unsupported record types; no review rows does not necessarily mean
+the DNS name is absent. No grace observations, claims, writes or deletion
 fingerprints are produced. This preview does not inspect arbitrary other
 DNS zones, application data, non-Compose dependencies or client resolver
 configuration. Web/MCP presentation and retirement execution are separate

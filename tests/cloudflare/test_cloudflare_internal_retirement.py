@@ -1,11 +1,14 @@
 """Read-only retirement classification and evidence safety regressions."""
 
 import copy
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from cloudflare_internal_ownership import detail_fingerprint, internal_scope
 from cloudflare_internal_retirement import (
+    compose_evidence,
     docker_containers,
     review,
     runtime_evidence,
@@ -75,6 +78,11 @@ class RetirementReviewTests(unittest.TestCase):
                 (set(), set(), [f"https://{NAME}:443"]),
                 "dependency_protected",
             ),
+            (
+                "compose",
+                (set(), set(), [f'hostname: "{NAME}."']),
+                "dependency_protected",
+            ),
             ("runtime", ({NAME}, set()), "runtime_present"),
             ("runtime", (set(), {ADDRESS}), "runtime_present"),
             ("private", {ADDRESS}, "private_protected"),
@@ -122,6 +130,32 @@ class RetirementReviewTests(unittest.TestCase):
         report = self.check(selector="missing.ygg.nu")
         self.assertFalse(report["matching_rows"])
         self.assertEqual(report["rows"], [])
+        self.assertEqual(report["selected_dns_record_count"], 0)
+        unsupported = {
+            "id": "d" * 32,
+            "name": NAME,
+            "type": "AAAA",
+            "content": "2001:db8::1",
+        }
+        report = self.check(records=[unsupported], owned=False, selector=NAME)
+        self.assertFalse(report["matching_rows"])
+        self.assertEqual(report["selected_dns_record_count"], 1)
+
+    def test_compose_protects_aliases_and_addressless_services(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "compose.yaml").write_text(
+                "services:\n"
+                "  demo:\n"
+                "    image: example\n"
+                "    networks:\n"
+                "      lan:\n"
+                "        aliases: [alias]\n",
+                encoding="utf-8",
+            )
+            names, addresses, _ = compose_evidence(root, "ygg.nu")
+            self.assertEqual(names, {NAME, "alias.ygg.nu"})
+            self.assertEqual(addresses, set())
 
     def test_runtime_keeps_aliases_and_configured_addresses(self):
         names, addresses = runtime_evidence(
