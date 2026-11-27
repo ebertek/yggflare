@@ -1,17 +1,48 @@
 """Offline local MCP HTTP acceptance contract."""
 
+import io
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+import cli
 from mcp_http import settings
 from mcp_http_check import check, rpc
 from mcp_server import enabled_tools
 
 
 class MCPHTTPCheckTests(unittest.TestCase):
+    def test_cli_dispatches_check_with_or_without_json(self):
+        for flags in ([], ["--json"]):
+            with self.subTest(flags=flags), patch.object(cli.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                self.assertEqual(cli.main(["mcp", "check", *flags]), 0)
+                run.assert_called_once_with(
+                    [sys.executable, "/app/mcp_http_check.py"], check=False
+                )
+
+    def test_cli_rejects_unsupported_mcp_options(self):
+        for args in (
+            ["mcp", "serve", "--json"],
+            ["mcp", "check", "--details"],
+            ["mcp", "check", "unexpected"],
+            ["mcp", "check", "--limit", "1"],
+            ["doctor", "run", "--json"],
+        ):
+            with (
+                self.subTest(args=args),
+                patch.object(cli.subprocess, "run") as run,
+                redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                cli.main(args)
+            self.assertEqual(error.exception.code, 2)
+            run.assert_not_called()
+
     def test_checks_denial_and_exact_read_only_tools(self):
         env = {"YGGFLARE_MCP_TOOL_GROUPS": "unifi"}
         names = enabled_tools(env)
