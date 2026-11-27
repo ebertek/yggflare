@@ -141,6 +141,51 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 controller.run([sys.executable, "/app/other.py"])
 
+    def test_unifi_apply_interval_validates_bounds(self):
+        name = "YGGFLARE_UNIFI_APPLY_INTERVAL_SECONDS"
+        self.assertEqual(controller.unifi_apply_interval({}), 60)
+        for value in ("30", "60", "300", "3600"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    controller.unifi_apply_interval({name: value}), int(value)
+                )
+        for value in ("0", "29", "3601", "abc", "-1", "1.5", "", "9" * 100):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                controller.unifi_apply_interval({name: value})
+
+    def test_unifi_pending_uses_short_retry_and_keeps_job_status(self):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(controller, "DATA", Path(folder)),
+            patch.object(controller, "run", side_effect=controller.JobPending) as run,
+            patch.object(controller, "log") as log,
+        ):
+            self.assertEqual(controller.run_unifi_apply(60), 30)
+            run.assert_called_once_with(
+                [sys.executable, "/app/unifi_apply.py", "--automatic"]
+            )
+            log.assert_not_called()
+            jobs = json.loads((Path(folder) / "job-status.json").read_text())
+            self.assertEqual(
+                jobs["jobs"]["unifi_apply"]["status"], "pending_dns_verification"
+            )
+
+    def test_unifi_success_and_real_failure_use_distinct_delays(self):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(controller, "DATA", Path(folder)),
+            patch.object(controller, "run", return_value=0) as run,
+            patch.object(controller, "log"),
+        ):
+            self.assertEqual(controller.run_unifi_apply(60), 60)
+            run.side_effect = RuntimeError("fixture failure")
+            self.assertEqual(controller.run_unifi_apply(60), 300)
+            self.assertEqual(controller.run_unifi_apply(600), 600)
+            jobs = json.loads((Path(folder) / "job-status.json").read_text())
+            job = jobs["jobs"]["unifi_apply"]
+            self.assertEqual(job["status"], "failed")
+            self.assertIsNotNone(job["last_success_at"])
+
     def test_sigterm_and_sigint_request_shutdown(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
             with (

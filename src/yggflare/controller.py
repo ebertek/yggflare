@@ -34,6 +34,9 @@ if LOG_FORMAT not in ("text", "json"):
 CLOUD_INTERVAL = dt.timedelta(hours=6)
 NETWORK_HOUR, NETWORK_MINUTE = 5, 15
 SHUTDOWN_GRACE_SECONDS = 3
+UNIFI_APPLY_INTERVAL_DEFAULT = 60
+UNIFI_PENDING_INTERVAL = 30
+UNIFI_FAILURE_BACKOFF = 300
 
 
 class ShutdownRequested(BaseException):
@@ -336,6 +339,31 @@ def tracked(job):
     return track(DATA, job, lambda message: log("warning", "controller", message))
 
 
+def unifi_apply_interval(environ):
+    """Validate the independent DNS writer cadence before scheduling writes."""
+    name = "YGGFLARE_UNIFI_APPLY_INTERVAL_SECONDS"
+    raw = environ.get(name, str(UNIFI_APPLY_INTERVAL_DEFAULT))
+    if not re.fullmatch(r"[0-9]{1,4}", raw) or not 30 <= int(raw) <= 3600:
+        raise ValueError(f"{name} must be an integer from 30 to 3600")
+    return int(raw)
+
+
+def run_unifi_apply(interval):
+    """Schedule pending verification separately from new creates and failures."""
+    delay = interval
+    try:
+        with tracked("unifi_apply"):
+            try:
+                run([sys.executable, "/app/unifi_apply.py", "--automatic"])
+            except JobPending:
+                delay = UNIFI_PENDING_INTERVAL
+                raise
+    except Exception:
+        log("warning", "controller", "UniFi guarded DNS create stopped")
+        delay = max(interval, UNIFI_FAILURE_BACKOFF)
+    return delay
+
+
 def run_scheduler(listener=None):
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     web_enabled = os.environ.get("YGGFLARE_WEB_ENABLED", "false") == "true"
@@ -350,6 +378,12 @@ def run_scheduler(listener=None):
     next_traefik = 0.0
     next_probe = 0.0
     next_integration = dict.fromkeys(ADAPTERS, 0.0)
+    unifi_auto_apply = os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") == "true"
+    unifi_interval = (
+        unifi_apply_interval(os.environ)
+        if unifi_auto_apply
+        else UNIFI_APPLY_INTERVAL_DEFAULT
+    )
     next_unifi_apply = 0.0
     backup_marker = DATA / "backup-last-run.txt"
     last_backup_day = (
@@ -425,16 +459,9 @@ def run_scheduler(listener=None):
                         f"{adapter} presentation refresh failed; previous snapshot retained",
                     )
                 next_integration[adapter] = time.monotonic() + INTEGRATION_INTERVAL
-        if (
-            os.environ.get("YGGFLARE_UNIFI_AUTO_APPLY") == "true"
-            and time.monotonic() >= next_unifi_apply
-        ):
-            try:
-                with tracked("unifi_apply"):
-                    run([sys.executable, "/app/unifi_apply.py", "--automatic"])
-            except Exception:
-                log("warning", "controller", "UniFi guarded DNS create stopped")
-            next_unifi_apply = time.monotonic() + INTEGRATION_INTERVAL
+        if unifi_auto_apply and time.monotonic() >= next_unifi_apply:
+            delay = run_unifi_apply(unifi_interval)
+            next_unifi_apply = time.monotonic() + delay
         if (
             os.environ.get("YGGFLARE_PROBES_ENABLED") == "true"
             and time.monotonic() >= next_probe
