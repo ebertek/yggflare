@@ -14,7 +14,13 @@ from cloudflare_legacy_external_claim import (
     review_claim,
     verify_legacy,
 )
-from cloudflare_orphans import AUTO_STATE, OwnershipError, load_registry, retire, review_orphan
+from cloudflare_orphans import (
+    AUTO_STATE,
+    OwnershipError,
+    load_registry,
+    retire,
+    review_orphan,
+)
 from test_cloudflare_orphans import APP_ID, BOUND, DNS_ID, HOST, TUNNEL, FakeCloudflare
 
 INTERNAL = "f" * 32
@@ -34,7 +40,9 @@ class LegacyClient(FakeCloudflare):
         return super().list_dns(zone) if zone == BOUND["external_zone"] else []
 
     def get(self, path):
-        return {"result": self.get_dns_record(BOUND["external_zone"], path.split("/")[-1])}
+        return {
+            "result": self.get_dns_record(BOUND["external_zone"], path.split("/")[-1])
+        }
 
 
 class LegacyExternalTests(unittest.TestCase):
@@ -47,10 +55,15 @@ class LegacyExternalTests(unittest.TestCase):
             patch("cloudflare_legacy_external_claim.read_fresh_absence")
         )
         self.enterContext(
-            patch("cloudflare_legacy_external_claim.write_lock", side_effect=nullcontext)
+            patch(
+                "cloudflare_legacy_external_claim.write_lock", side_effect=nullcontext
+            )
         )
         self.enterContext(
-            patch("cloudflare_legacy_external_claim.cloudflare_settings", return_value=SETTINGS)
+            patch(
+                "cloudflare_legacy_external_claim.cloudflare_settings",
+                return_value=SETTINGS,
+            )
         )
 
     def plan(self):
@@ -72,8 +85,12 @@ class LegacyExternalTests(unittest.TestCase):
         self.assertEqual(load_registry(self.data, BOUND)["hosts"], {})
         self.assertEqual(json.loads(path.read_text()), state)
         self.assertEqual(self.apply(token), plan["identity"])
-        self.assertEqual(load_registry(self.data, BOUND)["hosts"], {HOST: plan["identity"]})
-        self.assertEqual(json.loads(path.read_text())["missing"], {"other.ebi.nu": {"first": "keep"}})
+        self.assertEqual(
+            load_registry(self.data, BOUND)["hosts"], {HOST: plan["identity"]}
+        )
+        self.assertEqual(
+            json.loads(path.read_text())["missing"], {"other.ebi.nu": {"first": "keep"}}
+        )
         self.assertEqual(self.client.events, [])
         with self.assertRaises(OwnershipError):
             self.apply(token)
@@ -145,7 +162,9 @@ class LegacyExternalTests(unittest.TestCase):
         ):
             _, approval = review_orphan(self.client, self.data, self.data, BOUND, HOST)
             retire(self.client, self.data, self.data, BOUND, HOST, approval)
-        self.assertEqual(self.client.events, ["delete_dns", "remove_ingress", "delete_access"])
+        self.assertEqual(
+            self.client.events, ["delete_dns", "remove_ingress", "delete_access"]
+        )
         self.assertEqual(load_registry(self.data, BOUND)["hosts"], {})
         self.assertEqual(len(self.client.config["ingress"]), 2)
 
