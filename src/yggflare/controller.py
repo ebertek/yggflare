@@ -251,7 +251,12 @@ def cloudflare_run():
     env["CLOUDFLARE_API_TOKEN_FILE"] = str(secret)
     env.pop("CLOUDFLARE_API_TOKEN", None)
     # Recover an acknowledged DELETE before any creates or claims can obscure it.
-    if internal_cleanup == "true" or (DATA / "internal-dns-retirement.json").exists():
+    retirement_journal = DATA / "internal-dns-retirement.json"
+    if (
+        internal_cleanup == "true"
+        or retirement_journal.exists()
+        or retirement_journal.is_symlink()
+    ):
         run(
             [sys.executable, "/app/cloudflare/cloudflare_internal_cleanup.py"],
             env=env,

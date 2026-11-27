@@ -47,7 +47,11 @@ def scope_for(bound, external_zone):
 
 
 def stamp(value):
-    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    return (
+        type(value) in (int, float)
+        and math.isfinite(value)
+        and value >= 0
+    )
 
 
 def validate_state(state, scope=None):
@@ -169,7 +173,11 @@ def observe(previous, current, now, grace):
     for identifier, entry in sorted(current.items()):
         old = previous.get(identifier)
         first = now
-        if old and old["entry"] == entry and 0 <= now - old["last"] <= MAX_GAP:
+        if (
+            old
+            and old["entry"] == entry
+            and 0 <= now - old["last"] <= MAX_GAP
+        ):
             first = old["first"]
         fresh[identifier] = {"entry": entry, "first": first, "last": now}
         if now - first >= grace:
@@ -239,9 +247,7 @@ def complete_pending(client, data, settings, state, *, notify=False):
     """Recover acknowledged deletion without ever replaying DELETE."""
     pending = state["pending"]
     if pending["phase"] == "intent":
-        raise ValueError(
-            "Unknown internal DNS DELETE outcome; operator review required"
-        )
+        raise ValueError("Unknown internal DNS DELETE outcome; operator review required")
     entry = pending["entry"]
     identifier = entry["id"]
     bound = state["scope"]["internal"]
@@ -252,16 +258,16 @@ def complete_pending(client, data, settings, state, *, notify=False):
     current = ledger["records"].get(identifier)
     if current != entry and not (pending["phase"] == "verified" and current is None):
         raise ValueError("Internal retirement ownership changed")
-    if pending["phase"] == "acknowledged":
-        report, actual, external, owned = fresh_review(
-            client, data, settings, entry["hostname"]
-        )
+    report, actual, external, owned = fresh_review(
+        client, data, settings, entry["hostname"]
+    )
+    if scope_for(actual, external) != state["scope"]:
+        raise ValueError("Internal retirement recovery scope changed")
+    if pending["phase"] == "acknowledged" or current is not None:
         if (
-            scope_for(actual, external) != state["scope"]
-            or owned.get(identifier) != ("docker", entry)
+            owned.get(identifier) != ("docker", entry)
             or report["selected_dns_record_count"] != 0
-            or report["rows"]
-            != [
+            or report["rows"] != [
                 {
                     "hostname": entry["hostname"],
                     "address": entry["address"],
@@ -274,6 +280,8 @@ def complete_pending(client, data, settings, state, *, notify=False):
             raise ValueError("Internal DNS deletion absence not verified")
         pending["phase"] = "verified"
         save_state(data, state)
+    elif report["selected_dns_record_count"] != 0:
+        raise ValueError("Internal DNS name reappeared during recovery")
     if current is not None:
         del ledger["records"][identifier]
         save_registry(data, ledger)
@@ -285,9 +293,7 @@ def complete_pending(client, data, settings, state, *, notify=False):
         notice(entry)
 
 
-def run_cleanup(
-    client, data, settings, grace, budget, *, notify=False, clock=time.time
-):
+def run_cleanup(client, data, settings, grace, budget, *, notify=False, clock=time.time):
     """Serialize review, grace tracking, one exact-ID write and recovery."""
     data = Path(data)
     if not 1 <= budget <= 10 or not 24 * 3600 <= grace <= 720 * 3600:
@@ -303,6 +309,11 @@ def run_cleanup(
                     return 0
             report, bound, external, owned = fresh_review(client, data, settings)
             scope = scope_for(bound, external)
+            if not (data / REGISTRY_FILE).is_file():
+                if state is not None:
+                    raise ValueError("Internal DNS ownership registry missing")
+                print("Internal DNS retirement: no Docker ownership registry.")
+                return 0
             state = load_state(data, scope)
             current = candidates(report, owned)
             state["observations"], eligible = observe(
@@ -315,10 +326,9 @@ def run_cleanup(
                 fresh, actual, external, owned = fresh_review(
                     client, data, settings, entry["hostname"]
                 )
-                if (
-                    scope_for(actual, external) != scope
-                    or candidates(fresh, owned).get(identifier) != entry
-                ):
+                if scope_for(actual, external) != scope or candidates(
+                    fresh, owned
+                ).get(identifier) != entry:
                     raise ValueError("Internal retirement candidate changed")
                 # Revalidate age again after the live review.
                 now = clock()
@@ -401,10 +411,7 @@ def main():
         RuntimeError,
         subprocess.SubprocessError,
     ):
-        print(
-            "ERROR: Internal DNS retirement blocked; review journal and live evidence.",
-            file=sys.stderr,
-        )
+        print("ERROR: Internal DNS retirement blocked; review journal and live evidence.", file=sys.stderr)
         return 2
 
 

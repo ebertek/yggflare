@@ -209,8 +209,10 @@ def protected(name, address, evidence, records, identifier):
         return "runtime_present"
     if name in evidence["private"] or address in evidence["private"]:
         return "private_protected"
-    if mentions(references, name, address) or mentions(
-        evidence["retained"], name, address
+    if (
+        mentions(references, name, address)
+        or mentions(evidence["retained"], name, address)
+        or mentions(evidence.get("runtime_references", []), name, address)
     ):
         return "dependency_protected"
     for row in records:
@@ -365,9 +367,17 @@ def collect_context(client, root, data, settings, hostname=None):
         raise ValueError("Conflicting internal DNS ownership registries")
     hosts, companions = load_inventory_details(root / INVENTORY, required=True)
     retained = load_retained_dns(root / RETAINED)
+    containers = docker_containers()
     evidence = {
         "compose": compose_evidence(root, domain),
-        "runtime": runtime_evidence(docker_containers(), domain),
+        "runtime": runtime_evidence(containers, domain),
+        "runtime_references": [
+            {
+                "config": container["Config"],
+                "host": container.get("HostConfig", {}),
+            }
+            for container in containers
+        ],
         "private": (
             set(hosts)
             | set(hosts.values())
