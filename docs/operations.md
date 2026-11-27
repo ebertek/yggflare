@@ -53,6 +53,38 @@ docker exec yggflare yggflare backup status --json
 ```
 
 Check Web UI, MCP tool/group access and Prometheus/Grafana if enabled.
+
+### UniFi presentation parity
+
+Compare the CLI status above with the Web UI at `/unifi?view=status`
+and MCP `get_unifi_status`. Compare the aggregate metrics from the
+same saved observation (match `observed_at` to the epoch timestamp):
+
+| Status field | Prometheus metric |
+| --- | --- |
+| `configured` | `yggflare_unifi_configured` |
+| `available` | `yggflare_unifi_snapshot_available` |
+| `fresh` | `yggflare_unifi_snapshot_fresh` |
+| `last_refresh_verified` | `yggflare_unifi_last_refresh_verified` |
+| `observed_at` | `yggflare_unifi_last_success_timestamp_seconds` |
+| `counts` | `yggflare_unifi_devices`, `yggflare_unifi_clients`, `yggflare_unifi_networks`, `yggflare_unifi_dns` |
+| `uplink_counts` | `yggflare_unifi_uplink_*` |
+
+Check `system jobs --json`, Operations jobs and MCP `get_job_status`
+for the writer separately; policy counts alone do not prove DNS
+verification. Pending DNS verification is not a failed create.
+When collection is unavailable, counts and observation timestamps
+must be unknown or absent, not zero. Failed refreshes can retain
+last-good counts while marking them stale. A verified but aged
+snapshot is stale, too. Repeat the comparison if a refresh occurred
+between reads; Prometheus scrape times may lag the live endpoint.
+
+UniFi snapshots missing their recorded item count are deliberately
+unavailable. The next successful scheduled refresh (or explicit
+`unifi refresh`) republishes a complete snapshot.
+
+### Backup acceptance
+
 Verify the latest saved archive and rehearse an isolated restore. Off-host
 retention and application recovery require separate checks.
 
