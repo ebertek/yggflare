@@ -105,8 +105,9 @@ matching live policy and matching A/PTR replies.
 
 The private `/data/unifi-ownership.json` journal records intent before POST.
 After acknowledgement, verification has a ten-minute persisted deadline.
-Each invocation checks up to three times, five seconds apart, before
-resuming at the normal scheduled interval.
+Each invocation checks up to three times, five seconds apart. Pending
+verification is retried after 30 seconds; actual failures back off for
+at least five minutes.
 
 | Outcome | Behaviour |
 | --- | --- |
@@ -130,6 +131,7 @@ attempt success metric while pending.
 After a verified manual pilot, enable:
 
 ```yaml
+YGGFLARE_UNIFI_APPLY_INTERVAL_SECONDS: "60"
 YGGFLARE_UNIFI_AUTO_APPLY: "true"
 YGGFLARE_UNIFI_DISCORD_NOTIFY: "true"
 ```
@@ -139,7 +141,9 @@ Compose/static-inventory hostname/IPv4 declarations. Ambiguous,
 runtime-only and Cloudflare-only names are excluded. The declarations
 are rechecked before creation. Manual approval remains available.
 
-The `unifi_apply` job creates at most one policy per five-minute cycle.
+The `unifi_apply` job creates at most one policy per invocation. Its independent
+interval defaults to 60 seconds (30–3600 configurable). Pending verification
+uses a 30-second retry interval. Other collectors keep their existing schedules.
 An unresolved journal entry blocks further creates. Previously owned
 records that disappear or drift require manual review; the writer does
 not update or delete existing policies.

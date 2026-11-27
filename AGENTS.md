@@ -79,7 +79,9 @@ production acceptance are distinct. Never move a published version tag.
   unresolved pending operation blocks further creates. Never duplicate POST.
 - Automatic creation requires explicit opt-in, verified same-target manual
   pilot and exact unambiguous Compose or static-inventory declaration.
-  Limit to one create per cycle. Do not update/delete existing policies or
+  Limit to one create per invocation. Keep the writer cadence independent of
+  read-only collectors, with a shorter pending verification interval and
+  longer failure backoff. Do not update/delete existing policies or
   automatically recreate drifted owned policies through the create path.
 - Notify Discord only after verification; preserve journaled delivery
   outcomes and duplicate protection.
