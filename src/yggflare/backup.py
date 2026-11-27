@@ -171,7 +171,9 @@ def check_unifi_restore(data):
         ledger = load_ledger(path, target)
         observations = retirement_state(retirement, target)
     except (ValueError, KeyError, TypeError, RecursionError):
-        raise ValueError("Restored UniFi journal or retirement state is invalid") from None
+        raise ValueError(
+            "Restored UniFi journal or retirement state is invalid"
+        ) from None
     return {
         "unifi_ownership_present": True,
         "unifi_owned_count": len(ledger["owned"]),
