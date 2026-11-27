@@ -71,18 +71,20 @@ production acceptance are distinct. Never move a published version tag.
 - Collector and DNS preview use bounded GET and direct scoped DNS only.
   Require a fixed numeric origin, verified TLS, selected site and private
   fixed-path credentials. No insecure TLS or arbitrary requests.
-- The guarded writer creates only approved IPv4 A policies using the
+- The guarded writer creates or manually repairs approved IPv4 A policies using the
   mounted UniFi secret. Revalidate exact fingerprints, declarations,
   Cloudflare, gateway replies and policy list before writing.
-- Journal intent before POST; require acknowledged policy ID and matching
+- Journal intent before POST or PUT; require acknowledged policy ID and matching
   policy/A/PTR replies before recording ownership. Unknown outcome or
   unresolved pending operation blocks further creates. Never duplicate POST.
 - Automatic creation requires explicit opt-in, verified same-target manual
   pilot and exact unambiguous Compose or static-inventory declaration.
   Limit to one create per invocation. Keep the writer cadence independent of
   read-only collectors, with a shorter pending verification interval and
-  longer failure backoff. Do not update/delete existing policies or
-  automatically recreate drifted owned policies through the create path.
+  longer failure backoff. Owned repair requires a fresh hostname-specific
+  fingerprint and exact declaration; preserve the previous ownership until
+  verification. Do not update unmanaged policies, automatically repair
+  owned policies or delete policies.
 - Notify Discord only after verification; preserve journaled delivery
   outcomes and duplicate protection.
 
